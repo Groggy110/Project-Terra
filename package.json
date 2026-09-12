@@ -11,6 +11,7 @@
     "assets": "./tools/fetch_sources.sh && python3 tools/make_earth_textures.py && python3 tools/make_clouds.py && python3 tools/make_ui_textures.py && python3 tools/build_vectors.py"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
     "three": "0.169.0"
   },
   "devDependencies": {

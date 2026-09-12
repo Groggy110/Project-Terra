@@ -4,3 +4,10 @@ tools/cache/
 tools/shots/
 tools/__pycache__/
 .DS_Store
+
+# Secrets. Added before the first backend commit rather than after, because a
+# key that reaches git history stays there even once the file is deleted.
+.env
+.env.*
+!.env.example
+*.local
