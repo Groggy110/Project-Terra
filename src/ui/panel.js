@@ -133,7 +133,7 @@ export class Panel {
         "div",
         { class: "ministry__where" },
         icons.pin(),
-        joinDot(`${m.city}, ${m.country}`, `since ${m.since}`),
+        joinDot(`${m.city}, ${m.country}`, m.since ? `since ${m.since}` : null),
       ),
       h("p", { class: "ministry__blurb", text: m.blurb }),
       h(
@@ -153,14 +153,18 @@ export class Panel {
     const kv = h("div", { class: "kv" });
     const row = (k, v) =>
       h("div", { class: "kv__row" }, h("span", { class: "kv__k", text: k }), v);
+    // A row with nothing in it is worse than no row: it reads as data that
+    // failed to load rather than a field the ministry chose not to fill in.
+    // Ministries now write their own profiles, so most of these are optional.
     kv.append(
-      row("Team", h("span", { class: "kv__v", text: plural(m.staff, "person", "people") })),
-      row("Languages", h("span", { class: "kv__v", text: m.languages.join(", ") })),
-      row("People wanted", h("span", { class: "kv__v", text: nf.format(m.peopleWanted) })),
-      row(
-        "Contact",
-        h("span", { class: "kv__v" }, h("a", { href: `mailto:${m.contact}`, text: m.contact })),
-      ),
+      ...[
+        m.staff ? row("Team", h("span", { class: "kv__v", text: plural(m.staff, "person", "people") })) : null,
+        m.languages?.length ? row("Languages", h("span", { class: "kv__v", text: m.languages.join(", ") })) : null,
+        row("People wanted", h("span", { class: "kv__v", text: nf.format(m.peopleWanted) })),
+        m.contact
+          ? row("Contact", h("span", { class: "kv__v" }, h("a", { href: `mailto:${m.contact}`, text: m.contact })))
+          : null,
+      ].filter(Boolean),
     );
     body.appendChild(kv);
 

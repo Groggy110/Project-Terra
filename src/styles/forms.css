@@ -1,0 +1,268 @@
+/* The questionnaire, the ministry forms and the suggestion cards. */
+
+/* ---------- stepped questionnaire ---------- */
+
+.quiz__rail {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 18px;
+}
+
+.quiz__tick {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  transition: background 0.4s var(--ease-move);
+}
+
+.quiz__tick.is-on { background: var(--accent); }
+
+.quiz__body {
+  margin: 18px 0 4px;
+  min-height: 168px;
+}
+
+.quiz__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.quiz__chip {
+  padding: 7px 13px;
+  border: 1px solid var(--line, rgba(16, 42, 74, 0.14));
+  border-radius: 999px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.quiz__chip:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+.quiz__chip.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--ink);
+  font-weight: 520;
+}
+
+.quiz__cards { display: grid; gap: 9px; }
+
+.quiz__card {
+  padding: 13px 15px;
+  border: 1px solid var(--line, rgba(16, 42, 74, 0.14));
+  border-radius: 13px;
+  background: var(--surface);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.quiz__card.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.quiz__card b { display: block; font-size: 14.5px; font-weight: 570; color: var(--ink); }
+.quiz__card span { display: block; margin-top: 2px; font-size: 12.5px; color: var(--ink-2); }
+
+.quiz__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.quiz__nav-right { display: flex; gap: 8px; align-items: center; }
+
+/* ---------- shared form bits ---------- */
+
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.field__note {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.check {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.post-done { text-align: center; padding: 14px 0 6px; }
+
+.post-done svg {
+  width: 40px; height: 40px;
+  margin-bottom: 12px;
+  color: var(--accent);
+  fill: none; stroke: currentColor; stroke-width: 1.4;
+}
+
+.post-done.is-held svg { color: var(--urgent); }
+
+.post-done__why {
+  margin: 12px auto 0;
+  max-width: 46ch;
+  padding: 11px 13px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--urgent) 9%, transparent);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  text-align: left;
+}
+
+/* ---------- suggestions ---------- */
+
+.recs { display: grid; gap: 9px; }
+
+.recs__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.recs__again {
+  border: 0; background: none; padding: 0;
+  font: inherit; font-size: 12px; font-weight: 520;
+  color: var(--accent); cursor: pointer;
+}
+
+.recs__again:hover { text-decoration: underline; }
+
+.recs__card {
+  display: block;
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--line, rgba(16, 42, 74, 0.12));
+  border-radius: 14px;
+  background: var(--surface);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.16s, box-shadow 0.16s, transform 0.16s var(--ease-out);
+}
+
+.recs__card:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: 0 4px 14px -8px rgba(16, 42, 74, 0.3);
+  transform: translateY(-1px);
+}
+
+.recs__top { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+
+.recs__score {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent);
+}
+
+.recs__title {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 570;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.recs__where { display: block; margin-top: 3px; font-size: 12.5px; color: var(--ink-2); }
+
+/* The model's own sentence. Set apart from the need's own copy so it reads as
+   commentary about you rather than more of the listing. */
+.recs__why {
+  display: flex;
+  gap: 7px;
+  margin: 9px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 7%, transparent);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.recs__why svg {
+  flex: none; width: 13px; height: 13px; margin-top: 2px;
+  color: var(--accent); fill: none; stroke: currentColor; stroke-width: 2;
+}
+
+.recs__foot { margin: 2px 0 0; font-size: 11.5px; color: var(--faint); }
+
+.recs__wait { padding: 10px 0; }
+
+.recs__pulse {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 55%, transparent),
+    transparent);
+  background-size: 200% 100%;
+  animation: recs-sweep 1.25s linear infinite;
+  margin-bottom: 10px;
+}
+
+@keyframes recs-sweep {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* ---------- account chip in the top bar ---------- */
+
+.acct {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 11px 5px 5px;
+  border: 1px solid var(--line, rgba(16, 42, 74, 0.12));
+  border-radius: 999px;
+  background: var(--surface-veil);
+  backdrop-filter: blur(12px) saturate(1.3);
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s;
+}
+
+.acct:hover { border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+.acct__dot {
+  display: grid;
+  place-items: center;
+  width: 25px; height: 25px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .row2 { grid-template-columns: 1fr; }
+  .acct__name { display: none; }
+}
+
+/* The dialog owns the title, so this row only carries the refresh control. */
+.recs__head--bare {
+  margin-top: -6px;
+  margin-bottom: -2px;
+}
+
+/* The last line needs room of its own; without it the card edge cuts it. */
+.recs { padding-bottom: 2px; }
+.recs__foot { padding-bottom: 2px; }

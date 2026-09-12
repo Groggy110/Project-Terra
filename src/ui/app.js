@@ -7,12 +7,17 @@ import { clamp, smoothstep } from "../globe/geo.js";
 import { Network, emptyQuery, queryIsEmpty } from "../data/network.js";
 import { Board } from "./board.js";
 import { Filters } from "./filters.js";
-import { ModalLayer, aboutModal, needModal, postNeedModal } from "./modals.js";
+import { ModalLayer, aboutModal, needModal } from "./modals.js";
 import { Panel } from "./panel.js";
 import { add, clear, h, icons, nf } from "./dom.js";
 import { openPop, menuIcons } from "./pop.js";
 import { store } from "./store.js";
 import { REVISION } from "three";
+import { AuthGate } from "./auth.js";
+import { questionnaireModal } from "./questionnaire.js";
+import { ministryModal, postNeedModal as postNeedForm } from "./ministry.js";
+import { Recommendations } from "./recommend.js";
+import * as api from "../lib/api.js";
 
 const THEME_LABELS = { light: "Soft light", dark: "Deep night" };
 
@@ -29,7 +34,13 @@ const HERO_HOLD_MS = 1900;
 
 export class App {
   constructor() {
-    this.net = new Network();
+    // Empty until the backend answers. ?demo loads the fictional set instead,
+    // which is the only way to see a populated globe before anyone has posted.
+    this.demo = new URLSearchParams(location.search).has("demo");
+    this.net = new Network(this.demo ? Network.demoData() : undefined);
+    this.session = null;
+    this.profile = null;
+    this.ministry = null;
     this.query = emptyQuery();
     this.view = "globe";
     this.selected = null;
@@ -106,9 +117,32 @@ export class App {
       throw err;
     }
 
+    this.gate = new AuthGate({
+      onSignedIn: () => this.#afterAuth(),
+      onSkip: () => this.#renderAccount(),
+    });
+    this.recs = new Recommendations(h("div", { class: "recs" }), {
+      onOpenNeed: (need) => this.openNeed(need),
+      onNeedQuestionnaire: () => this.openQuestionnaire(),
+      heading: false, // the dialog already says it
+    });
+
+    if (api.isConfigured && !this.demo) {
+      await this.reloadNetwork();
+      await this.#afterAuth({ quiet: true });
+      api.onAuthChange((session) => {
+        const was = this.session?.user?.id ?? null;
+        this.session = session;
+        if ((session?.user?.id ?? null) !== was) this.#afterAuth({ quiet: true });
+      });
+    } else if (!api.isConfigured) {
+      this.toast("No backend configured — showing an empty globe. See .env.example.");
+    }
+
     this.panel.render(this.query);
     this.#renderCrumbs();
     this.#renderRail();
+    this.#renderAccount();
     this.syncReserved();
     // Coalesced: a window drag-resize delivers a stream of these, and each one
     // measures a dozen chrome boxes. One measurement per frame is plenty, and
@@ -223,7 +257,10 @@ export class App {
       else if (action === "post-need") {
         this.#leaveHero();
         this.postNeed();
-      } else if (action === "about") this.setView("about");
+      } else if (action === "sign-in") this.gate?.open("signin");
+      else if (action === "account") this.#accountMenu(trigger);
+      else if (action === "suggested") this.openSuggestions();
+      else if (action === "about") this.setView("about");
       else if (action === "cycle-theme") this.#theme(this.theme === "light" ? "dark" : "light");
       else if (action === "menu") this.#menu(trigger);
     });
@@ -417,6 +454,119 @@ export class App {
     ]);
   }
 
+  /* ------------------------------------------------------------- backend */
+
+  /** Pulls the public network and rebuilds every derived view from it. */
+  async reloadNetwork() {
+    try {
+      const data = await api.loadNetwork();
+      this.net.setData(data);
+      this.globe?.setMinistries(this.net.ministries);
+      this.applyQuery();
+      this.#renderRail();
+    } catch (err) {
+      console.error("[terra] could not load the network", err);
+      this.toast("Could not reach the network just now.");
+    }
+  }
+
+  /**
+   * Re-reads who is signed in and what they are. Called on every auth change,
+   * so it has to be safe to run repeatedly and safe to run signed out.
+   */
+  async #afterAuth({ quiet = false } = {}) {
+    this.session = await api.currentSession();
+    this.profile = this.session ? await api.myProfile() : null;
+    this.ministry = this.profile?.role === "ministry" ? await api.myMinistry() : null;
+    this.#renderAccount();
+
+    if (!this.session) return;
+    if (!quiet) this.toast(`Signed in as ${this.profile?.full_name || this.session.user.email}`);
+
+    // A volunteer who has never answered the questions is asked once, after a
+    // beat — immediately on top of a sign-in reads as a second gate.
+    if (this.profile?.role === "volunteer" && !this.askedQuestions) {
+      this.askedQuestions = true;
+      const existing = await api.loadQuestionnaire();
+      if (!existing) setTimeout(() => this.openQuestionnaire(), 900);
+    }
+  }
+
+  /** The chip in the top bar: sign in, or who you are. */
+  #renderAccount() {
+    const slot = this.el.acct ?? (this.el.acct = h("span"));
+    if (!slot.isConnected) {
+      this.el.nav.parentElement.querySelector(".topbar__actions")?.prepend(slot);
+    }
+    clear(slot);
+    if (!api.isConfigured) return;
+
+    if (!this.session) {
+      slot.appendChild(h("button", { class: "btn btn--ghost", "data-action": "sign-in" }, "Sign in"));
+      return;
+    }
+    const name = this.profile?.full_name || this.session.user.email || "You";
+    slot.appendChild(
+      h("button", { class: "acct", "data-action": "account", title: this.session.user.email },
+        h("span", { class: "acct__dot", text: name.trim().charAt(0).toUpperCase() }),
+        h("span", { class: "acct__name", text: name.split(" ")[0] }),
+      ),
+    );
+  }
+
+  #accountMenu(anchor) {
+    const isMinistry = this.profile?.role === "ministry";
+    openPop({
+      anchor,
+      parent: this.el.chrome,
+      items: [
+        { label: this.profile?.full_name || this.session.user.email, note: isMinistry ? "Ministry account" : "Volunteer account", icon: menuIcons.info },
+        null,
+        !isMinistry && { label: "Suggested for you", note: "Matched to your answers", icon: menuIcons.board, run: () => this.openSuggestions() },
+        !isMinistry && { label: "Answer the five questions", icon: menuIcons.panel, run: () => this.openQuestionnaire() },
+        isMinistry && !this.ministry && { label: "Put your ministry on the map", icon: menuIcons.panel, run: () => this.openMinistrySetup() },
+        isMinistry && this.ministry && { label: "Post a need", icon: menuIcons.board, run: () => this.postNeed() },
+        null,
+        { label: "Sign out", icon: menuIcons.trash, run: async () => { await api.signOut(); this.session = null; this.profile = null; this.ministry = null; this.#renderAccount(); this.toast("Signed out."); } },
+      ].filter((x) => x !== false),
+    });
+  }
+
+  openQuestionnaire() {
+    if (!this.session) return this.gate.open("signup");
+    questionnaireModal(this.modals, {
+      onSaved: () => {
+        this.toast("Saved. Finding needs that fit you…");
+        this.openSuggestions({ force: true });
+      },
+    });
+  }
+
+  openSuggestions({ force = false } = {}) {
+    if (!this.session) return this.gate.open("signin");
+    this.modals.show(() => {
+      const body = h("div", {},
+        h("h2", { class: "modal__title", text: "Suggested for you" }),
+        h("p", { class: "modal__lede", text: "Ranked against your answers by reading every open need." }),
+        this.recs.root,
+      );
+      this.recs.show({ force });
+      return body;
+    }, { width: 560 });
+  }
+
+  openMinistrySetup() {
+    if (!this.session) return this.gate.open("signup");
+    ministryModal(this.modals, {
+      onCreated: async (m) => {
+        this.ministry = m;
+        this.toast(`${m.name} is on the map.`);
+        await this.reloadNetwork();
+        this.postNeed();
+      },
+    });
+  }
+
   /* --------------------------------------------------------------- query */
 
   applyQuery() {
@@ -564,13 +714,22 @@ export class App {
     const fresh = this.net.needById(need.id) ?? need;
     needModal(this.modals, fresh, {
       onPickUp: (n) => {
+        // Written to the browser either way, and to the database as well when
+        // there is somebody to attribute it to. A signed-out visitor still gets
+        // to mark a need rather than being stopped to sign in first.
         this.net.toggleInterest(n.id);
         this.#afterDataChange();
-        this.toast(`Interest noted — ${n.ministryName} would email ${n.city}.`);
+        if (this.session) api.toggleInterest(n.id, true).catch(() => {});
+        this.toast(
+          this.session
+            ? `Interest noted — ${n.ministryName} can see it.`
+            : `Noted in this browser. Sign in so ${n.ministryName} can see it.`,
+        );
       },
       onDrop: (n) => {
         this.net.toggleInterest(n.id);
         this.#afterDataChange();
+        if (this.session) api.toggleInterest(n.id, false).catch(() => {});
         this.toast("Interest withdrawn.");
       },
       onMinistry: (n) => {
@@ -580,15 +739,27 @@ export class App {
     });
   }
 
-  postNeed(ministryId) {
-    postNeedModal(this.modals, {
-      ministryId: ministryId ?? this.selected?.id ?? this.net.ministries[3].id,
-      onPublish: (data) => {
-        const id = this.net.addNeed(data);
-        this.#afterDataChange();
-        const need = this.net.needById(id);
-        if (need) {
-          const m = this.net.ministryById.get(need.ministry);
+  /**
+   * The one entry point for posting, and it is a gate as much as a form: the
+   * write path needs a signed-in owner of a ministry, so anything missing is
+   * collected in order rather than failing at submit.
+   */
+  async postNeed() {
+    if (!api.isConfigured) return this.toast("No backend configured — posting is off.");
+    if (!this.session) return this.gate.open("signup");
+    if (this.profile?.role !== "ministry") {
+      await api.setRole("ministry").catch(() => {});
+      this.profile = await api.myProfile();
+    }
+    if (!this.ministry) this.ministry = await api.myMinistry();
+    if (!this.ministry) return this.openMinistrySetup();
+
+    postNeedForm(this.modals, {
+      ministry: this.ministry,
+      onPosted: async (res) => {
+        await this.reloadNetwork();
+        if (res.status === "live") {
+          const m = this.net.ministryById.get(this.ministry.id);
           if (m) {
             this.globe?.select(m.id);
             this.globe?.focus(m, { zoom: Math.max(this.globe.zoom, 0.5) });
@@ -596,7 +767,6 @@ export class App {
             this.panel.showMinistry(m);
           }
         }
-        this.toast("Posted. It is on the globe now, and in this browser only.");
       },
     });
   }

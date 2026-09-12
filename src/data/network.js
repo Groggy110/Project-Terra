@@ -5,7 +5,7 @@
  * than stored, so a need posted in the browser moves every number and every
  * pin label with it.
  */
-import { MINISTRIES, MINISTRY_BY_ID } from "./ministries.js";
+import { MINISTRIES } from "./ministries.js";
 import { NEEDS } from "./needs.js";
 import { FOCUS_BY_ID, REGION_BY_ID, TYPE_BY_ID, URGENCY_BY_ID } from "./taxonomy.js";
 import { store } from "../ui/store.js";
@@ -30,14 +30,34 @@ export const queryIsEmpty = (q) =>
   !q.locations.size;
 
 export class Network {
-  constructor() {
-    this.refresh();
+  /**
+   * Starts empty. The globe used to be a view over two files that were always
+   * there; it is now a view over whatever the backend hands it, and at the
+   * beginning that is nothing. An empty network is a legitimate state — a map
+   * with no pins yet, not an error — so every derived figure below has to cope
+   * with zero rather than assume at least one ministry exists.
+   */
+  constructor(data) {
+    this.setData(data ?? { ministries: [], needs: [] });
+  }
+
+  /** Replaces the whole source set; call refresh() to rebuild the derived view. */
+  setData({ ministries = [], needs = [] } = {}) {
+    this.sourceMinistries = ministries;
+    this.sourceNeeds = needs;
+    return this.refresh();
+  }
+
+  /** The fictional set, for developing against before anyone has posted. */
+  static demoData() {
+    return { ministries: MINISTRIES, needs: NEEDS };
   }
 
   refresh() {
+    const byId = new Map(this.sourceMinistries.map((m) => [m.id, m]));
     const posted = store.posted.map((n) => ({ ...n, mine: true }));
-    this.needs = [...posted, ...NEEDS].map((n, order) => {
-      const ministry = MINISTRY_BY_ID.get(n.ministry);
+    this.needs = [...posted, ...this.sourceNeeds].map((n, order) => {
+      const ministry = byId.get(n.ministry);
       return {
         ...n,
         order,
@@ -57,7 +77,7 @@ export class Network {
       this.byMinistry.get(need.ministry).push(need);
     }
 
-    this.ministries = MINISTRIES.map((m) => {
+    this.ministries = this.sourceMinistries.map((m) => {
       const needs = this.byMinistry.get(m.id) ?? [];
       return {
         ...m,
