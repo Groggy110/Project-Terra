@@ -1,0 +1,418 @@
+/* The right-hand rail: network summary, most pressing needs, ministry detail. */
+
+.panel {
+  position: absolute;
+  top: 112px;
+  right: var(--edge);
+  width: var(--panel-w);
+  max-height: calc(100vh - 112px - 96px);
+  display: flex;
+  flex-direction: column;
+  padding: 7px 7px 0;
+  border-radius: var(--r-card);
+  background: var(--surface-veil);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(20px) saturate(1.5);
+  box-shadow: var(--shadow-2);
+  transition: opacity 0.4s var(--ease), translate 0.45s var(--ease-out);
+}
+
+.panel.is-out,
+body.board-open .panel {
+  opacity: 0;
+  translate: 18px 0;
+  pointer-events: none;
+}
+
+.panel__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 12px 12px;
+  flex: none;
+}
+
+.panel__title {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.panel__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.panel__back svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.panel__x {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--faint);
+  transition: color 0.16s, background 0.16s;
+}
+
+.panel__x:hover {
+  color: var(--ink);
+  background: var(--surface-sunk);
+}
+
+.panel__x svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.panel__body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 12px 2px;
+  /* A short fade at each end, so a card that runs under the head or the foot
+     reads as scrolled rather than as a half-painted card. Long enough to soften
+     the edge, short enough that the text under it stays legible. */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 9px, #000 calc(100% - 24px), transparent 100%);
+}
+
+.panel__foot {
+  flex: none;
+  display: flex;
+  gap: 9px;
+  padding: 13px 12px 14px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 34%, transparent);
+  border-radius: 0 0 calc(var(--r-card) - 7px) calc(var(--r-card) - 7px);
+}
+
+.panel__foot .btn {
+  flex: 1;
+  justify-content: center;
+  padding: 0 10px;
+  font-size: 14px;
+}
+
+/* ---------- summary tile ---------- */
+
+.stat {
+  padding: 15px 16px 16px;
+  border-radius: var(--r-inner);
+  background: color-mix(in srgb, var(--surface-sunk) 72%, transparent);
+  border: 1px solid var(--line);
+}
+
+:root[data-theme="dark"] .stat {
+  background: color-mix(in srgb, var(--surface-sunk) 60%, transparent);
+}
+
+.stat__k {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stat__v {
+  margin-top: 9px;
+  font-size: 30px;
+  font-weight: 640;
+  letter-spacing: -0.028em;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat__sub {
+  margin-top: 9px;
+  font-size: 13px;
+  color: var(--body);
+  letter-spacing: -0.004em;
+}
+
+.stat__sub b {
+  font-weight: 560;
+  color: var(--ink-2);
+}
+
+.section {
+  margin: 19px 0 9px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section span {
+  margin-left: auto;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+
+/* ---------- need card ---------- */
+
+.need {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px 13px 13px;
+  margin-bottom: 8px;
+  border-radius: var(--r-tile);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgba(16, 42, 74, 0.03);
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.16s var(--ease-out);
+}
+
+.need:hover {
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  box-shadow: 0 2px 4px rgba(16, 42, 74, 0.05), 0 12px 26px -14px rgba(16, 42, 74, 0.28);
+  transform: translateY(-1px);
+}
+
+.need__top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+
+.need__kind {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.need__title {
+  font-size: 15.5px;
+  font-weight: 560;
+  letter-spacing: -0.014em;
+  line-height: 1.28;
+  color: var(--ink);
+}
+
+.need__meta {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: -0.002em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.need.is-taken {
+  border-color: color-mix(in srgb, var(--ongoing) 40%, transparent);
+  background: color-mix(in srgb, var(--ongoing) 5%, var(--surface));
+}
+
+/* ---------- ministry detail ---------- */
+
+.ministry__name {
+  font-size: 20px;
+  font-weight: 620;
+  letter-spacing: -0.024em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.ministry__where {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ministry__blurb {
+  margin: 13px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--body);
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.tag {
+  font-size: 11.5px;
+  padding: 3px 8px 4px;
+  border-radius: 7px;
+  background: var(--surface-sunk);
+  color: var(--body);
+}
+
+.tag--focus {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.kv {
+  margin-top: 15px;
+  border-top: 1px solid var(--line);
+}
+
+.kv__row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 1px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.kv__k {
+  color: var(--muted);
+  flex: none;
+  width: 88px;
+}
+
+.kv__v {
+  color: var(--ink-2);
+  margin-left: auto;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.kv__v a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.kv__v a:hover {
+  text-decoration: underline;
+}
+
+/* ---------- right-edge rail, revealed when the panel is closed ---------- */
+
+.rail {
+  position: absolute;
+  right: var(--edge);
+  bottom: 26px;
+  width: 214px;
+  text-align: right;
+  pointer-events: none;
+  /* Says the same thing as the panel's summary tile, so it only stands in when
+     the panel is gone. While the panel is up it would both duplicate it and,
+     on a short window, collide with its lower edge. */
+  opacity: 0;
+  /* Out faster than the panel comes in, so the two never read at once during
+     the entrance. */
+  transition: opacity 0.26s var(--ease);
+}
+
+body.no-panel .rail {
+  opacity: 1;
+  transition: opacity 0.5s var(--ease) 0.15s;
+}
+
+body.board-open .rail {
+  opacity: 0;
+}
+
+.rail__legend {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-bottom: 13px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.rail__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.rail__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--urgent);
+}
+
+.rail__dot--urgent {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--urgent) 26%, transparent);
+}
+
+.rail__dot--open {
+  background: color-mix(in srgb, var(--urgent) 62%, transparent);
+}
+
+.rail__dot--city {
+  background: color-mix(in srgb, var(--ink) 34%, transparent);
+}
+
+.rail__head,
+.rail__foot {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.rail__head {
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--line);
+}
+
+.rail__foot {
+  margin-top: 9px;
+}
+
+.rail__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 4px 0 3px;
+  font-size: 12.5px;
+}
+
+.rail__k {
+  color: var(--muted);
+  letter-spacing: -0.004em;
+}
+
+.rail__v {
+  font-weight: 580;
+  color: color-mix(in srgb, var(--ink) 62%, transparent);
+  font-variant-numeric: tabular-nums;
+}

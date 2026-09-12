@@ -1,0 +1,383 @@
+/* The canvas and the projected label layer that rides on top of it. */
+
+#globe {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+/* The world arrives rather than appearing: the disc and its pins come up out
+   of the paper while the loading veil goes the other way. */
+#globe,
+.overlay {
+  opacity: 0.16;
+  transition: opacity 1.2s var(--ease);
+}
+
+body.is-live #globe,
+body.is-live .overlay {
+  opacity: 1;
+}
+
+#globe.is-dragging {
+  cursor: grabbing;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  contain: strict;
+}
+
+/* Every marker is absolutely placed at its projected point and offsets itself
+   from there, so the JS only ever writes translate(). */
+.mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform, opacity;
+}
+
+/* ---------- ministry pin ---------- */
+
+.pin {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  translate: -4.5px -4.5px;
+  cursor: pointer;
+  background: none;
+}
+
+/* A 10px dot is not a target. The pad is a pseudo-element rather than
+   padding, so growing what you can hit never grows what the layout claims. */
+.pin::before {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: 50%;
+  translate: 0 -50%;
+  width: 29px;
+  height: 29px;
+  border-radius: 999px;
+}
+
+/* Small. A pin is a mark on a map, not a button sitting on one — the ring and
+   the shadow are what make it read at 8px, not diameter. The highlight is a
+   single off-centre stop, which is enough to give it a surface without
+   turning it into a glossy bauble. */
+.pin__dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background:
+    radial-gradient(
+      circle at 34% 28%,
+      color-mix(in srgb, var(--urgent) 76%, #fff) 0%,
+      var(--urgent) 62%
+    ),
+    var(--urgent);
+  box-shadow:
+    0 0 0 1.6px rgba(255, 255, 255, 0.96),
+    0 0.5px 1px rgba(16, 42, 74, 0.3),
+    0 1.5px 4px rgba(16, 42, 74, 0.28);
+  transition: scale 0.18s var(--ease-out), background 0.2s;
+}
+
+:root[data-theme="dark"] .pin__dot {
+  box-shadow:
+    0 0 0 1.6px rgba(9, 15, 25, 0.86),
+    0 0.5px 1px rgba(0, 0, 0, 0.5),
+    0 1.5px 5px rgba(0, 0, 0, 0.55);
+}
+
+/* A ministry with urgent needs carries a standing ring, so the pressure on
+   the map reads before anything has been opened. The hover ring below is a
+   separate ::after, which is why this one can simply sit there. */
+.pin.is-urgent .pin__dot::before {
+  content: "";
+  position: absolute;
+  inset: -6.5px;
+  border-radius: 999px;
+  border: 1.4px solid color-mix(in srgb, var(--urgent) 32%, transparent);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--urgent) 13%, transparent) 38%,
+    transparent 72%
+  );
+  pointer-events: none;
+}
+
+.pin__dot::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  border: 1.5px solid var(--urgent);
+  opacity: 0;
+  scale: 0.6;
+  transition: opacity 0.24s, scale 0.28s var(--ease-out);
+}
+
+.pin:hover .pin__dot,
+.pin.is-active .pin__dot {
+  scale: 1.18;
+}
+
+.pin:hover .pin__dot::after,
+.pin.is-active .pin__dot::after {
+  opacity: 0.55;
+  scale: 1;
+}
+
+.pin.is-active .pin__dot::after {
+  animation: pin-pulse 2.4s var(--ease) infinite;
+}
+
+@keyframes pin-pulse {
+  0% {
+    opacity: 0.55;
+    scale: 1;
+  }
+  70% {
+    opacity: 0;
+    scale: 1.75;
+  }
+  100% {
+    opacity: 0;
+    scale: 1.75;
+  }
+}
+
+/* Taken out of the flow: in it, a chip that is merely transparent still gave
+   the button a hundred pixels of invisible width, which swallowed clicks
+   meant for the globe and dragged the hit target away from the dot. */
+.pin__chip {
+  position: absolute;
+  left: 17px;
+  top: 50%;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 9px 5px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  /* No backdrop-filter. The plate is 95% opaque, so a blur behind it changes
+     almost nothing you can see — but there are up to thirty of these, every
+     one of them moves every frame, and the ground they move over is a canvas
+     that redraws every frame, so the compositor was re-sampling and blurring
+     thirty backdrops per frame for the last five percent. */
+  box-shadow: 0 1px 2px rgba(16, 42, 74, 0.16), 0 6px 16px -8px rgba(16, 42, 74, 0.32);
+  font-size: 14.5px;
+  font-weight: 520;
+  letter-spacing: -0.008em;
+  color: var(--ink);
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  translate: -4px -50%;
+  transition:
+    opacity 0.3s var(--ease),
+    translate 0.3s var(--ease),
+    visibility 0.3s,
+    background 0.2s;
+}
+
+/* Below the zoom at which the layer letters pins, hovering one still names
+   its city — the dot is never a dead end. */
+.pin.show-chip .pin__chip,
+.pin:hover .pin__chip,
+.pin:focus-visible .pin__chip {
+  opacity: 1;
+  visibility: visible;
+  translate: 0 -50%;
+}
+
+:root[data-theme="dark"] .pin__chip {
+  background: var(--surface-veil);
+}
+
+.pin:hover .pin__chip {
+  background: var(--surface);
+}
+
+.pin__chip em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--urgent);
+}
+
+/* ---------- city / country labels ---------- */
+
+.place {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  translate: 0 -50%;
+  font-size: 13.5px;
+  letter-spacing: -0.004em;
+  color: var(--ink-2);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.35s var(--ease);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55), 0 0 7px rgba(255, 255, 255, 0.85),
+    0 0 14px rgba(255, 255, 255, 0.6);
+}
+
+:root[data-theme="dark"] .place {
+  color: #cfdcec;
+  text-shadow: 0 0 8px rgba(4, 8, 16, 0.95), 0 0 16px rgba(4, 8, 16, 0.7);
+}
+
+.place.is-in {
+  opacity: 1;
+}
+
+/* the little cartographic tick that anchors a plain city name */
+.place__tick {
+  width: 1px;
+  height: 13px;
+  flex: none;
+  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
+}
+
+:root[data-theme="dark"] .place__tick {
+  background: color-mix(in srgb, #cfdcec 55%, transparent);
+  box-shadow: 0 0 6px rgba(4, 8, 16, 0.9);
+}
+
+.place--capital .place__tick {
+  height: 15px;
+  width: 1.5px;
+}
+
+/* countries get the same chip as a pin, minus the dot */
+.place--country {
+  translate: -50% -50%;
+  padding: 4px 10px 5px;
+  border-radius: 8px;
+  background: var(--surface-veil);
+  /* Same bargain as the pin plate, and the veil is 91% opaque. */
+  box-shadow: 0 1px 2px rgba(16, 42, 74, 0.12), 0 6px 16px -8px rgba(16, 42, 74, 0.26);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  text-shadow: none;
+}
+
+:root[data-theme="dark"] .place--country {
+  color: var(--ink);
+}
+
+/* ---------- loading veil ---------- */
+
+/* A loading screen, and only that: the paper is already down, the mark and
+   the bar stand on it, and everything else — chrome, globe, headline — is
+   still held at nothing. No curtain is needed because there is nothing behind
+   it yet; when the bar fills, the page comes up rather than being uncovered. */
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transition: opacity 0.5s var(--ease) 0.1s, visibility 0.6s;
+}
+
+.boot.is-done {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* In on a rise, out on a rise: the loading screen leaves the way it came,
+   travelling far enough to read as *going* rather than as fading where it
+   stands. It clears before the chrome is fully up, so the two movements read
+   as one handover. */
+.boot__inner {
+  text-align: center;
+  animation: boot-rise 0.7s var(--ease-out) both;
+}
+
+.boot.is-done .boot__inner {
+  opacity: 0;
+  translate: 0 -30px;
+  transition: opacity 0.4s var(--ease), translate 0.62s var(--ease-out);
+}
+
+@keyframes boot-rise {
+  from {
+    opacity: 0;
+    translate: 0 14px;
+  }
+}
+
+.boot__mark {
+  width: 38px;
+  height: 38px;
+  margin: 0 auto 18px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.25;
+  animation: boot-spin 6s linear infinite;
+}
+
+@keyframes boot-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+.boot__label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.boot__bar {
+  width: 172px;
+  height: 2px;
+  margin: 14px auto 0;
+  border-radius: 99px;
+  /* On paper rather than on a card, so the track needs to be ink at low
+     opacity — the sunk surface colour disappears into the wash. */
+  background: color-mix(in srgb, var(--ink) 11%, transparent);
+  overflow: hidden;
+}
+
+.boot__fill {
+  height: 100%;
+  width: 0;
+  border-radius: 99px;
+  background: var(--accent);
+  transition: width 0.4s var(--ease);
+}
+
+/* The bar earns its last frame: it reaches the end, holds for a beat, and
+   only then does the screen leave. Filling and vanishing on the same frame
+   reads as the load being cut short. */
+.boot.is-done .boot__bar {
+  opacity: 0;
+  transition: opacity 0.3s var(--ease) 0.16s;
+}
+
+.boot__fail {
+  max-width: 380px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--body);
+}

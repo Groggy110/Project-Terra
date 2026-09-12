@@ -1,0 +1,474 @@
+/* Design tokens, reset and the shared primitives (buttons, badges, labels). */
+
+:root {
+  --sans: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Inter, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "JetBrains Mono", monospace;
+
+  --ink: #0e1726;
+  --ink-2: #2c3a4e;
+  --body: #47566b;
+  --muted: #90a0b5;
+  --faint: #adb9c9;
+  --line: rgba(16, 42, 74, 0.1);
+  --line-2: rgba(16, 42, 74, 0.17);
+
+  --surface: #ffffff;
+  --surface-veil: rgba(255, 255, 255, 0.91);
+  /* The colour the ground is actually painted, which the hero scrim and the
+     headline's halo both mix from: a scrim in --surface reads as a white
+     card laid on the paper, one in --paper reads as the paper itself. */
+  --paper: #f4f8fc;
+  --surface-soft: #f3f6fa;
+  --surface-sunk: #eaf0f6;
+
+  --accent: #2f6fd0;
+  --accent-hover: #2a63bc;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(47, 111, 208, 0.1);
+  --accent-ring: rgba(47, 111, 208, 0.18);
+
+  --urgent: #c0362b;
+  --soon: #cf7a25;
+  --ongoing: #5a8f6d;
+
+  --amber-bg: #fdf7e7;
+  --amber-line: #f0e2bd;
+  --amber-ink: #86662c;
+
+  --shadow-1: 0 1px 2px rgba(16, 42, 74, 0.05), 0 6px 18px -8px rgba(16, 42, 74, 0.14);
+  --shadow-2: 0 2px 6px rgba(16, 42, 74, 0.06), 0 24px 56px -20px rgba(16, 42, 74, 0.24);
+  --shadow-3: 0 8px 20px rgba(16, 42, 74, 0.08), 0 48px 100px -34px rgba(16, 42, 74, 0.4);
+
+  --r-card: 22px;
+  --r-inner: 15px;
+  --r-tile: 13px;
+  --r-field: 12px;
+  --r-modal: 26px;
+
+  --panel-w: 346px;
+  --edge: 28px;
+  --ease: cubic-bezier(0.22, 0.61, 0.24, 1);
+  --ease-out: cubic-bezier(0.16, 0.84, 0.28, 1);
+  /* For the entrance: the find bar riding up into the top bar.
+     --ease leaves the mark at nearly three times its average speed, which is
+     right for a control answering a click but reads as a flick on a long
+     travel across the page. This one starts gently, does its work in the
+     middle and settles for a long time — the same shape as the camera's
+     easing, so the chrome and the globe look like one movement rather than
+     two things that happen to start together. */
+  --ease-move: cubic-bezier(0.4, 0.02, 0.2, 1);
+}
+
+:root[data-theme="dark"] {
+  --ink: #eaf1fa;
+  --ink-2: #c3d2e4;
+  --body: #9db0c8;
+  --muted: #6f829c;
+  --faint: #5b6d86;
+  --line: rgba(150, 185, 230, 0.14);
+  --line-2: rgba(150, 185, 230, 0.24);
+
+  --surface: #121b29;
+  --surface-veil: rgba(18, 27, 41, 0.88);
+  --paper: #0b111b;
+  --surface-soft: #18222f;
+  --surface-sunk: #1d2836;
+
+  --accent: #4c8bea;
+  --accent-hover: #639bf0;
+  --accent-soft: rgba(76, 139, 234, 0.16);
+  --accent-ring: rgba(76, 139, 234, 0.26);
+
+  --urgent: #e2685a;
+  --soon: #e0a153;
+  --ongoing: #74b78c;
+
+  --amber-bg: rgba(138, 106, 47, 0.16);
+  --amber-line: rgba(206, 168, 92, 0.3);
+  --amber-ink: #d8b878;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px -8px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.34), 0 26px 60px -22px rgba(0, 0, 0, 0.66);
+  --shadow-3: 0 10px 24px rgba(0, 0, 0, 0.4), 0 52px 110px -36px rgba(0, 0, 0, 0.76);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--sans);
+  font-size: 15px;
+  color: var(--body);
+  background: var(--surface-soft);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ---------- ground ---------- */
+
+.paper {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-color: var(--paper);
+  transition: opacity 0.5s var(--ease);
+}
+
+/* The wash is the ground, at full strength: pale blue pools with granulation
+   in them, on near-white paper, and a clear middle for the globe to rest in.
+   Held back, it read as a flat grey field with a hint of something in it. */
+.paper::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("/textures/paper-light.jpg");
+  /* The whole sheet, not a crop of it. `cover` on a wide window frames two or
+     three of the largest pools and nothing else, and at that size a pool is a
+     grey cloud rather than a wash; fitting the sheet keeps its composition —
+     clear in the middle, gathered at the edges — which is the reason it was
+     painted that way. The squash from 16:9 to the window is invisible on a
+     field with no straight line in it. */
+  background-size: 100% 100%;
+}
+
+:root[data-theme="dark"] .paper::before {
+  background-image: url("/textures/paper-dark.jpg");
+  opacity: 1;
+}
+
+.paper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("/textures/grain.png");
+  background-size: 420px;
+  opacity: 0.05;
+  mix-blend-mode: multiply;
+}
+
+:root[data-theme="dark"] .paper::after {
+  opacity: 0.06;
+  mix-blend-mode: screen;
+}
+
+/* ---------- hero ---------- */
+
+/* The headline is the page while the world is still arriving: it stands in
+   front of the globe, at full ink, and retires altogether once you engage.
+   Its predecessor sat *behind* the disc as a watermark, which left the middle
+   of the sentence eclipsed and the ends of it floating — a caption you had to
+   read around rather than a headline. */
+.hero {
+  position: fixed;
+  z-index: 3;
+  left: 50%;
+  /* Deep enough into the disc that a good band of the northern hemisphere is
+     still open above it — the pins up there are the first evidence that the
+     map has anything on it. */
+  top: 19.5%;
+  translate: -50% -14px;
+  width: min(980px, 88vw);
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.5s var(--ease),
+    translate 0.7s var(--ease),
+    visibility 0.5s;
+}
+
+/* Two classes, because the entrance and the headline are on different clocks:
+   is-hero composes the chrome from the first frame, hero-in lands the words
+   as the camera finishes withdrawing to the whole globe. */
+body.is-hero.hero-in .hero {
+  opacity: 1;
+  visibility: visible;
+  translate: -50% 0;
+  animation: hero-in 1.1s var(--ease-out) both;
+}
+
+@keyframes hero-in {
+  from {
+    opacity: 0;
+    translate: -50% 20px;
+  }
+}
+
+/* Legibility is carried by the halo on the glyphs themselves; this is only a
+   breath of the paper colour laid over the busiest part of the disc, so the
+   coastlines stop competing with the sentence. Strong enough and it stops
+   being a headline over a world and becomes fog. */
+.hero::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  translate: -50% -50%;
+  z-index: -1;
+  width: 126%;
+  height: 235%;
+  pointer-events: none;
+  background: radial-gradient(
+    closest-side at 50% 50%,
+    color-mix(in srgb, var(--paper) 46%, transparent) 0%,
+    color-mix(in srgb, var(--paper) 34%, transparent) 40%,
+    color-mix(in srgb, var(--paper) 13%, transparent) 66%,
+    transparent 84%
+  );
+}
+
+:root[data-theme="dark"] .hero::before {
+  background: radial-gradient(
+    closest-side at 50% 50%,
+    color-mix(in srgb, var(--paper) 62%, transparent) 0%,
+    color-mix(in srgb, var(--paper) 46%, transparent) 40%,
+    color-mix(in srgb, var(--paper) 18%, transparent) 66%,
+    transparent 84%
+  );
+}
+
+.hero__title {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  font-size: clamp(36px, 4.62vw, 71px);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.03;
+  text-wrap: balance;
+  color: var(--ink);
+  /* Two stops, tight and wide: the tight one keeps the letterforms crisp
+     where they cross a coastline, the wide one settles the ground behind a
+     whole word rather than ringing each glyph. */
+  text-shadow:
+    0 0 9px color-mix(in srgb, var(--paper) 88%, transparent),
+    0 0 34px color-mix(in srgb, var(--paper) 62%, transparent);
+}
+
+.hero__sub {
+  margin: 18px auto 0;
+  max-width: 600px;
+  font-size: 16.5px;
+  line-height: 1.6;
+  letter-spacing: -0.006em;
+  text-wrap: balance;
+  color: var(--ink-2);
+  text-shadow:
+    0 0 8px color-mix(in srgb, var(--paper) 90%, transparent),
+    0 0 24px color-mix(in srgb, var(--paper) 70%, transparent);
+}
+
+/* ---------- primitives ---------- */
+
+.ml {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 15px;
+  border-radius: 999px;
+  font-size: 14.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.12s;
+}
+
+.btn:active {
+  transform: translateY(0.5px) scale(0.994);
+}
+
+.btn--accent {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 1px 2px rgba(16, 42, 74, 0.14), 0 10px 22px -10px rgba(47, 111, 208, 0.62);
+}
+
+.btn--accent:hover {
+  background: var(--accent-hover);
+}
+
+.btn--ghost {
+  background: var(--surface-veil);
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: var(--shadow-1);
+}
+
+.btn--ghost:hover {
+  color: var(--ink);
+  border-color: var(--line-2);
+}
+
+.btn--soft {
+  background: var(--surface-sunk);
+  color: var(--ink-2);
+}
+
+.btn--soft:hover {
+  background: color-mix(in srgb, var(--surface-sunk) 82%, var(--ink) 6%);
+}
+
+.btn--icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  color: var(--faint);
+  border-radius: 999px;
+}
+
+.btn--icon:hover {
+  color: var(--ink-2);
+  background: var(--surface-veil);
+}
+
+.ico {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ico circle {
+  fill: none;
+}
+
+.ico .ico__fill,
+.ico .ico__solid {
+  fill: currentColor;
+  stroke: none;
+}
+
+.ico--theme {
+  stroke-width: 1.4;
+}
+
+.badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 6px 2px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.badge--demo {
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-line);
+  color: var(--amber-ink);
+}
+
+.badge--remote {
+  background: var(--surface-sunk);
+  color: var(--body);
+  border: 1px solid transparent;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-size: 10px;
+  padding: 2px 6px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex: none;
+  background: var(--urgent);
+}
+
+.dot--soon {
+  background: var(--soon);
+}
+
+.dot--ongoing {
+  background: var(--ongoing);
+}
+
+.scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+
+.scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scroll::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Keyboard focus is visible on everything that takes it; pointer focus stays
+   quiet. :where() keeps this at zero specificity, so a component that wants a
+   different ring simply states one. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 72%, transparent);
+  outline-offset: 2px;
+  border-radius: 9px;
+}
+
+/* Fields already draw their own ring; a second one around it reads as a fault. */
+.input:focus-visible,
+.select:focus-visible,
+.area:focus-visible,
+.search input:focus-visible {
+  outline: none;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

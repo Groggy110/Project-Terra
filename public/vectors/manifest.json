@@ -1,0 +1,70 @@
+{
+  "50m/coast": {
+    "file": "50m-coast.bin",
+    "kind": "lines",
+    "features": 1086,
+    "points": 27166
+  },
+  "50m/borders": {
+    "file": "50m-borders.bin",
+    "kind": "lines",
+    "features": 387,
+    "points": 6295
+  },
+  "50m/rivers": {
+    "file": "50m-rivers.bin",
+    "kind": "lines",
+    "features": 629,
+    "points": 8043
+  },
+  "50m/land": {
+    "file": "50m-land.bin",
+    "kind": "polys",
+    "features": 1075,
+    "points": 27196
+  },
+  "50m/lakes": {
+    "file": "50m-lakes.bin",
+    "kind": "polys",
+    "features": 370,
+    "points": 6537
+  },
+  "10m/coast": {
+    "file": "10m-coast.bin",
+    "kind": "lines",
+    "features": 3820,
+    "points": 242006
+  },
+  "10m/borders": {
+    "file": "10m-borders.bin",
+    "kind": "lines",
+    "features": 7514,
+    "points": 40372
+  },
+  "10m/rivers": {
+    "file": "10m-rivers.bin",
+    "kind": "lines",
+    "features": 2288,
+    "points": 110407
+  },
+  "10m/land": {
+    "file": "10m-land.bin",
+    "kind": "polys",
+    "features": 5691,
+    "points": 255908
+  },
+  "10m/lakes": {
+    "file": "10m-lakes.bin",
+    "kind": "polys",
+    "features": 1321,
+    "points": 79563
+  },
+  "places": {
+    "file": "places.json",
+    "count": 5596
+  },
+  "countries": {
+    "file": "countries.json",
+    "count": 242
+  }
+}

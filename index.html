@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>Terra — Ministry Needs Network</title>
+    <meta name="description" content="A map of what ministries need. Every pin is a ministry with real needs on the ground." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%232f6fd0' stroke-width='2'/%3E%3Cellipse cx='16' cy='16' rx='5.5' ry='13' fill='none' stroke='%232f6fd0' stroke-width='2'/%3E%3Cpath d='M3.5 12h25M3.5 20h25' stroke='%232f6fd0' stroke-width='2'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/styles/base.css" />
+    <link rel="stylesheet" href="/src/styles/chrome.css" />
+    <link rel="stylesheet" href="/src/styles/globe.css" />
+    <link rel="stylesheet" href="/src/styles/panel.css" />
+    <link rel="stylesheet" href="/src/styles/board.css" />
+    <link rel="stylesheet" href="/src/styles/modal.css" />
+  </head>
+  <body>
+    <!-- watercolour ground, painted behind everything -->
+    <div class="paper" aria-hidden="true"></div>
+
+    <!-- hero stands in front of the globe and retires once you engage with it -->
+    <div class="hero" id="hero" aria-hidden="true">
+      <h1 class="hero__title">Where ministries need help</h1>
+      <p class="hero__sub">
+        Every pin is a ministry with real needs on the ground. Find one, pick up a
+        need, and get in touch.
+      </p>
+    </div>
+
+    <canvas id="globe" aria-label="Globe of ministries and their open needs" role="img"></canvas>
+
+    <!-- projected city / country / pin labels -->
+    <div class="overlay" id="overlay" aria-hidden="true"></div>
+
+    <div class="chrome">
+      <header class="topbar">
+        <a class="brand" href="#" data-action="reset-view" title="Back to the whole globe">
+          <svg class="brand__mark" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9.4" />
+            <ellipse cx="12" cy="12" rx="4" ry="9.4" />
+            <path d="M2.9 8.7h18.2M2.9 15.3h18.2" />
+          </svg>
+          <span class="brand__name">Terra</span>
+          <span class="brand__sep">/</span>
+          <span class="brand__product">Ministry Needs Network</span>
+          <span class="badge badge--demo">Demo data</span>
+        </a>
+
+        <nav class="nav" id="nav">
+          <button class="nav__item is-active" data-view="globe">Globe</button>
+          <button class="nav__item" data-view="needs">Needs</button>
+          <button class="nav__item" data-view="about">About</button>
+        </nav>
+
+        <div class="topbar__actions">
+          <button class="btn btn--accent" data-action="post-need">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.2v9.6M3.2 8h9.6" /></svg>
+            Post a need
+          </button>
+          <button class="btn btn--ghost" data-action="cycle-theme" id="themeBtn">
+            <svg class="ico ico--theme" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.1" />
+              <path d="M8 1.9a6.1 6.1 0 0 0 0 12.2z" class="ico__fill" />
+            </svg>
+            <span id="themeName">Soft light</span>
+          </button>
+          <button class="btn btn--icon" data-action="menu" aria-label="More" id="menuBtn">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="3.2" cy="8" r="1.35" /><circle cx="8" cy="8" r="1.35" /><circle cx="12.8" cy="8" r="1.35" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
+
+      <div class="findbar">
+        <div class="search" id="search">
+          <svg class="search__ico" viewBox="0 0 18 18" aria-hidden="true">
+            <circle cx="7.6" cy="7.6" r="5.4" /><path d="M11.6 11.6 15.8 15.8" />
+          </svg>
+          <input
+            id="searchInput"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Search needs, ministries, skills or places"
+          />
+          <button class="search__clear" id="searchClear" aria-label="Clear search" hidden>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
+          </button>
+          <div class="suggest pop" id="suggest" hidden></div>
+        </div>
+        <div class="filters" id="filters"></div>
+      </div>
+
+      <div class="dial" id="dial">
+        <button class="dial__btn" data-action="zoom-in" aria-label="Zoom in">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 5.2v9.6M5.2 10h9.6" /></svg>
+        </button>
+        <button class="dial__btn" data-action="zoom-out" aria-label="Zoom out">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5.2 10h9.6" /></svg>
+        </button>
+        <button class="dial__btn" data-action="reset-view" aria-label="Reset the view">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M15.4 8.2A5.8 5.8 0 1 0 15.9 12" /><path d="M15.9 4.6v3.8h-3.8" />
+          </svg>
+        </button>
+        <button class="dial__btn" data-action="about" aria-label="About this map">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <circle cx="10" cy="10" r="7.2" /><path d="M10 9v5.1" /><circle cx="10" cy="6.4" r=".95" class="ico__solid" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="hint" id="hint">drag to rotate · zoom for cities · click a pin</div>
+
+      <aside class="panel" id="panel"></aside>
+      <div class="sheet" id="sheet"></div>
+      <button class="grabber" id="grabber" aria-label="Open the needs board"></button>
+    </div>
+
+    <div class="modals" id="modals"></div>
+    <div class="toasts" id="toasts"></div>
+
+    <noscript>
+      <p style="padding: 40px; font: 16px system-ui">Terra needs JavaScript and WebGL2 to draw the globe.</p>
+    </noscript>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,439 @@
+/* Centred dialogs: about, post a need, need detail. */
+
+.modals {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, #0b1524 34%, transparent);
+  backdrop-filter: blur(7px) saturate(1.1);
+  opacity: 0;
+  pointer-events: auto;
+  animation: scrim-in 0.32s var(--ease) forwards;
+}
+
+.scrim.is-out {
+  animation: scrim-out 0.26s var(--ease) forwards;
+}
+
+@keyframes scrim-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scrim-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.modal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: min(660px, calc(100vw - 32px));
+  max-height: min(90vh, 920px);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-modal);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-3);
+  pointer-events: auto;
+  animation: modal-in 0.38s var(--ease-out) forwards;
+}
+
+.modal.is-out {
+  animation: modal-out 0.24s var(--ease) forwards;
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    translate: -50% calc(-50% + 14px);
+    scale: 0.985;
+  }
+}
+
+@keyframes modal-out {
+  to {
+    opacity: 0;
+    translate: -50% calc(-50% + 8px);
+    scale: 0.99;
+  }
+}
+
+/* The dialogs wrap their body and footer in one element so the card itself
+   stays a two-row flex column; without this the body would not shrink and its
+   content would spill past the card's rounded edge. */
+.modal__inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.modal__x {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--faint);
+  transition: color 0.16s, background 0.16s;
+  z-index: 2;
+}
+
+.modal__x:hover {
+  color: var(--ink);
+  background: var(--surface-sunk);
+}
+
+.modal__x svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.modal__body {
+  padding: 34px 38px 30px;
+  min-height: 0;
+  /* fades the last line when there is more below, so a short window reads as
+     scrollable rather than clipped */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent 100%);
+}
+
+.modal__eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.modal__title {
+  margin: 11px 0 0;
+  font-size: 31px;
+  font-weight: 640;
+  letter-spacing: -0.032em;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.modal__lede {
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.prose p {
+  margin: 17px 0 0;
+  font-size: 15.5px;
+  line-height: 1.68;
+  color: var(--body);
+  letter-spacing: -0.004em;
+}
+
+.prose code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: var(--surface-sunk);
+  color: var(--ink-2);
+}
+
+.notice {
+  margin: 22px 0 0;
+  padding: 15px 17px;
+  border-radius: var(--r-inner);
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-line);
+  font-size: 14.5px;
+  line-height: 1.62;
+  color: var(--amber-ink);
+}
+
+.notice b {
+  color: color-mix(in srgb, var(--amber-ink) 80%, var(--ink));
+  font-weight: 620;
+}
+
+.notice code {
+  background: color-mix(in srgb, var(--amber-ink) 12%, transparent);
+  color: inherit;
+}
+
+/* ---------- spec table ---------- */
+
+.spec {
+  margin-top: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-inner);
+  overflow: hidden;
+}
+
+.spec__row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.spec__row:last-child {
+  border-bottom: 0;
+}
+
+.spec__k {
+  font-size: 14.5px;
+  color: var(--body);
+}
+
+.spec__v {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink-2);
+  text-align: right;
+}
+
+/* ---------- form ---------- */
+
+.form {
+  margin-top: 20px;
+  display: grid;
+  gap: 13px;
+}
+
+.row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.field label,
+.field > .ml {
+  display: block;
+  margin-bottom: 7px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.input,
+.select,
+.area {
+  width: 100%;
+  padding: 0 14px;
+  height: 46px;
+  border-radius: var(--r-field);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+  letter-spacing: -0.006em;
+  outline: none;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.area {
+  height: auto;
+  min-height: 106px;
+  padding: 12px 14px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.input::placeholder,
+.area::placeholder {
+  color: var(--muted);
+}
+
+.input:focus,
+.select:focus,
+.area:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 4px var(--accent-ring);
+}
+
+.input[aria-invalid="true"] {
+  border-color: color-mix(in srgb, var(--urgent) 60%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--urgent) 16%, transparent);
+}
+
+.select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 38px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.4 4.6 6 8.2l3.6-3.6' fill='none' stroke='%2390a0b5' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 12px;
+  cursor: pointer;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.check input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.check__box {
+  width: 19px;
+  height: 19px;
+  border-radius: 6px;
+  border: 1.5px solid var(--line-2);
+  display: grid;
+  place-items: center;
+  color: transparent;
+  transition: background 0.16s, border-color 0.16s, color 0.16s;
+}
+
+.check input:checked + .check__box {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.check input:focus-visible + .check__box {
+  box-shadow: 0 0 0 4px var(--accent-ring);
+}
+
+.check__box svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.modal__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 38px 28px;
+}
+
+.modal__foot .btn {
+  height: 42px;
+  padding: 0 20px;
+  font-size: 15px;
+}
+
+.modal__foot .spacer {
+  margin-left: auto;
+}
+
+.modal__note {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* ---------- need detail ---------- */
+
+.detail__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail__title {
+  margin: 12px 0 0;
+  font-size: 26px;
+  font-weight: 640;
+  letter-spacing: -0.03em;
+  line-height: 1.16;
+  color: var(--ink);
+}
+
+.detail__ministry {
+  margin-top: 9px;
+  font-size: 14.5px;
+  color: var(--body);
+}
+
+.detail__ministry button {
+  color: var(--accent);
+  font-size: inherit;
+}
+
+.detail__ministry button:hover {
+  text-decoration: underline;
+}
+
+.detail__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 1px;
+  margin-top: 22px;
+  border-radius: var(--r-inner);
+  overflow: hidden;
+  background: var(--line);
+}
+
+.detail__cell {
+  padding: 13px 15px;
+  background: var(--surface-soft);
+}
+
+.detail__cell .ml {
+  font-size: 9px;
+}
+
+.detail__cell strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 15px;
+  font-weight: 560;
+  color: var(--ink);
+  letter-spacing: -0.012em;
+}
+
+@media (max-width: 760px) {
+  .modal__body {
+    padding: 28px 22px 24px;
+  }
+  .modal__foot {
+    padding: 16px 22px 22px;
+    flex-wrap: wrap;
+  }
+  .row2 {
+    grid-template-columns: 1fr;
+  }
+  .modal__title {
+    font-size: 26px;
+  }
+}
