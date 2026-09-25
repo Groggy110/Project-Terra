@@ -37,17 +37,24 @@ export class Board {
       h(
         "div",
         { class: "sheet__head" },
-        h("div", {}, this.title, this.sub),
+        h("div", { class: "sheet__titles" }, this.title, this.sub),
         h(
           "div",
           { class: "sheet__tools" },
           this.sortEl,
-          h("button", { class: "btn btn--accent", onclick: () => this.on.postNeed() }, "Post a need"),
+          // Duplicated by the "+" in the top bar on a phone, where it is the
+          // single widest thing in this header and the reason the whole row
+          // used to run off the right edge. See board.css.
           h(
             "button",
-            { class: "btn btn--icon", "aria-label": "Close the board", onclick: () => this.setOpen(false) },
-            h("span", { html: '<svg viewBox="0 0 16 16" class="ico"><path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6"/></svg>' }),
+            { class: "btn btn--accent sheet__post", onclick: () => this.on.postNeed() },
+            "Post a need",
           ),
+        ),
+        h(
+          "button",
+          { class: "btn btn--icon sheet__close", "aria-label": "Close the board", onclick: () => this.setOpen(false) },
+          h("span", { html: '<svg viewBox="0 0 16 16" class="ico"><path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6"/></svg>' }),
         ),
       ),
       this.body,

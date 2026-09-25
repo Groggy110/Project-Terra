@@ -1,6 +1,13 @@
 /* The sign-in screen: a sheet over the globe, not a page away from it.
    The world keeps turning behind the panel the whole time, which is the one
-   thing a sign-in screen can do here that a separate route cannot. */
+   thing a sign-in screen can do here that a separate route cannot.
+
+   The card is painted on the same watercolour the page is painted on, at a
+   strength you are meant to feel rather than notice: a wash gathered at the
+   top where the mark and the headline sit, gone by the time it reaches the
+   fields. A form on plain white beside a page made of paper reads as a
+   different product; a form with a visible texture behind its inputs reads as
+   a novelty. This is the ground between them. */
 
 .gate {
   position: fixed;
@@ -21,26 +28,68 @@
 
 /* Deliberately thin. The globe behind is the reason anyone is signing in;
    burying it under a slab would be throwing away the only thing on screen
-   that says what this is. */
+   that says what this is. The vignette is what lets it stay thin: the corners
+   take a little more weight, so the card sits in a clearing rather than
+   floating on an evenly fogged window. */
 .gate__scrim {
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--paper) 58%, transparent);
-  backdrop-filter: blur(10px) saturate(1.2);
+  background: color-mix(in srgb, var(--paper) 26%, transparent);
+  backdrop-filter: blur(11px) saturate(1.22);
 }
+
+/* The ground behind the card is the page's own wash, turned up — and drawn at
+   `100% 100%` for the same reason base.css draws it that way: it is the whole
+   sheet, so the pools land where they land on the page behind it. Open the
+   gate and the paper you were already looking at simply deepens. */
+.gate__scrim::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("/textures/paper-light.jpg");
+  background-size: 100% 100%;
+  opacity: 0.46;
+}
+
+:root[data-theme="dark"] .gate__scrim::before {
+  background-image: url("/textures/paper-dark.jpg");
+  opacity: 0.54;
+}
+
+/* The clearing. Weight at the corners, so the card sits in an opening rather
+   than on an evenly fogged window — and so the globe keeps a little of the
+   middle, which is the whole reason this is a sheet and not a page. */
+.gate__scrim::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    126% 98% at 50% 46%,
+    transparent 22%,
+    color-mix(in srgb, var(--paper) 56%, transparent) 100%
+  );
+}
+
+/* ---------- the card ---------- */
 
 .gate__card {
   position: relative;
-  width: min(430px, 100%);
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  width: min(448px, 100%);
   max-height: calc(100vh - 48px);
-  overflow-y: auto;
-  padding: 34px 34px 28px;
-  border-radius: 22px;
+  border-radius: 24px;
+  /* Clips the wash to the corner. It is also why the body scrolls and not
+     the card: a scrolling box would drag the wash up with the content. */
+  overflow: hidden;
+  border: 1px solid var(--line-2);
   background: var(--surface);
   box-shadow:
-    0 1px 2px rgba(16, 42, 74, 0.08),
-    0 18px 50px -12px rgba(16, 42, 74, 0.26),
-    0 40px 90px -40px rgba(16, 42, 74, 0.4);
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 1px 2px rgba(16, 42, 74, 0.07),
+    0 20px 52px -14px rgba(16, 42, 74, 0.3),
+    0 52px 104px -46px rgba(16, 42, 74, 0.46);
   translate: 0 14px;
   scale: 0.985;
   transition: translate 0.42s var(--ease-move), scale 0.42s var(--ease-move);
@@ -51,96 +100,247 @@
   scale: 1;
 }
 
+:root[data-theme="dark"] .gate__card {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 22px 54px -14px rgba(0, 0, 0, 0.62),
+    0 56px 110px -46px rgba(0, 0, 0, 0.8);
+}
+
+/* The wash, end to end rather than as a band at the top. The veil never
+   closes: the sheet is a little under half present behind the masthead and
+   still better than a quarter of it at the foot of the card, so the whole
+   thing is painted paper rather than a white form with a tinted header.
+   What keeps it readable is the controls, not the ground — every field, tab
+   and role card below is drawn in solid surface, so they sit *on* the paper
+   as objects instead of dissolving into it. */
+.gate__card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(
+      460px 300px at 16% -46px,
+      color-mix(in srgb, var(--accent) 17%, transparent) 0%,
+      transparent 72%
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--surface) 54%, transparent) 0px,
+      color-mix(in srgb, var(--surface) 63%, transparent) 190px,
+      color-mix(in srgb, var(--surface) 71%, transparent) 100%
+    ),
+    url("/textures/paper-light.jpg");
+  /* `cover`, not a width with an auto height: a portrait card is taller than
+     the sheet is, so an auto height simply stopped partway down and left a
+     hard horizontal edge across the middle of the form. `100% 100%` is how
+     the page draws the same sheet, but the page is landscape — squeezed into
+     a 448px column it pulls the pools into vertical streaks, so here it is
+     cropped instead. */
+  background-size: 100% 100%, 100% 100%, cover;
+  background-position: center, top center, 38% 22%;
+  background-repeat: no-repeat;
+}
+
+:root[data-theme="dark"] .gate__card::before {
+  background-image:
+    radial-gradient(
+      460px 300px at 16% -46px,
+      color-mix(in srgb, var(--accent) 26%, transparent) 0%,
+      transparent 72%
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--surface) 46%, transparent) 0px,
+      color-mix(in srgb, var(--surface) 57%, transparent) 190px,
+      color-mix(in srgb, var(--surface) 66%, transparent) 100%
+    ),
+    url("/textures/paper-dark.jpg");
+}
+
+/* Tooth. The same grain the page uses, at a third of its strength — enough to
+   stop the card reading as a flat rectangle of colour under the wash. */
+.gate__card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url("/textures/grain.png");
+  background-size: 360px;
+  opacity: 0.06;
+  mix-blend-mode: multiply;
+}
+
+:root[data-theme="dark"] .gate__card::after {
+  opacity: 0.08;
+  mix-blend-mode: screen;
+}
+
+.gate__body {
+  position: relative;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 34px 36px 28px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+
+.gate__body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.gate__body::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* ---------- masthead ---------- */
+
+/* The mark used to float alone above the headline at the size of a favicon.
+   In a medallion it becomes the card's header: something the eye lands on
+   first and reads as a badge rather than as a stray glyph. */
 .gate__mark {
-  width: 30px;
-  height: 30px;
-  margin-bottom: 16px;
+  width: 46px;
+  height: 46px;
+  padding: 11px;
+  margin-bottom: 18px;
+  border-radius: 15px;
   color: var(--accent);
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 17%, transparent),
+    0 6px 16px -8px color-mix(in srgb, var(--accent) 52%, transparent);
 }
 
 .gate__title {
   margin: 0;
-  font-size: 25px;
+  font-size: 27px;
   font-weight: 640;
-  letter-spacing: -0.025em;
-  line-height: 1.16;
+  letter-spacing: -0.03em;
+  line-height: 1.14;
+  text-wrap: balance;
   color: var(--ink);
 }
 
 .gate__sub {
-  margin: 8px 0 22px;
+  margin: 9px 0 26px;
+  max-width: 35ch;
   font-size: 14.5px;
   line-height: 1.55;
-  color: var(--ink-2);
+  letter-spacing: -0.004em;
+  color: var(--body);
 }
 
 /* ---------- segmented switch ---------- */
 
+/* The track was mixed from a hard-coded navy at 5%, which is a visible tint on
+   white and nothing at all on a dark card — the switch lost its housing in the
+   dark theme and the selected tab read as an outline someone had forgotten to
+   remove. It is now a solid housing rather than a veil, for the same reason
+   the fields are solid: a translucent control on a painted ground picks up
+   whatever pool happens to be behind it, and a switch that changes colour
+   across its own width is not a switch anyone trusts. */
 .gate__seg {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  gap: 2px;
-  padding: 3px;
-  margin-bottom: 20px;
-  border-radius: 11px;
-  background: var(--surface-2, rgba(16, 42, 74, 0.05));
+  gap: 3px;
+  padding: 3.5px;
+  margin-bottom: 22px;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--ink) 7%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
 .gate__seg button {
-  padding: 8px 6px;
+  padding: 9px 6px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   font: inherit;
   font-size: 13.5px;
   font-weight: 520;
-  color: var(--ink-2);
+  letter-spacing: -0.006em;
+  color: var(--body);
   cursor: pointer;
   transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+}
+
+.gate__seg button:hover {
+  color: var(--ink);
 }
 
 .gate__seg button.is-on {
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgba(16, 42, 74, 0.12);
+  font-weight: 580;
+  box-shadow:
+    0 1px 2px rgba(16, 42, 74, 0.13),
+    0 0 0 0.5px rgba(16, 42, 74, 0.05);
+}
+
+/* On a dark card the selected tab has to be *lighter* than its track, not the
+   surface colour the card is already painted in. */
+:root[data-theme="dark"] .gate__seg button.is-on {
+  background: color-mix(in srgb, var(--ink) 13%, var(--surface));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.42);
 }
 
 /* ---------- fields ---------- */
 
 .gate__field {
-  margin-bottom: 13px;
+  margin-bottom: 14px;
 }
 
 .gate__label {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 7px;
   font-size: 12.5px;
-  font-weight: 530;
-  letter-spacing: -0.004em;
+  font-weight: 540;
+  letter-spacing: -0.002em;
   color: var(--ink-2);
 }
 
+/* Solid, and lifted a little off the ground. On a washed card a field drawn
+   in a translucent tint reads as a hole in the paper; drawn in flat surface
+   with a shadow under it, it reads as something laid on top — which is what a
+   control on a painted sheet should look like. */
 .gate__input {
   width: 100%;
-  height: 44px;
-  padding: 0 13px;
-  border: 1px solid var(--line, rgba(16, 42, 74, 0.14));
-  border-radius: 11px;
+  height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
   background: var(--surface);
   font: inherit;
   font-size: 15px;
+  letter-spacing: -0.006em;
   color: var(--ink);
   outline: none;
+  box-shadow: 0 1px 2px rgba(16, 42, 74, 0.05);
   transition: border-color 0.16s, box-shadow 0.16s;
 }
 
+.gate__input:hover {
+  border-color: color-mix(in srgb, var(--ink) 22%, transparent);
+}
+
+/* Focus rings it and lifts it further, so the active row is unmistakably the
+   live one even against a busy ground. */
 .gate__input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow:
+    0 0 0 3.5px color-mix(in srgb, var(--accent) 16%, transparent),
+    0 2px 6px -2px color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
 .gate__input::placeholder {
@@ -152,38 +352,41 @@
 .gate__roles {
   display: grid;
   gap: 9px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .gate__role {
   display: flex;
-  gap: 11px;
+  gap: 12px;
   align-items: flex-start;
-  padding: 12px 13px;
-  border: 1px solid var(--line, rgba(16, 42, 74, 0.14));
-  border-radius: 13px;
+  padding: 13px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
   background: var(--surface);
   text-align: left;
+  box-shadow: 0 1px 2px rgba(16, 42, 74, 0.05);
   font: inherit;
   cursor: pointer;
   transition: border-color 0.16s, background 0.16s, box-shadow 0.16s;
 }
 
 .gate__role:hover {
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 .gate__role.is-on {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent),
+    0 2px 8px -3px color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
 .gate__role svg {
   flex: none;
   width: 19px;
   height: 19px;
-  margin-top: 1px;
+  margin-top: 2px;
   color: var(--accent);
   fill: none;
   stroke: currentColor;
@@ -194,42 +397,69 @@
   display: block;
   font-size: 14px;
   font-weight: 580;
+  letter-spacing: -0.008em;
   color: var(--ink);
 }
 
 .gate__role span {
   display: block;
-  margin-top: 2px;
+  margin-top: 3px;
   font-size: 12.5px;
   line-height: 1.45;
-  color: var(--ink-2);
+  color: var(--body);
 }
 
 /* ---------- actions ---------- */
 
+/* The same treatment the page's own accent button carries, so the primary
+   action here and the primary action out there are visibly one component. */
 .gate__go {
   width: 100%;
-  height: 46px;
-  margin-top: 6px;
+  height: 47px;
+  margin-top: 8px;
   border: 0;
-  border-radius: 11px;
-  background: var(--accent);
+  border-radius: 12px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 92%, #fff 8%),
+    var(--accent)
+  );
   font: inherit;
   font-size: 15px;
-  font-weight: 560;
-  color: #fff;
+  font-weight: 570;
+  letter-spacing: -0.008em;
+  color: var(--accent-ink, #fff);
   cursor: pointer;
-  transition: filter 0.16s, opacity 0.16s;
+  box-shadow:
+    0 1px 2px rgba(16, 42, 74, 0.16),
+    0 12px 24px -12px color-mix(in srgb, var(--accent) 70%, transparent);
+  transition: filter 0.16s, opacity 0.16s, box-shadow 0.18s, translate 0.14s;
 }
 
-.gate__go:hover { filter: brightness(1.07); }
-.gate__go:disabled { opacity: 0.55; cursor: default; }
+.gate__go:hover {
+  filter: brightness(1.05);
+  box-shadow:
+    0 1px 2px rgba(16, 42, 74, 0.16),
+    0 16px 30px -12px color-mix(in srgb, var(--accent) 78%, transparent);
+}
+
+.gate__go:active {
+  translate: 0 0.5px;
+}
+
+.gate__go:disabled {
+  opacity: 0.55;
+  cursor: default;
+  box-shadow: none;
+  filter: none;
+  translate: 0;
+}
 
 .gate__alt {
-  margin-top: 15px;
+  margin-top: 18px;
   text-align: center;
   font-size: 13.5px;
-  color: var(--ink-2);
+  color: var(--body);
 }
 
 .gate__alt button {
@@ -237,45 +467,56 @@
   background: none;
   padding: 0;
   font: inherit;
-  font-weight: 540;
+  font-weight: 560;
   color: var(--accent);
   cursor: pointer;
 }
 
-.gate__alt button:hover { text-decoration: underline; }
+.gate__alt button:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
+/* Below the line, and quiet about it: leaving without an account is a real
+   way out of this screen, not a thing to be nudged towards. */
 .gate__skip {
   display: block;
   width: 100%;
-  margin-top: 14px;
-  padding: 8px;
+  margin-top: 22px;
+  padding: 14px 8px 2px;
   border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 9%, transparent);
   background: none;
   font: inherit;
   font-size: 13px;
-  color: var(--faint);
+  color: var(--muted);
   cursor: pointer;
+  transition: color 0.16s;
 }
 
-.gate__skip:hover { color: var(--ink-2); }
+.gate__skip:hover {
+  color: var(--ink-2);
+}
 
 /* ---------- feedback ---------- */
 
 .gate__msg {
-  margin-top: 14px;
+  margin-top: 15px;
   padding: 11px 13px;
-  border-radius: 11px;
+  border-radius: 12px;
   font-size: 13.5px;
   line-height: 1.5;
 }
 
 .gate__msg--bad {
   background: color-mix(in srgb, var(--urgent) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--urgent) 20%, transparent);
   color: color-mix(in srgb, var(--urgent) 78%, var(--ink));
 }
 
 .gate__msg--good {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
   color: color-mix(in srgb, var(--accent) 82%, var(--ink));
 }
 
@@ -283,20 +524,48 @@
    nothing left to do on this screen once the mail is on its way. */
 .gate__sent {
   text-align: center;
-  padding: 8px 0 4px;
+  padding: 10px 0 4px;
 }
 
 .gate__sent svg {
-  width: 42px;
-  height: 42px;
-  margin-bottom: 14px;
+  width: 52px;
+  height: 52px;
+  padding: 13px;
+  margin-bottom: 16px;
+  border-radius: 17px;
   color: var(--accent);
   fill: none;
   stroke: currentColor;
   stroke-width: 1.4;
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 17%, transparent);
+}
+
+.gate__sent .gate__sub {
+  margin-inline: auto;
 }
 
 @media (max-width: 520px) {
-  .gate__card { padding: 26px 22px 22px; border-radius: 18px; }
-  .gate__title { font-size: 22px; }
+  .gate {
+    padding: 16px;
+  }
+
+  .gate__card {
+    border-radius: 20px;
+  }
+
+  .gate__body {
+    padding: 28px 22px 22px;
+  }
+
+  .gate__title {
+    font-size: 23px;
+  }
+
+  .gate__mark {
+    width: 42px;
+    height: 42px;
+    padding: 10px;
+    margin-bottom: 15px;
+  }
 }

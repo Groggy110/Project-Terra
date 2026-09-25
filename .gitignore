@@ -11,3 +11,6 @@ tools/__pycache__/
 .env.*
 !.env.example
 *.local
+
+# Netlify CLI link state — machine-local, never committed.
+.netlify/

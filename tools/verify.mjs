@@ -57,14 +57,51 @@ const painter = await page.evaluate(() => ({ scale: window.terra.globe.painter.s
 check("1:10m vectors load on approach", painter.scale === "10m", `scale ${painter.scale}, ${painter.stats.size}`);
 
 // ---- theme ----
-await page.click('[data-action="cycle-theme"]');
+// Asserted as a relationship between the two presets rather than against a
+// literal, because the literals are the design and the design moves. The
+// invariant is that dark is a darker ocean under a more dramatic lamp; the
+// numbers that produce it are nobody's business but THEMES'.
+//
+// Driven to dark rather than toggled into it: the page opens dark now, and a
+// test that assumed a starting theme would have been asserting the default
+// instead of the switch.
+const startedDark = await page.evaluate(() => document.documentElement.dataset.theme === "dark");
+if (startedDark) await page.click('[data-action="cycle-theme"]');   // -> light
+await wait(400);
+await page.click('[data-action="cycle-theme"]');                     // -> dark
 await wait(700);
-const theme = await page.evaluate(() => ({
-  attr: document.documentElement.dataset.theme,
-  gain: window.terra.globe.earth.uniforms.uLandGain.value,
-  deep: window.terra.globe.earth.uniforms.uDeep.value.getHexString(),
-}));
-check("theme switches uniforms", theme.attr === "dark" && theme.gain < 0.8, JSON.stringify(theme));
+const theme = await page.evaluate(() => {
+  const g = window.terra.globe;
+  const read = () => {
+    const u = g.earth.uniforms;
+    const c = u.uDeep.value;
+    return {
+      deepLuma: +(0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b).toFixed(4),
+      ambient: u.uAmbient.value,
+      sunMix: u.uSunMix.value,
+    };
+  };
+  // Both readings taken straight after applyTheme, and neither after a frame.
+  // uSunMix is no longer the preset's alone once the page has been running —
+  // the frame loop retires the terminator as the view becomes local — so
+  // reading the live uniform at whatever zoom the previous test left behind
+  // would be asking the camera a question about the theme.
+  const attr = document.documentElement.dataset.theme;
+  g.setTheme("dark");
+  const dark = read();
+  g.setTheme("light");
+  const light = read();
+  g.setTheme("dark");
+  return { attr, dark, light };
+});
+check(
+  "theme switches uniforms",
+  theme.attr === "dark" &&
+    theme.dark.deepLuma < theme.light.deepLuma &&
+    theme.dark.ambient < theme.light.ambient &&
+    theme.dark.sunMix >= theme.light.sunMix,
+  JSON.stringify(theme),
+);
 await page.click('[data-action="cycle-theme"]');
 await wait(500);
 
@@ -105,7 +142,7 @@ await page.evaluate(() => {
   const m = window.terra.net.ministryById.get("nairobi-mathare");
   window.terra.openMinistry(m, { fly: true });
 });
-await wait(2000);
+await wait(2600);
 const panel = await page.evaluate(() => ({
   name: document.querySelector(".ministry__name")?.textContent,
   needs: document.querySelectorAll(".panel .need").length,

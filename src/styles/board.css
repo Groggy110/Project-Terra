@@ -4,6 +4,9 @@
   position: absolute;
   left: 50%;
   bottom: 0;
+  /* The sheet slides up from the bottom edge, so its own content — not its
+     frame — has to clear the home indicator. */
+  padding-bottom: var(--safe-b);
   translate: -50% 100%;
   width: min(1180px, calc(100vw - 2 * var(--edge)));
   height: min(78vh, 780px);
@@ -52,9 +55,17 @@
   flex: none;
   display: flex;
   align-items: flex-end;
-  gap: 16px;
+  gap: 9px;
   padding: 6px 26px 16px;
   border-bottom: 1px solid var(--line);
+}
+
+.sheet__titles {
+  /* Takes the slack, and may be squeezed to nothing rather than pushing the
+     controls off the edge — which is what min-width:auto on a flex item would
+     otherwise let the heading do. */
+  margin-right: auto;
+  min-width: 0;
 }
 
 .sheet__title {
@@ -72,10 +83,13 @@
 }
 
 .sheet__tools {
-  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 9px;
+}
+
+.sort {
+  flex: none;
 }
 
 .sheet__body {
@@ -187,4 +201,89 @@
 
 .need__urg.ongoing {
   color: var(--ongoing);
+}
+
+/* ---------- phone ---------- */
+
+@media (max-width: 720px), (max-width: 1000px) and (max-height: 520px) {
+  .sheet {
+    width: 100vw;
+    height: min(88vh, 760px);
+    border-radius: 20px 20px 0 0;
+    border-left: 0;
+    border-right: 0;
+    /*
+     * Opaque, and no blur.
+     *
+     * A backdrop-filter has to re-sample and re-blur everything behind it, and
+     * on a phone this sheet is 88% of the screen with a WebGL canvas behind it
+     * — so every frame of a scroll was blurring a full-screen live render for
+     * the sake of a frosting nobody can see through a surface that is already
+     * 88% opaque over 88% of the window. The desktop keeps it, where the sheet
+     * is a card with a globe visibly around it and the effect is the point.
+     */
+    background: var(--surface);
+    backdrop-filter: none;
+  }
+
+  /*
+   * The header was one flex row — heading, then sort, then Post a need, then
+   * the close button — and at 390px it could not be. Flex does not overflow
+   * gracefully: it squeezed the heading to its narrowest word and pushed the
+   * rest 82px off the right edge, so "Open needs board" came out as three
+   * lines of one word each and the sort control was half off the screen.
+   *
+   * Two rows instead, which is the honest shape of it: what this is, and what
+   * you can do to it.
+   */
+  .sheet__head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "titles close"
+      "tools  tools";
+    align-items: start;
+    row-gap: 13px;
+    padding: 2px 16px 13px;
+  }
+
+  .sheet__titles {
+    grid-area: titles;
+    margin-right: 0;
+  }
+
+  .sheet__close {
+    grid-area: close;
+  }
+
+  .sheet__title {
+    font-size: 19px;
+  }
+
+  /* Scrolls sideways rather than wrapping: a sort control that reflows to two
+     lines when a label is long changes the height of the header every time
+     the list is re-sorted. Bled to the edges so the row reads as continuing
+     past them rather than as a clipped box. */
+  .sheet__tools {
+    grid-area: tools;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -16px;
+    padding: 2px 16px;
+  }
+
+  .sheet__tools::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* The top bar's "+" is this button, and it is always on screen. */
+  .sheet__post {
+    display: none;
+  }
+
+  .sheet__body {
+    padding: 14px 16px 22px;
+  }
 }

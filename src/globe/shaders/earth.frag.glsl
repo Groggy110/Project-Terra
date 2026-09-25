@@ -5,8 +5,24 @@ uniform sampler2D uAux;     // R topography, G land mask, B coast proximity
 uniform sampler2D uLines;   // vector ink, in window space
 uniform sampler2D uMask;    // crisp land mask, in window space
 uniform sampler2D uBaseInk; // vector ink for the whole world, coarse tier
+uniform sampler2D uDetail;  // streamed satellite tiles, in Web Mercator
 
 uniform vec4 uWindow;       // uMin, vMin, uSpan, vSpan of the painted window
+// Where the tile canvas sits, in *normalised Mercator* - not the uv above.
+// Tiles are square in that projection, so they land as exact rectangles and
+// the one conversion happens here, per pixel, instead of per tile on the CPU.
+uniform vec4 uDetailWindow; // uMin, mMin, uSpan, mSpan
+uniform float uDetailMix;   // 0 off, 1 imagery fully in charge of the land
+// The tiles arrive already true-colour and contrasty, where Blue Marble is
+// flat and dark; everything downstream is graded for the latter. These bring
+// a tile back to the base's footing *before* that grade, so one set of land
+// controls still governs the look and the two never read as two maps.
+uniform float uDetailGamma;
+uniform float uDetailSat;
+uniform float uDetailGain;
+uniform float uDetailLift;
+uniform float uDetailSea;   // how far the imagery may modulate the styled sea
+uniform float uDetailWater; // 1 when the imagery draws the water as well
 uniform vec2 uAuxTexel;
 uniform vec2 uAuxSize;
 uniform float uHasWindow;
@@ -17,17 +33,33 @@ uniform vec3 uMid;
 uniform vec3 uShelf;
 uniform vec3 uSnow;
 uniform vec3 uAtmo;
+uniform vec3 uNight;        // what the unlit side is multiplied by
 
 uniform float uLandGamma;
 uniform float uLandSat;
 uniform float uLandGain;
 uniform float uLandLift;
 uniform float uRelief;
-uniform float uSunMix;
+uniform float uSunMix;      // overall strength of the day/night modelling
+uniform float uAmbient;     // floor under the terminator: 0 dramatic, 1 flat
+uniform float uTermWidth;   // half-width of the terminator, in cos(angle)
+uniform float uTermGamma;   // >1 drags the shadow further up the lit side
 uniform float uSpec;
 uniform float uFresnel;
+uniform float uFresnelPow;
+uniform float uRimBase;     // rim brightness away from the light
 uniform float uLineMix;
 uniform float uSnowAmt;
+
+// Faceting. The reference is not satellite imagery: the continents read as a
+// crystalline shell of flat cells, each catching the light on its own.
+uniform float uFacet;       // 0 off, 1 full
+uniform float uFacetScale;  // cells across the globe
+uniform float uFacetTilt;   // how far a cell's normal may lean
+uniform float uFacetFlat;   // how much of a cell takes one flat colour
+uniform float uFacetEdge;   // width of the seam between cells
+uniform float uFacetEdgeInk;// how dark that seam goes; negative draws it pale
+
 uniform float uDebug;   // 0 off; see globe.debug()
 
 varying vec3 vNormalW;
@@ -46,6 +78,67 @@ vec2 fixSeam(vec2 d) {
 
 float win1(float x, float edge) {
   return smoothstep(0.0, edge, x) * (1.0 - smoothstep(1.0 - edge, 1.0, x));
+}
+
+vec2 dirToUv(vec3 d) {
+  return vec2(atan(-d.z, d.x) / (2.0 * PI) + 0.5, 0.5 - asin(clamp(d.y, -1.0, 1.0)) / PI);
+}
+
+/**
+ * Three random numbers from a point, with no transcendental in it.
+ *
+ * The obvious version of this is `fract(sin(dot(p, k)) * 43758.5)`, and it was
+ * that. The cells() below calls this twenty-seven times per pixel, so that
+ * spelling costs eighty-one sines on every fragment of a full-screen sphere —
+ * which a desktop GPU absorbs and a phone's does not, because transcendentals
+ * run on a narrower unit there. This is the standard multiply-and-fold hash
+ * instead: same uniform distribution, same character of noise, no special
+ * function. The feature points land in different places, so the facets are a
+ * different arrangement of the same thing, at a fraction of the cost.
+ */
+vec3 hash33(vec3 p) {
+  p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+  p += dot(p, p.yxz + 33.33);
+  return fract((p.xxy + p.yxx) * p.zyx);
+}
+
+/**
+ * Cellular noise in three dimensions, evaluated on the surface normal.
+ *
+ * Three dimensions rather than two on purpose: a Voronoi built in uv space
+ * would crowd its cells to nothing at the poles and tear along the
+ * antimeridian, which are the two places a globe is most obviously a globe.
+ * On the normal the cells are the same size everywhere and there is no seam
+ * to tear.
+ *
+ * Returns the winning feature point, and the gap to the runner-up — which is
+ * near zero exactly on a cell boundary, and is what draws the seams.
+ */
+void cells(vec3 p, out vec3 feature, out float edge) {
+  vec3 ip = floor(p);
+  vec3 fp = p - ip;
+  float d1 = 9.0;
+  float d2 = 9.0;
+  feature = p;
+
+  for (int z = -1; z <= 1; z++) {
+    for (int y = -1; y <= 1; y++) {
+      for (int x = -1; x <= 1; x++) {
+        vec3 g = vec3(float(x), float(y), float(z));
+        vec3 o = hash33(ip + g);
+        vec3 r = g + o - fp;
+        float d = dot(r, r);
+        if (d < d1) {
+          d2 = d1;
+          d1 = d;
+          feature = ip + g + o;
+        } else if (d < d2) {
+          d2 = d;
+        }
+      }
+    }
+  }
+  edge = sqrt(d2) - sqrt(d1);
 }
 
 void main() {
@@ -76,10 +169,6 @@ void main() {
   // Coarse tier first, then the fine window over it where one exists. Outside
   // the window the land split falls back to the raster mask, which is the same
   // 4096-wide grid the topography comes from.
-  //
-  // The window canvases are sampled plainly rather than with explicit
-  // gradients: they carry no seam (wuv is clamped inside the window) and they
-  // have no mip chain, so there is nothing for a gradient to select.
   vec4 ink = texture2DGradEXT(uBaseInk, uv, ddx, ddy);
   if (inWin > 0.002) {
     vec2 c = clamp(wuv, 0.0, 1.0);
@@ -87,10 +176,39 @@ void main() {
     ink = mix(ink, texture2D(uLines, c), inWin);
   }
 
+  // ---- streamed imagery -------------------------------------------------
+  //
+  // Mercator's y, from the same latitude the uv came from. The clamp is the
+  // projection's own limit: past 85.05 degrees the log runs away, and there is
+  // no tile there to sample anyway.
+  float mLat = clamp(latRad, -1.4844, 1.4844);
+  float merc = 0.5 - log(tan(0.7853981634 + mLat * 0.5)) / 6.2831853072;
+
+  float dU = uv.x - uDetailWindow.x;
+  dU -= floor(dU);                       // wrap, as above
+  vec2 duv = vec2(dU / uDetailWindow.z, (merc - uDetailWindow.y) / uDetailWindow.w);
+  float inDetail = uDetailMix * win1(duv.x, 0.02) * win1(duv.y, 0.02);
+
+  // `raw` is the painted planet, and it stays the reference for everything
+  // that is a *reading* of the world rather than a picture of it - the ocean
+  // ramp, the icecaps. Those are theme, and a tile must not vote on them.
+  vec3 raw = base;
+  vec3 detail = vec3(0.0);
+  if (inDetail > 0.002) {
+    // The alpha is which tiles have actually landed. Multiplying the blend by
+    // it is what lets a window fill in place: every tile that has arrived is
+    // at full strength the moment it arrives, and the ground between them is
+    // still the painted planet rather than a hole.
+    vec4 tile = texture2D(uDetail, clamp(duv, 0.0, 1.0));
+    inDetail *= tile.a;
+    detail = mix(vec3(dot(tile.rgb, LUMA)), tile.rgb, uDetailSat);
+    detail = pow(max(detail, vec3(0.0)), vec3(uDetailGamma)) * uDetailGain + uDetailLift;
+    // Land, and - once you are close enough - water too. See uDetailWater at
+    // the ocean mix below for why the styled sea has to let go at the end.
+    base = mix(base, detail, inDetail * max(mask, uDetailWater));
+  }
+
   // ---- hillshade --------------------------------------------------------
-  // Differences are taken at whatever texel the mip selector is actually
-  // reading, so relief survives at a whole-globe view instead of averaging
-  // itself flat.
   float mip = max(1.0, length(ddx * uAuxSize));
   vec2 e = uAuxTexel * mip;
   float hL = texture2DGradEXT(uAux, uv - vec2(e.x, 0.0), ddx, ddy).r;
@@ -104,11 +222,49 @@ void main() {
   vec3 tL = normalize(vec3(-0.60, 0.60, 0.75));       // north-west, 40 degrees
   float shade = 1.0 + (dot(tN, tL) / tL.z - 1.0) * mask;
   shade = clamp(shade, 0.42, 1.44);
+  // The relief is modelled from a 4096-wide elevation raster - eleven
+  // kilometres a texel. Over a city it is not detail, it is a slow stain
+  // across ground whose own light and shadow the imagery already carries, so
+  // it hands over as the tiles come in.
+  shade = mix(shade, 1.0, inDetail * 0.8);
 
-  float lum = dot(base, LUMA);
-  float mx = max(max(base.r, base.g), base.b);
-  float mn = min(min(base.r, base.g), base.b);
+  float lum = dot(raw, LUMA);
+  float mx = max(max(raw.r, raw.g), raw.b);
+  float mn = min(min(raw.r, raw.g), raw.b);
   float chroma = mx - mn;
+
+  // ---- faceting ---------------------------------------------------------
+  // Land only. The reference keeps the ocean a smooth deep blue and puts the
+  // whole crystalline treatment on the continents, which is also what keeps
+  // the coastline legible: a faceted sea would fight the ink drawn over it.
+  float facet = uFacet * mask * (1.0 - inDetail);
+  vec3 sN = n;                     // the normal light is actually taken from
+  float seam = 1.0;
+  vec3 cellCol = base;
+
+  if (facet > 0.002) {
+    vec3 feature;
+    float edge;
+    cells(n * uFacetScale, feature, edge);
+
+    // One flat colour per cell, read at a coarser mip so a cell takes the
+    // region's colour rather than whatever pixel its centre happened to land
+    // on. Mixed rather than replaced, so the continents keep their geography.
+    vec2 cuv = dirToUv(normalize(feature));
+    vec3 flat3 = texture2DGradEXT(uBase, cuv, ddx * 3.0, ddy * 3.0).rgb;
+    cellCol = mix(base, flat3, uFacetFlat * facet);
+
+    // Each cell leans its own way, by a fixed amount decided by its own hash,
+    // so the shell catches the light in flat planes instead of a smooth
+    // gradient. This is the whole effect.
+    vec3 lean = hash33(feature + 7.31) - 0.5;
+    lean -= n * dot(lean, n);      // tilt across the surface, never into it
+    sN = normalize(n + lean * uFacetTilt * facet);
+
+    seam = (1.0 - smoothstep(0.0, uFacetEdge, edge)) * facet;
+  }
+
+  base = cellCol;
 
   // ---- land -------------------------------------------------------------
   vec3 land = pow(max(base, vec3(0.0)), vec3(uLandGamma));
@@ -120,35 +276,74 @@ void main() {
   // separates an icecap from a bright desert at the same luminance.
   float snow = smoothstep(0.33, 0.62, lum) * (1.0 - smoothstep(0.06, 0.17, chroma));
   snow = max(snow, smoothstep(0.58, 0.88, topo) * (1.0 - smoothstep(0.10, 0.24, chroma)));
-  land = mix(land, uSnow * (0.93 + 0.07 * shade), clamp(snow, 0.0, 1.0) * uSnowAmt);
+  // Snow is inferred - bright, and almost colourless. A white roof in a
+  // 30cm tile is both, so the inference retires with the guesswork.
+  land = mix(land, uSnow * (0.93 + 0.07 * shade), clamp(snow, 0.0, 1.0) * uSnowAmt * (1.0 - inDetail));
 
   // ---- ocean ------------------------------------------------------------
-  // The source ocean is a bathymetry render: brighter means shallower, so its
-  // own luminance is the depth channel.
-  // Measured against the source: open ocean sits at 0.07-0.13 luminance and
-  // genuine shelf water above 0.20, so those are the ramps.
   vec3 sea = mix(uDeep, uMid, smoothstep(0.02, 0.13, lum));
   sea = mix(sea, uShelf, smoothstep(0.17, 0.34, lum) * 0.5);
   sea = mix(sea, uShelf, smoothstep(0.62, 1.0, prox) * 0.16);
   sea *= 0.99 + 0.12 * (lum - 0.08);                   // ridges and trenches
+  // The water stays the theme's colour and takes only the imagery's
+  // *brightness*: shoals, sandbars, a harbour mouth, a wake - read through the
+  // same blue the whole ocean is drawn in, which is what keeps a city's
+  // waterfront from turning into a grey photograph beside a painted sea.
+  sea *= 1.0 + uDetailSea * inDetail * (dot(detail, LUMA) * 2.4 - 0.55);
 
-  vec3 col = mix(sea, land, mask);
+  // The last thing the painted globe gives up.
+  //
+  // Natural Earth's coastline is good to about a kilometre, which is a
+  // rounding error against a whole ocean and a visible lie against a 30cm
+  // tile: at a city the styled sea runs a blue tongue up over sandbanks and
+  // jetties the imagery is drawing perfectly well. The ocean ramp is a
+  // reading of the *planet* - deep, shelf, the glow of shallow water - and
+  // like the terminator and the facets it is a reading with nothing left to
+  // say once the frame is a hundred kilometres across. So past a region the
+  // mask opens and the imagery draws its own water.
+  vec3 col = mix(sea, land, max(mask, uDetailWater));
+  // The crazing over the continents. The reference draws it *pale* — a net of
+  // light seams between the cells, like the glaze on a dry lake bed — which
+  // is the opposite of an outline drawn round each one, so uFacetEdgeInk is
+  // signed: positive sinks the seam into shadow, negative lifts it out.
+  col = uFacetEdgeInk >= 0.0
+    ? col * (1.0 - seam * uFacetEdgeInk)
+    : mix(col, min(col * 1.55 + 0.055, vec3(1.0)), seam * -uFacetEdgeInk);
   col = mix(col, ink.rgb, ink.a * inWin * uLineMix);
 
   // ---- light ------------------------------------------------------------
+  //
+  // uSun arrives in world space but is rebuilt every frame from a *view*
+  // space direction (see globe.js), so "toward the light" is always toward
+  // the top of the frame however the globe is turned. Spinning the world
+  // therefore carries each continent up into the light and back down out of
+  // it, which is the behaviour the reference is showing.
   vec3 V = normalize(cameraPosition - vWorld);
   vec3 L = normalize(uSun);
   float ndv = clamp(dot(n, V), 0.0, 1.0);
-  float wrapped = clamp(dot(n, L) * 0.5 + 0.5, 0.0, 1.0);
-  col *= mix(1.0, 0.60 + 0.55 * wrapped, uSunMix);
+
+  // The terminator is authored rather than physical: a wide soft band whose
+  // falloff can be dragged well up the lit side, because a hard Lambert edge
+  // reads as a CG sphere and the reference is a painted one.
+  float ndl = dot(sN, L);
+  float day = smoothstep(-uTermWidth, uTermWidth, ndl);
+  day = pow(day, uTermGamma);
+  float lit = mix(1.0, uAmbient + (1.0 - uAmbient) * day, uSunMix);
+  col = mix(col * uNight, col, lit);
 
   vec3 H = normalize(L + V);
-  float spec = pow(clamp(dot(n, H), 0.0, 1.0), 46.0) * (1.0 - mask) * uSpec;
+  // Gated by the day term: a specular glint on the unlit half is the single
+  // most obvious way to give away that the light is not where it looks.
+  float spec = pow(clamp(dot(sN, H), 0.0, 1.0), 46.0) * (1.0 - mask) * uSpec * day;
   col += spec * vec3(1.0, 0.985, 0.95);
 
-  // Aerial perspective: the limb washes into the atmosphere tint, which is
-  // what lets the globe sit on pale paper without a cut-out edge.
-  col = mix(col, uAtmo, clamp(pow(1.0 - ndv, 3.1) * uFresnel, 0.0, 0.94));
+  // Aerial perspective, weighted toward the light. The limb glows brightest
+  // where it faces the lamp and falls away round the sides, which is what
+  // makes the rim read as atmosphere catching the sun rather than as an
+  // outline drawn round a disc.
+  float rim = pow(1.0 - ndv, uFresnelPow);
+  float rimLit = uRimBase + (1.0 - uRimBase) * smoothstep(-0.55, 0.9, ndl);
+  col = mix(col, uAtmo, clamp(rim * uFresnel * rimLit, 0.0, 0.96));
 
   if (uDebug > 0.5) {
     if (uDebug < 1.5) col = vec3(mask);
@@ -163,7 +358,12 @@ void main() {
     else if (uDebug < 10.5) col = vec3(texture2D(uMask, clamp(wuv, 0.0, 1.0)).r);
     else if (uDebug < 11.5) col = vec3(uv, 0.0);             // geographic uv
     else if (uDebug < 12.5) col = base;                      // raw imagery
-    else col = vec3(aux.g);                                  // raw raster mask
+    else if (uDebug < 13.5) col = vec3(aux.g);               // raw raster mask
+    else if (uDebug < 14.5) col = sN * 0.5 + 0.5;            // faceted normal
+    else if (uDebug < 15.5) col = vec3(seam);                // cell seams (1 on a seam)
+    else if (uDebug < 16.5) col = vec3(duv, 0.0);            // tile window coords
+    else if (uDebug < 17.5) col = texture2D(uDetail, clamp(duv, 0.0, 1.0)).rgb;
+    else col = vec3(day);                                    // day / night
     gl_FragColor = vec4(col, 1.0);
     return;
   }

@@ -50,7 +50,56 @@
   border: 1px solid var(--line);
   box-shadow: var(--shadow-3);
   pointer-events: auto;
+  /* So the wash below can sit over the card's own background and still stay
+     under everything written on it. */
+  isolation: isolate;
   animation: modal-in 0.38s var(--ease-out) forwards;
+}
+
+/* The same watercolour the page and the sign-in card are painted on, weaker
+   again here: a dialog is mostly prose, and prose wants a clean ground. It
+   reaches about as far down as the title and is gone well before the first
+   paragraph, so what it actually does is give the masthead somewhere to sit.
+   Turned up any further it stops being a surface and starts being a picture. */
+.modal::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image:
+    radial-gradient(
+      520px 240px at 12% -50px,
+      color-mix(in srgb, var(--accent) 10%, transparent) 0%,
+      transparent 72%
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--surface) 68%, transparent) 0px,
+      color-mix(in srgb, var(--surface) 80%, transparent) 150px,
+      color-mix(in srgb, var(--surface) 87%, transparent) 100%
+    ),
+    url("/textures/paper-light.jpg");
+  background-size: 100% 100%, 100% 100%, cover;
+  background-position: center, top center, 30% 16%;
+  background-repeat: no-repeat;
+}
+
+:root[data-theme="dark"] .modal::before {
+  background-image:
+    radial-gradient(
+      520px 240px at 12% -50px,
+      color-mix(in srgb, var(--accent) 16%, transparent) 0%,
+      transparent 72%
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--surface) 62%, transparent) 0px,
+      color-mix(in srgb, var(--surface) 77%, transparent) 150px,
+      color-mix(in srgb, var(--surface) 85%, transparent) 100%
+    ),
+    url("/textures/paper-dark.jpg");
 }
 
 .modal.is-out {

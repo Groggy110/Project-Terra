@@ -1,0 +1,39 @@
+# Netlify build. One site, two pages:
+#
+#   /              the production page, exactly as index.html has always been
+#   /sandbox       the design and capture sandbox
+#
+# `build:sandbox` is the opt-in entry point (see vite.config.js) — it emits
+# both. The sandbox's code is a separate chunk that only sandbox.html loads,
+# so the production page downloads none of it.
+
+[build]
+  command = "npm run build:sandbox"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# The sandbox is a working tool, not something to be found in a search result.
+[[headers]]
+  for = "/sandbox.html"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+# Hashed filenames, so they can be cached for as long as anyone likes.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# The baked imagery and vector binaries are the bulk of the payload and change
+# only when tools/ is re-run.
+[[headers]]
+  for = "/textures/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+
+[[headers]]
+  for = "/vectors/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"

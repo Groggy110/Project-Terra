@@ -10,7 +10,26 @@ import { Raycaster, Sphere, Vector2, Vector3 } from "three";
 
 import { clamp, DEG, latLonToVec3, pixelsPerDegree, RAD, smoothstep, vec3ToLatLon, wrapDelta } from "./geo.js";
 
-export const DIST_NEAR = 1.055;
+/**
+ * The close stop, and it is a *height*, not a distance: 1.055 is fifty-five
+ * thousandths of an earth radius above the surface, which frames about a
+ * thousand kilometres — a country, never a city. That was the right stop while
+ * the only imagery was a 5400-pixel Blue Marble, because there was nothing
+ * further in to see; with streamed tiles under it there is, and stopping a
+ * thousand kilometres up is stopping the map short of the thing it now knows.
+ *
+ * 1.014 frames about ninety kilometres: a city and the country it sits in,
+ * which is as close as a *globe* has any business going — past that you are
+ * looking at a plane and the product stops being a world.
+ *
+ * Cheap in the one place that would have been expensive. `zoom` is the log of
+ * the distance normalised over NEAR..FAR, so moving this end rescales the
+ * whole ladder — but in logs the move is 3%, because the distance barely
+ * changes even as the height falls fourfold. Every threshold keyed off zoom()
+ * lands within 0.02 of where it did, which is inside the smoothsteps they are
+ * all written as.
+ */
+export const DIST_NEAR = 1.014;
 export const DIST_FAR = 4.45;
 const LAT_LIMIT = 87;
 
@@ -123,6 +142,8 @@ export class GlobeControls {
     this.moved = false;
     this.gestured = false;
     this.viewport = { w: 1, h: 1 };
+    /** Portrait withdrawal; 1 until setViewport says otherwise. */
+    this.fit = 1;
 
     this.raycaster = new Raycaster();
     this.sphere = new Sphere(new Vector3(0, 0, 0), 1);
@@ -135,7 +156,7 @@ export class GlobeControls {
   }
 
   get pxPerDeg() {
-    return pixelsPerDegree(this.dist, this.viewport.h, this.camera.fov);
+    return pixelsPerDegree(this.camDist, this.viewport.h, this.camera.fov);
   }
 
   get zoom() {
@@ -146,6 +167,34 @@ export class GlobeControls {
     this.viewport.w = w;
     this.viewport.h = h;
     this.#rect = null;
+
+    // A vertical field of view sizes the globe against the window's *height*,
+    // which is right until the window is taller than it is wide. On a phone
+    // held upright that framing puts a 34-degree sphere inside a 17-degree
+    // horizontal frustum: you get a close-up of the Atlantic and no planet.
+    //
+    // So on a portrait viewport the camera withdraws by the amount the aspect
+    // falls short of square. Distance rather than a wider lens, because the
+    // lens would have to open to ninety-odd degrees to cover it and the globe
+    // would bulge like a fisheye. This is the framing only — `dist` remains
+    // the semantic zoom, DIST_NEAR..DIST_FAR is untouched, and every threshold
+    // keyed off zoom() keeps meaning what it meant.
+    const portrait = Math.min(Math.max(1, 1.2 / Math.max(w / Math.max(h, 1), 0.01)), 3.4);
+    // A short viewport is not a narrow one, and the aspect ratio cannot tell
+    // them apart: a phone on its side is wide *and* has 400px of height, most
+    // of which the bar, the find field and the filter row have already spent.
+    // So anything under 560px tall gives the disc a little more room as well.
+    this.fit = portrait * (h < 560 ? 1.24 : 1);
+  }
+
+  /**
+   * Where the camera actually is. `dist` is the zoom the app reasons about;
+   * this is that distance after the portrait fit above, and it is what every
+   * projection — the camera, pixels-per-degree, the halo radius, the visible
+   * cap — has to be built from, or they disagree with what is on screen.
+   */
+  get camDist() {
+    return this.dist * this.fit;
   }
 
   /**
@@ -479,7 +528,7 @@ export class GlobeControls {
       this.dist += (this.target.dist - this.dist) * kZoom;
     }
 
-    latLonToVec3(this.lat, this.lon, this.dist, this.camera.position);
+    latLonToVec3(this.lat, this.lon, this.camDist, this.camera.position);
     this.camera.up.set(0, 1, 0);
     this.camera.lookAt(0, 0, 0);
     // The renderer would do this at draw time, which is after the labels have

@@ -1,0 +1,823 @@
+/*
+ * Sandbox chrome. Every selector here is prefixed `sbx-`, and every rule that
+ * reaches into the production page is scoped under a `body.sbx-*` class - so
+ * nothing in this file can touch index.html, and removing the sandbox script
+ * removes the sandbox entirely.
+ *
+ * It deliberately does *not* use the app's design tokens. The whole point of
+ * the sandbox is that those tokens are being moved around underneath you; a
+ * control panel that goes unreadable the moment you drag --ink to white is not
+ * a control panel.
+ */
+
+.sbx {
+  --sbx-bg: #14161b;
+  --sbx-bg-2: #1c1f26;
+  --sbx-sunk: #101217;
+  --sbx-line: rgba(255, 255, 255, 0.09);
+  --sbx-line-2: rgba(255, 255, 255, 0.16);
+  --sbx-ink: #eef1f6;
+  --sbx-dim: #99a2b3;
+  --sbx-faint: #6b7487;
+  --sbx-accent: #56a0ff;
+  --sbx-accent-ink: #06121f;
+  --sbx-green: #3ecf8e;
+  --sbx-warn: #f2a23c;
+  --sbx-font: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --sbx-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  position: fixed;
+  z-index: 9000;
+  font-family: var(--sbx-font);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--sbx-ink);
+  color-scheme: dark;
+}
+
+.sbx *,
+.sbx *::before,
+.sbx *::after {
+  box-sizing: border-box;
+}
+
+/* ---------------------------------------------------------------- panels */
+
+.sbx-panel {
+  width: 336px;
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 96px);
+  background: color-mix(in srgb, var(--sbx-bg) 92%, transparent);
+  backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid var(--sbx-line);
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 28px 64px -18px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+
+.sbx-panel--left {
+  top: 78px;
+  left: 16px;
+}
+
+.sbx-panel--right {
+  top: 62px;
+  right: 16px;
+}
+
+.sbx-panel.is-folded {
+  max-height: none;
+}
+
+.sbx-panel.is-folded .sbx-panel__body {
+  display: none;
+}
+
+.sbx-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px 9px 12px;
+  background: var(--sbx-bg-2);
+  border-bottom: 1px solid var(--sbx-line);
+  cursor: grab;
+  user-select: none;
+  flex: none;
+}
+
+.sbx-panel__head:active {
+  cursor: grabbing;
+}
+
+.sbx-panel__title {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sbx-dim);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sbx-panel__body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sbx-line-2) transparent;
+  padding: 4px 0 10px;
+}
+
+.sbx-panel__body::-webkit-scrollbar {
+  width: 9px;
+}
+
+.sbx-panel__body::-webkit-scrollbar-thumb {
+  background: var(--sbx-line-2);
+  border-radius: 99px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.sbx-iconbtn {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--sbx-faint);
+  font: 600 13px/1 var(--sbx-mono);
+  cursor: pointer;
+}
+
+.sbx-iconbtn:hover {
+  background: var(--sbx-line);
+  color: var(--sbx-ink);
+}
+
+/* -------------------------------------------------------------- sections */
+
+.sbx-sec {
+  border-bottom: 1px solid var(--sbx-line);
+}
+
+.sbx-sec:last-child {
+  border-bottom: 0;
+}
+
+.sbx-sec__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  color: var(--sbx-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sbx-sec__head:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.sbx-sec__title {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.sbx-caret {
+  color: var(--sbx-faint);
+  font-size: 13px;
+  line-height: 1;
+  transition: rotate 0.16s ease;
+  width: 9px;
+  text-align: center;
+}
+
+.sbx-sec.is-open .sbx-caret {
+  rotate: 90deg;
+}
+
+.sbx-sec__body {
+  display: none;
+  padding: 2px 12px 12px;
+}
+
+.sbx-sec.is-open > .sbx-sec__body {
+  display: block;
+}
+
+.sbx-sec--nested {
+  margin: 4px -12px 0;
+  border-top: 1px solid var(--sbx-line);
+  border-bottom: 0;
+}
+
+.sbx-sec--nested > .sbx-sec__head {
+  padding: 6px 12px;
+}
+
+.sbx-sec--nested > .sbx-sec__head .sbx-sec__title {
+  font-weight: 500;
+  color: var(--sbx-dim);
+}
+
+.sbx-sec--nested.is-open > .sbx-sec__head .sbx-sec__title {
+  color: var(--sbx-ink);
+}
+
+.sbx-sub {
+  margin: 10px 0 4px;
+  font: 600 9.5px/1 var(--sbx-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sbx-faint);
+}
+
+.sbx-note {
+  margin: 6px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--sbx-faint);
+}
+
+/* ------------------------------------------------------------------ rows */
+
+.sbx-row {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  padding: 2px 0;
+}
+
+.sbx-row--wide {
+  grid-template-columns: 1fr;
+  gap: 3px;
+}
+
+.sbx-row__label {
+  font-size: 11px;
+  color: var(--sbx-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sbx-row__ctl {
+  display: flex;
+  min-width: 0;
+}
+
+.sbx-fill,
+.sbx-slider,
+.sbx-color,
+.sbx-easing,
+.sbx-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* --------------------------------------------------------------- inputs */
+
+.sbx-range {
+  flex: 1;
+  min-width: 0;
+  height: 16px;
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+
+.sbx-range::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 3px;
+  background: var(--sbx-line-2);
+}
+
+.sbx-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4.5px;
+  border-radius: 99px;
+  background: var(--sbx-ink);
+  border: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.sbx-range::-moz-range-track {
+  height: 3px;
+  border-radius: 3px;
+  background: var(--sbx-line-2);
+}
+
+.sbx-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 99px;
+  background: var(--sbx-ink);
+}
+
+.sbx-range--alpha {
+  flex: none;
+  width: 44px;
+}
+
+.sbx-num,
+.sbx-text,
+.sbx-select {
+  height: 24px;
+  min-width: 0;
+  padding: 0 6px;
+  border: 1px solid var(--sbx-line-2);
+  border-radius: 6px;
+  background: var(--sbx-sunk);
+  color: var(--sbx-ink);
+  font: 11px/1 var(--sbx-mono);
+}
+
+.sbx-num {
+  width: 54px;
+  flex: none;
+  text-align: right;
+}
+
+.sbx-num--wide {
+  width: 72px;
+}
+
+.sbx-text {
+  flex: 1;
+  width: 100%;
+}
+
+.sbx-text--color {
+  width: 92px;
+  flex: none;
+}
+
+.sbx-select {
+  flex: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+
+.sbx-num:focus,
+.sbx-text:focus,
+.sbx-select:focus {
+  outline: none;
+  border-color: var(--sbx-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sbx-accent) 26%, transparent);
+}
+
+.sbx-unit {
+  flex: none;
+  font: 10px/1 var(--sbx-mono);
+  color: var(--sbx-faint);
+  width: 20px;
+}
+
+.sbx-swatch {
+  flex: none;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--sbx-line-2);
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+
+.sbx-swatch::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.sbx-swatch::-webkit-color-swatch {
+  border: 0;
+  border-radius: 3px;
+}
+
+.sbx-check {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--sbx-accent);
+  cursor: pointer;
+}
+
+.sbx-toggle {
+  gap: 7px;
+  font-size: 11px;
+  color: var(--sbx-dim);
+  cursor: pointer;
+}
+
+.sbx-curve {
+  flex: none;
+  width: 46px;
+  height: 26px;
+  border: 1px solid var(--sbx-line);
+  border-radius: 5px;
+  background: var(--sbx-sunk);
+}
+
+.sbx-curve__line {
+  fill: none;
+  stroke: var(--sbx-accent);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sbx-curve__grid {
+  stroke: var(--sbx-line-2);
+  stroke-width: 1;
+}
+
+/* --------------------------------------------------------------- buttons */
+
+.sbx-btn {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--sbx-line-2);
+  border-radius: 7px;
+  background: var(--sbx-bg-2);
+  color: var(--sbx-ink);
+  font: 500 11px/1 var(--sbx-font);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+
+.sbx-btn:hover {
+  background: #262a33;
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.sbx-btn.is-primary {
+  background: var(--sbx-accent);
+  border-color: transparent;
+  color: var(--sbx-accent-ink);
+  font-weight: 650;
+}
+
+.sbx-btn.is-primary:hover {
+  background: #6cafff;
+}
+
+.sbx-btn.is-on {
+  background: color-mix(in srgb, var(--sbx-green) 22%, transparent);
+  border-color: color-mix(in srgb, var(--sbx-green) 52%, transparent);
+  color: var(--sbx-green);
+}
+
+.sbx-btn.is-ghost {
+  background: none;
+  border-color: var(--sbx-line);
+  color: var(--sbx-dim);
+}
+
+.sbx-btn.is-ghost:hover {
+  color: var(--sbx-ink);
+}
+
+.sbx-btnrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* -------------------------------------------------------- token listing */
+
+.sbx-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--sbx-bg);
+  border-bottom: 1px solid var(--sbx-line);
+}
+
+.sbx-search .sbx-text {
+  font-family: var(--sbx-font);
+  font-size: 11.5px;
+  height: 26px;
+}
+
+.sbx-token {
+  position: relative;
+}
+
+.sbx-token.is-edited .sbx-row__label::after {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  translate: 0 -50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 99px;
+  background: var(--sbx-warn);
+}
+
+.sbx-empty {
+  padding: 14px 4px;
+  text-align: center;
+  color: var(--sbx-faint);
+  font-size: 11px;
+}
+
+.sbx-code {
+  width: 100%;
+  height: 150px;
+  padding: 8px;
+  border: 1px solid var(--sbx-line-2);
+  border-radius: 8px;
+  background: var(--sbx-sunk);
+  color: var(--sbx-ink);
+  font: 10.5px/1.5 var(--sbx-mono);
+  resize: vertical;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.sbx-code:focus {
+  outline: none;
+  border-color: var(--sbx-accent);
+}
+
+.sbx-code.is-bad {
+  border-color: #e2685a;
+}
+
+/* ------------------------------------------------------------- transport */
+
+.sbx-transport {
+  bottom: 18px;
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--sbx-bg) 94%, transparent);
+  backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid var(--sbx-line);
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 24px 56px -20px rgba(0, 0, 0, 0.7);
+  width: min(620px, calc(100vw - 32px));
+}
+
+.sbx-transport__play {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 0;
+  border-radius: 99px;
+  background: var(--sbx-accent);
+  color: var(--sbx-accent-ink);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.sbx-transport__play svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+
+.sbx-transport__play:hover {
+  background: #6cafff;
+}
+
+.sbx-scrub {
+  flex: 1;
+  min-width: 0;
+}
+
+.sbx-time {
+  flex: none;
+  font: 11px/1 var(--sbx-mono);
+  color: var(--sbx-dim);
+  min-width: 96px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The clean-view button lands exactly where the page's own top-bar actions
+ * are. Rather than move the button off the corner it was asked to sit in, the
+ * bar is given room for it - and only while the sandbox UI is actually up, so
+ * the moment you hit Clean View you are looking at the real padding again.
+ */
+body.sbx-on:not(.sbx-clean):not(.sbx-hide-ui) .topbar {
+  padding-right: calc(var(--edge) + 158px);
+}
+
+/* ------------------------------------------------------------ clean view */
+
+.sbx-clean-btn {
+  position: fixed;
+  z-index: 9999;
+  top: 14px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(20, 22, 27, 0.92);
+  backdrop-filter: blur(14px) saturate(1.3);
+  color: #eef1f6;
+  font: 600 11.5px/1 ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+  letter-spacing: 0.01em;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 14px 32px -12px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s, color 0.15s;
+}
+
+.sbx-clean-btn:hover {
+  background: rgba(34, 38, 46, 0.96);
+}
+
+.sbx-clean-btn__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--sbx-green, #3ecf8e);
+  box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.16);
+}
+
+body.sbx-clean .sbx-clean-btn__dot {
+  background: #f2a23c;
+  box-shadow: 0 0 0 3px rgba(242, 162, 60, 0.16);
+}
+
+/* Faded right down while clean, so it is out of the way of the design but
+   still, as asked, always there to click. */
+body.sbx-clean .sbx-clean-btn {
+  opacity: 0.22;
+}
+
+body.sbx-clean .sbx-clean-btn:hover,
+body.sbx-clean .sbx-clean-btn:focus-visible {
+  opacity: 1;
+}
+
+/* The single switch that hides every sandbox surface. */
+body.sbx-clean .sbx-ui {
+  display: none !important;
+}
+
+/* And the same, briefly, while a take is running. The one exception is the
+   clean-view button: it goes invisible so it cannot be recorded, but it stays
+   where it was and reappears under the pointer, so there is always a way back
+   out of a take that is looping. */
+body.sbx-hide-ui .sbx-ui {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.sbx-hide-ui .sbx-clean-btn {
+  opacity: 0;
+}
+
+body.sbx-hide-ui .sbx-clean-btn:hover,
+body.sbx-hide-ui .sbx-clean-btn:focus-visible {
+  opacity: 1;
+}
+
+/* --------------------------------------------------------- capture stage */
+
+.sbx-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: none;
+  pointer-events: none;
+}
+
+body.sbx-chroma .sbx-screen {
+  display: block;
+}
+
+/* The ground is the paper by default; a chroma take replaces it outright. */
+body.sbx-chroma .paper {
+  display: none !important;
+}
+
+body.sbx-chroma {
+  background: transparent !important;
+}
+
+/* Isolation. Only ever active inside capture mode, and only on the elements
+   the panel has actually switched off. */
+body.sbx-capture [data-sbx-hide] {
+  display: none !important;
+}
+
+/*
+ * Capture mode overrides the page's own entrance so the player is the only
+ * thing deciding what is on screen. Without this the hero is invisible unless
+ * body.is-hero.hero-in happens to be set, and the chrome is invisible unless
+ * body.is-live is - neither of which is true by the time you are setting a
+ * shot up.
+ */
+body.sbx-capture .hero {
+  opacity: 1 !important;
+  visibility: visible !important;
+  translate: -50% 0 !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+body.sbx-capture .chrome,
+body.sbx-capture #globe,
+body.sbx-capture .overlay {
+  opacity: 1;
+  transition: none !important;
+}
+
+/* Nothing may ease on its own during a take: every value on screen has to be
+   the one the player wrote, or a recording will not match the config. */
+body.sbx-capture .hero__title,
+body.sbx-capture .hero__sub,
+body.sbx-capture .topbar,
+body.sbx-capture .crumbs,
+body.sbx-capture .findbar,
+body.sbx-capture .search,
+body.sbx-capture .dial,
+body.sbx-capture .hint,
+body.sbx-capture .panel,
+body.sbx-capture .sheet,
+body.sbx-capture .rail,
+body.sbx-capture #globe,
+body.sbx-capture .overlay,
+body.sbx-capture .paper {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* The countdown before a take, so a screen recorder has a mark to trim to. */
+.sbx-count {
+  position: fixed;
+  z-index: 9500;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  font: 700 clamp(60px, 14vw, 190px)/1 var(--sbx-mono, ui-monospace, monospace);
+  color: rgba(255, 255, 255, 0.86);
+  text-shadow: 0 4px 40px rgba(0, 0, 0, 0.5);
+  mix-blend-mode: difference;
+}
+
+/* ------------------------------------------------------------ small print */
+
+.sbx-kbd {
+  display: inline-block;
+  min-width: 15px;
+  padding: 1px 4px;
+  border: 1px solid var(--sbx-line-2);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--sbx-sunk);
+  font: 9.5px/1.3 var(--sbx-mono);
+  color: var(--sbx-dim);
+  text-align: center;
+}
+
+.sbx-flag {
+  position: fixed;
+  z-index: 8999;
+  left: 16px;
+  bottom: 16px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: rgba(20, 22, 27, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #99a2b3;
+  font: 600 9.5px/1.3 ui-monospace, monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+@media (max-width: 900px) {
+  .sbx-panel {
+    max-height: 46vh;
+  }
+
+  .sbx-panel--left {
+    top: 60px;
+    left: 10px;
+  }
+
+  .sbx-panel--right {
+    top: 56px;
+    right: 10px;
+  }
+}

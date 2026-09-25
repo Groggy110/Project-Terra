@@ -12,8 +12,10 @@ import { PerspectiveCamera, Scene, TextureLoader, Vector2, Vector3, WebGLRendere
 import { applyTheme, createClouds, createEarth, createHalo, THEMES } from "./earth.js";
 import { clamp, DEG, lerp, smoothstep, viewBounds, visibleCapRadius, visibleExtent } from "./geo.js";
 import { DIST_FAR, GlobeControls, distForZoom, zoomLevel } from "./controls.js";
+import { ImageryLayer } from "./imagery.js";
+import { pickResolution, RES_STEPS, RES_WINDOW, RES_HOLD_MS } from "./resolution.js";
 import { LabelLayer } from "./labels.js";
-import { VectorPainter, VectorStore } from "./vectors.js";
+import { padBounds, VectorPainter, VectorStore } from "./vectors.js";
 
 const TEXTURES = [
   ["base", "/textures/blue-marble.jpg"],
@@ -32,6 +34,29 @@ const MOTION_PAINT_MS = 110;
 const SETTLED_PAINT_MS = 220;
 
 /**
+ * Where streamed imagery takes over from the painted planet.
+ *
+ * Blue Marble is 5400 pixels round, which is fifteen to the degree. The
+ * working view already shows twenty-two, and a ministry opened at zoom 0.62
+ * shows thirty-three — so from about a third of the way in, every extra step
+ * of zoom is magnifying a texel rather than revealing anything, and that is
+ * exactly what the green smear over Bangkok was.
+ *
+ * It starts a little before the crossing and finishes well after it, because
+ * this is a handover and not a switch: the painted globe is the *identity* of
+ * the map at any distance where you can see it is a globe, and it should still
+ * be doing most of the work at the point where the tiles first help.
+ */
+const DETAIL_IN = [0.3, 0.54];
+/** Tiles are fetched a beat before they are shown, so the fade has them. */
+const DETAIL_ARM = 0.24;
+/** Time constant of the fade. Long: imagery should arrive, not appear. */
+const DETAIL_TAU = 0.28;
+/** Floor between tile windows while the camera is moving. */
+const DETAIL_MOTION_MS = 260;
+
+
+/**
  * There is one camera move in the entrance, and it is the second one.
  *
  * The world does not fly in: it simply fades up at HOME, the whole globe, with
@@ -44,6 +69,13 @@ const SETTLED_PAINT_MS = 220;
  * up into the top bar, the panel comes in, and the camera goes down to WORK,
  * which frames Europe, Africa and the near East — the densest part of the
  * network, and close enough to letter every pin in it. All of it on one beat.
+ *
+ * The descent is what makes the map a map. HOME is the whole disc against
+ * black, which is the picture; WORK is near enough that the pins carry their
+ * cities, which is the product. A settle that stayed at HOME looked better in
+ * a screenshot and told you nothing — the dots were too small to read as
+ * anything but grain. Lettering starts just above zoom 0.07 (labels.js), and
+ * WORK sits at about 0.13.
  * The chrome led the camera by a beat once, and what that actually bought was
  * a globe that sat still while the bar moved and only started once the bar
  * had stopped — two moves in sequence, and the second one looking like a
@@ -56,15 +88,44 @@ const SETTLED_PAINT_MS = 220;
  * the drift it keeps thereafter rather than stopping and starting again.
  */
 const HOME = { lat: 14, lon: -52 };
-export const WORK = { lat: 17, lon: 20, dist: 3.05 };
+export const WORK = { lat: 17, lon: 20, dist: 3.4 };
 export const SETTLE_FLIGHT_MS = 1700;
 
 export class Globe {
   constructor(canvas, opts = {}) {
     this.canvas = canvas;
     this.opts = opts;
-    this.theme = "light";
+    this.theme = "dark";
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    /**
+     * Fraction of `dpr` actually being drawn; see resolution.js.
+     *
+     * Touch devices start one step down rather than at full. The scaler needs
+     * about a second of frames before it will act on anything, and the second
+     * it needs is the worst one there is — the page has just opened on the
+     * whole globe, which is the view where the faceting is at full strength,
+     * and the first thing anyone does is drag it. Starting conservatively
+     * makes that first second cheap; a phone that can afford more has earned
+     * it back before anyone has finished looking at Africa.
+     */
+    const coarse = window.matchMedia?.("(hover: none) and (pointer: coarse)").matches;
+    this.res = coarse && this.dpr > 1 ? 0.85 : 1;
+    this.resAt = 0;
+    this.frames = [];
+    /**
+     * Set by any frame that did one-off work — rasterising the vector window,
+     * compositing a tile window, reallocating the drawing buffer. Those frames
+     * are slow for a reason resolution cannot fix, so the scaler does not get
+     * to see them.
+     */
+    this.skipSample = false;
+    /**
+     * True while something opaque covers the whole globe — a full-height
+     * sheet, a modal, a backgrounded tab. Drawing a planet nobody can see is
+     * the most expensive thing the page can do while a list is scrolled over
+     * the top of it, and on a phone it is exactly why the list stutters.
+     */
+    this.covered = false;
     this.size = { w: 1, h: 1 };
     this.drift = 0;
     this.last = 0;
@@ -89,7 +150,14 @@ export class Globe {
     this.renderer.setClearColor(0x000000, 0);
 
     this.scene = new Scene();
-    this.camera = new PerspectiveCamera(32, 1, 0.005, 60);
+    // 35.6°, not 32. The reference frames the disc at 0.72 of the window's
+    // height, and this is the honest way to get there: the alternative was to
+    // push HOME further out, but zoom is measured as a fraction of the span
+    // between DIST_NEAR and DIST_FAR, so moving the far end rescales every
+    // altitude in the app — a ministry opened at zoom 0.62 would sit 60%
+    // higher than it used to. Widening the lens leaves the zoom ladder where
+    // it is and only changes how much of the world each rung shows.
+    this.camera = new PerspectiveCamera(35.6, 1, 0.005, 60);
 
     this.controls = new GlobeControls(canvas, this.camera, {
       onFirstGesture: opts.onFirstGesture,
@@ -97,6 +165,23 @@ export class Globe {
 
     this.store = new VectorStore();
     this.painter = new VectorPainter(this.store);
+    const env = import.meta.env ?? {};
+    this.imagery = new ImageryLayer({
+      provider: opts.tiles?.provider ?? env.VITE_TILES_PROVIDER ?? "esri",
+      key: opts.tiles?.key ?? env.VITE_TILES_KEY ?? "",
+      url: opts.tiles?.url ?? env.VITE_TILES_URL ?? "",
+      attribution: opts.tiles?.attribution ?? env.VITE_TILES_ATTRIBUTION ?? "",
+      tile: Number(opts.tiles?.tile ?? env.VITE_TILES_SIZE) || undefined,
+      maxZoom: Number(opts.tiles?.maxZoom ?? env.VITE_TILES_MAX_ZOOM) || undefined,
+      // A tile landing is the one thing here that happens off the camera's
+      // clock, so it has to be able to ask for a frame of its own.
+      onUpdate: () => {
+        this.dirty = true;
+      },
+    });
+    this.detailMix = 0;
+    this.lastTiles = 0;
+    this.tileDist = 0;
     this.labels = new LabelLayer(opts.overlay, {
       onPinClick: opts.onPinClick,
       onPinHover: opts.onPinHover,
@@ -132,6 +217,8 @@ export class Globe {
       mask: this.painter.maskTexture,
       baseInk: this.painter.baseTexture,
       window: this.painter.window,
+      detail: this.imagery.texture,
+      detailWindow: this.imagery.window,
     });
     this.clouds = createClouds(textures);
     this.halo = createHalo();
@@ -178,9 +265,12 @@ export class Globe {
   /* ------------------------------------------------------------------ api */
 
   setTheme(name) {
-    this.theme = THEMES[name] ? name : "light";
+    this.theme = THEMES[name] ? name : "dark";
     const t = applyTheme(this.theme, this.earth, this.clouds, this.halo);
     this.cloudBase = t.clouds.opacity;
+    this.facetBase = t.facet.amount;
+    this.sunMixBase = t.sunMix;
+    this.cloudSunMixBase = t.clouds.sunMix;
     this.sunView.set(...t.sunView).normalize();
     this.painter.painted = null; // line colours changed, so force a repaint
     this.painter.repaintBase(this.theme);
@@ -239,9 +329,87 @@ export class Globe {
     this.labels.setSelected(null);
   }
 
+  /**
+   * Carries the lamp round with the camera.
+   *
+   * `sunView` is a *view* space direction — straight up the screen — and this
+   * is the one line that turns it into the world space vector the shaders are
+   * lit by. Because it is recomputed from the camera every frame, the light
+   * never moves relative to the viewer: turn the globe and each continent is
+   * carried up into the light and back down out of it, which is the whole
+   * behaviour. Parent the light to the globe instead and the opposite happens.
+   *
+   * Public because the frame loop is not the only thing that needs it: anything
+   * that moves the camera and then renders by hand — the capture player, the
+   * verify harness — has to run this in between, or it shades the new camera
+   * with the old camera's sun.
+   */
+  syncSun() {
+    this.sunWorld.copy(this.sunView).applyQuaternion(this.camera.quaternion);
+    this.earth.uniforms.uSun.value.copy(this.sunWorld);
+    this.clouds.uniforms.uSun.value.copy(this.sunWorld);
+  }
+
   /** Pauses or resumes the idle drift. */
   setSpin(on) {
     this.controls.setSpin(on);
+  }
+
+  /**
+   * Tells the globe it is not on screen. The frame loop keeps running — it is
+   * what notices the camera again — but it does no work, so a sheet scrolling
+   * over the top of a hidden planet is not competing with it for the GPU.
+   */
+  setCovered(on) {
+    const next = !!on;
+    if (next === this.covered) return;
+    this.covered = next;
+    if (!next) {
+      // Nothing has been drawn for a while and the camera may have moved
+      // underneath: come back with a full service rather than a stale frame.
+      this.dirty = true;
+      this.last = performance.now();
+    }
+  }
+
+  /**
+   * One step of the resolution scaler, called once a frame with the frame's
+   * own duration. Returns true when the drawing buffer changed.
+   */
+  #autoRes(ms, now) {
+    // Frames that did one-off work are slow for a reason resolution will not
+    // fix, and counting them would scale the globe down over a single repaint.
+    //
+    // This used to be a duration cap — ignore anything over 120ms — which was
+    // wrong in the one case that matters: on a device slow enough that *every*
+    // frame is over 120ms, the cap threw away every sample and the scaler,
+    // whose entire purpose is that device, never moved off full resolution.
+    // Knowing which frames did the work is the honest test.
+    if (this.skipSample) {
+      this.skipSample = false;
+      return false;
+    }
+    this.frames.push(ms);
+    if (this.frames.length > RES_WINDOW) this.frames.shift();
+    if (now - this.resAt < RES_HOLD_MS) return false;
+
+    const next = pickResolution(this.frames, this.res);
+    if (next === this.res) return false;
+
+    this.res = next;
+    this.resAt = now;
+    this.frames.length = 0;
+    // Reallocating the drawing buffer costs a frame of its own.
+    this.skipSample = true;
+    this.renderer.setPixelRatio(this.dpr * this.res);
+    this.renderer.setSize(this.size.w, this.size.h, false);
+    // The vector window is painted at one texel per drawing-buffer pixel, so
+    // it has to be told. The tile layer deliberately is not: its zoom is a
+    // network decision, and re-fetching a city every time the scaler twitches
+    // would cost far more than the texels it would save.
+    this.painter.painted = null;
+    this.dirty = true;
+    return true;
   }
 
   /**
@@ -277,6 +445,16 @@ export class Globe {
   }
 
   /**
+   * The zoom ladder, on the instance. The module exports it too, but the
+   * console and the verify harnesses only ever have a Globe — and a harness
+   * that hardcodes the ladder's ends instead silently tests a camera the app
+   * no longer has.
+   */
+  distForZoom(z) {
+    return distForZoom(z);
+  }
+
+  /**
    * Renders one shader channel instead of the graded surface. Handy when the
    * question is "is this the mask or the grade?".
    * 1 mask · 2 window · 3 ink · 4 land · 5 sea · 6 hillshade · 7 topo · 8 lum/chroma/snow
@@ -294,8 +472,13 @@ export class Globe {
   stats() {
     return {
       ...this.painter.stats,
+      imagery: !this.imagery.enabled
+        ? "not configured — painted base only"
+        : this.imagery.stats.tiles
+          ? `${this.imagery.label} · z${this.imagery.stats.z} · ${this.imagery.stats.tiles} tiles · ${this.imagery.stats.size}`
+          : `${this.imagery.label} · nothing streamed yet`,
       renderer: this.renderer.capabilities.isWebGL2 ? "WebGL2" : "WebGL",
-      dpr: this.dpr,
+      dpr: this.res < 1 ? `${this.dpr} × ${this.res}` : this.dpr,
       triangles: this.renderer.info.render.triangles,
     };
   }
@@ -308,7 +491,7 @@ export class Globe {
     if (w === this.size.w && h === this.size.h) return;
     this.size = { w, h };
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.renderer.setPixelRatio(this.dpr);
+    this.renderer.setPixelRatio(this.dpr * this.res);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(h, 1);
     this.camera.updateProjectionMatrix();
@@ -318,7 +501,7 @@ export class Globe {
   }
 
   #bounds() {
-    const dist = this.controls.dist;
+    const dist = this.controls.camDist;
     const cap = visibleCapRadius(dist, this.camera.fov, this.camera.aspect);
     const extent = visibleExtent(dist, this.camera.fov, this.camera.aspect);
     return { cap, bounds: viewBounds(this.controls.lat, this.controls.lon, extent, 1.02) };
@@ -326,7 +509,7 @@ export class Globe {
 
   #serviceVectors(immediate = false) {
     const { bounds } = this.#bounds();
-    const ppd = this.controls.pxPerDeg * this.dpr;
+    const ppd = this.controls.pxPerDeg * this.dpr * this.res;
     const centre = { lat: this.controls.lat, lon: this.controls.lon };
 
     // Pull the finer set in as soon as it would show, then keep drawing with
@@ -358,6 +541,7 @@ export class Globe {
       const quality = this.painter.stats.lastMs > 26 ? 0.4 : 0.6;
       if (this.painter.repaint(bounds, ppd, { theme: this.theme, quality, pad: 1.34, centre })) {
         this.lastPaint = now;
+        this.skipSample = true;
         this.earth.uniforms.uHasWindow.value = 1;
       }
       return;
@@ -374,7 +558,57 @@ export class Globe {
       })
     ) {
       this.lastPaint = now;
+      this.skipSample = true;
       this.earth.uniforms.uHasWindow.value = 1;
+    }
+  }
+
+  /**
+   * Keeps the tile canvas over the ground on screen.
+   *
+   * Cheaper than it looks: the window is a whole number of tiles, so an
+   * ordinary nudge asks for the same rectangle and returns at the first
+   * comparison, and a tile once decoded is redrawn from memory. What costs
+   * anything is the fetch, which is why this is armed below the zoom that
+   * shows it — by the time the fade begins the first window is already there.
+   */
+  #serviceImagery(z, immediate = false) {
+    if (!this.imagery.enabled || z < DETAIL_ARM) return;
+    const now = performance.now();
+    const moving = this.controls.dragging || this.idleFrames < 2;
+    if (!immediate && moving && now - this.lastTiles < DETAIL_MOTION_MS) return;
+
+    // Tiles are fetched for ground you are looking at, not for ground you are
+    // travelling through. A fly-in crosses six or seven zoom levels in under
+    // two seconds and every one of them is a full window — five hundred
+    // requests to arrive somewhere that needs eighty. Panning still streams,
+    // because the distance is not changing; changing distance waits for the
+    // camera to stop, and the painted globe covers the gap, which is what it
+    // is for.
+    const dist = this.controls.camDist;
+    const zooming = Math.abs(dist - this.tileDist) > dist * 0.004;
+    this.tileDist = dist;
+
+    const { bounds } = this.#bounds();
+    // One pad, whether the camera is moving or not. The vector painter can
+    // afford a wider window during motion because it rasterises what it
+    // already has in memory; here a wider window means a different tile
+    // rectangle, which means fetching the whole view again at the other pad
+    // every time the camera starts or stops. A single figure — enough margin
+    // that an ordinary nudge lands inside the tiles already held — costs a
+    // few tiles at the edge and halves the traffic.
+    const win = padBounds(bounds, 1.18);
+    if (
+      this.imagery.update({
+        bounds: win,
+        pxPerDeg: this.controls.pxPerDeg * this.dpr,
+        centre: { lat: this.controls.lat, lon: this.controls.lon },
+        fetch: immediate || !zooming,
+      })
+    ) {
+      this.lastTiles = now;
+      this.skipSample = true;
+      this.dirty = true;
     }
   }
 
@@ -383,7 +617,11 @@ export class Globe {
     const buffer = this.renderer.getDrawingBufferSize(this.bufferSize);
     u.uResolution.value.set(buffer.x, buffer.y);
     u.uCentre.value.set(buffer.x * 0.5, buffer.y * 0.5);
-    const limb = Math.asin(clamp(1 / this.controls.dist, -1, 1));
+    // Screen space, y down, pointing at the lamp. Taken from the same view
+    // space vector the surface is lit by, so the bloom cannot drift off the
+    // lit hemisphere however the globe is turned.
+    u.uLightDir.value.set(this.sunView.x, -this.sunView.y).normalize();
+    const limb = Math.asin(clamp(1 / this.controls.camDist, -1, 1));
     const half = Math.tan(this.camera.fov * DEG * 0.5);
     u.uRadius.value = (buffer.y * 0.5) * (Math.tan(limb) / half);
   }
@@ -392,8 +630,17 @@ export class Globe {
     if (!this.running) return;
     requestAnimationFrame(this.#tick);
 
-    const dt = Math.min((now - this.last) / 1000, 0.05);
+    // Covered, or in a background tab. The clock is kept honest so the first
+    // frame back does not integrate a two-minute dt into the drift.
+    if (this.covered || document.hidden) {
+      this.last = now;
+      return;
+    }
+
+    const frame = now - this.last;
+    const dt = Math.min(frame / 1000, 0.05);
     this.last = now;
+    this.#autoRes(frame, now);
 
     const moved = this.controls.update(dt);
     if (moved) {
@@ -411,10 +658,67 @@ export class Globe {
     const z = this.controls.zoom;
     const c = this.clouds.uniforms;
     c.uDrift.value = this.drift;
-    c.uOpacity.value = lerp(this.cloudBase, this.cloudBase * 0.2, smoothstep(0.12, 0.86, z));
-    this.sunWorld.copy(this.sunView).applyQuaternion(this.camera.quaternion);
-    this.earth.uniforms.uSun.value.copy(this.sunWorld);
-    c.uSun.value.copy(this.sunWorld);
+    // ...and it goes out altogether rather than thinning to a fifth.
+    //
+    // The sheet is a shell 35km above the ground, which is nothing from orbit
+    // and everything from ninety kilometres up: at the close stop the camera
+    // is barely twice its height above it, so what used to be a haze over the
+    // world becomes a *ceiling* — its own limb cuts a band across the top of
+    // the frame and the fifth that was left reads as fog over the city.
+    c.uOpacity.value = lerp(this.cloudBase, 0, smoothstep(0.12, 0.72, z));
+
+    // The cells are a fixed angular size, so coming in makes each one bigger
+    // on screen until a single facet fills the window. The faceted shell is a
+    // whole-globe reading of the world; past a region the vectors are what
+    // carry the detail, and the facets retire rather than becoming scenery.
+    this.earth.uniforms.uFacet.value = (this.facetBase ?? 1) * (1 - smoothstep(0.46, 0.82, z));
+
+    // So does the terminator, and for the same reason.
+    //
+    // A shadow thrown across the planet is a picture of a *planet*: it needs
+    // the whole disc to be a shadow at all. Two hundred kilometres of England
+    // does not straddle a terminator — it is either day there or it is not —
+    // so holding the whole-globe modelling on the way in just renders the
+    // ground you came to read at a third of its brightness, in a dusk that
+    // never resolves however far you go. Past a region the lamp flattens
+    // toward plain overhead daylight, on the same schedule the facets retire
+    // on. It is not a brightness cheat: uSunMix is literally "how much of the
+    // day/night modelling to apply", and at a city there is no night in frame
+    // to model.
+    // The handover. Two gates multiplied: how far in the camera is, and how
+    // much of the window has actually arrived — so a cold cache fades up as it
+    // fills instead of snapping on over a half-drawn mosaic. Smoothed in time
+    // as well, because coverage steps as each tile lands and an unsmoothed mix
+    // would flicker with the network.
+    const wanted = this.imagery.enabled
+      // Coverage only gates the *start*: past a tile or two the canvas carries
+      // its own presence in its alpha, so the fade does not have to wait for a
+      // window to be complete before it will show any of it.
+      ? smoothstep(DETAIL_IN[0], DETAIL_IN[1], z) * smoothstep(0.0, 0.25, this.imagery.coverage)
+      : 0;
+    this.detailMix += (wanted - this.detailMix) * (1 - Math.exp(-dt / DETAIL_TAU));
+    if (Math.abs(wanted - this.detailMix) > 0.002) this.dirty = true;
+    this.earth.uniforms.uDetailMix.value = this.detailMix;
+    // Where the imagery draws the water too, the coastline the ink is tracing
+    // is already there in the picture. Driven off zoom rather than off the
+    // mix, which saturates long before the camera stops.
+    // Late, and later than the imagery itself. A styled ocean beside real land
+    // is the look; it only becomes a *lie* at the scale where you can see the
+    // coastline it is drawn from is a kilometre out, and a sediment plume or a
+    // turquoise shoal is worth more than the ramp only once it is the size of
+    // the frame. Regional zoom keeps the theme's water.
+    const water = smoothstep(0.74, 0.94, z) * this.detailMix;
+    this.earth.uniforms.uDetailWater.value = water;
+    // The ink was drawn to carry a world with no detail under it. Where there
+    // is detail it steps back to a hint — enough that the coast still reads as
+    // a drawn edge, not so much that it fences off the ground it is tracing —
+    // and where the imagery has the water as well it very nearly lets go.
+    this.earth.uniforms.uLineMix.value = 1 - 0.5 * this.detailMix - 0.34 * water;
+
+    const local = smoothstep(0.34, 0.78, z);
+    this.earth.uniforms.uSunMix.value = (this.sunMixBase ?? 1) * (1 - 0.78 * local);
+    c.uSunMix.value = (this.cloudSunMixBase ?? 0.55) * (1 - 0.78 * local);
+    this.syncSun();
 
     if (moved || this.dirty || this.idleFrames < 3) {
       const { cap } = this.#bounds();
@@ -427,11 +731,13 @@ export class Globe {
         capRadius: cap,
       });
       this.#serviceVectors();
+      this.#serviceImagery(z);
       this.opts.onCamera?.(z, this.controls);
       this.dirty = false;
     } else if (this.settleTimer > SETTLE_MS && this.settleTimer < SETTLE_MS + 400) {
       this.settleTimer = SETTLE_MS + 500;
       this.#serviceVectors(true);
+      this.#serviceImagery(this.controls.zoom, true);
     }
 
     this.renderer.render(this.scene, this.camera);

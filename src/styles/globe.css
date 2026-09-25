@@ -168,6 +168,12 @@ body.is-live .overlay {
   display: flex;
   align-items: baseline;
   gap: 6px;
+  /* Set per pin by the label layer, from how much room is actually left
+     between the dot and the right edge. */
+  max-width: var(--chip-max, none);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 4px 9px 5px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.95);
@@ -324,19 +330,36 @@ body.is-live .overlay {
   }
 }
 
+/* The mark itself, breathing rather than spinning.
+   The line drawing this replaces could turn on its axis because it had no up:
+   a wireframe globe looks the same at every angle. The painted one carries a
+   map and a pin, and rotating that in the image plane is not a globe turning,
+   it is a picture being spun. So the wait is carried by a slow swell instead,
+   and by the bar underneath, which is the honest progress indicator anyway. */
 .boot__mark {
-  width: 38px;
-  height: 38px;
+  display: block;
+  width: 54px;
+  height: 54px;
   margin: 0 auto 18px;
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 1.25;
-  animation: boot-spin 6s linear infinite;
+  object-fit: contain;
+  animation: boot-breathe 2.8s var(--ease) infinite;
 }
 
-@keyframes boot-spin {
-  to {
-    rotate: 360deg;
+@keyframes boot-breathe {
+  0%,
+  100% {
+    scale: 1;
+    opacity: 0.86;
+  }
+  50% {
+    scale: 1.055;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot__mark {
+    animation: none;
   }
 }
 

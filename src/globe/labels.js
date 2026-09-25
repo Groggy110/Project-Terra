@@ -123,6 +123,7 @@ export class LabelLayer {
 
   update(ctx) {
     const { camera, controls, width, height } = ctx;
+    this.width = width;
     const z = controls.zoom;
     const cap = ctx.capRadius;
     const ppd = controls.pxPerDeg;
@@ -169,11 +170,38 @@ export class LabelLayer {
       queue[cursor++] = q;
     }
     const lettering = z > PIN_CHIP_Z;
+
+    // How many pins may carry their city at once.
+    //
+    // On a desktop the answer is "as many as fit", and the greedy layout below
+    // settles it — there is enough room that the ones which fail to place are
+    // genuinely crowded. A phone is a tenth of the area, and "as many as fit"
+    // there is a dozen plates stacked over a disc 300px across: the map stops
+    // being a map and becomes a list with a picture behind it. So the budget
+    // scales with the area actually available, and the pins spend it in the
+    // order the queue is already in — the ones lettered last frame first, so
+    // the set stays stable while the globe turns.
+    const budget = Math.max(4, Math.round((width * height) / 58000));
+    let spent = 0;
+
     for (const q of queue) {
       const active = this.selected === q.m.id;
       const wide = 24 + estWidth(q.m.city, 7.6);
-      const chip = (lettering || active) && this.#claim(q.x - 8, q.y - 11, wide, 22, active);
-      if (chip) chipped.add(q.m.id);
+      // A plate opens to the right of its dot, so one near the right edge runs
+      // off the screen and gets clipped mid-word. On a desktop there is always
+      // slack there; on a phone the globe reaches both edges and it happens to
+      // two or three pins at once. Rather than flip the plate — which would
+      // put the name on the wrong side of the dot it belongs to — the pin
+      // falls back to a bare dot, which is what it does when a plate will not
+      // fit for any other reason.
+      const room = q.x - 8 + wide < width - 6;
+      const affordable = active || spent < budget;
+      const chip =
+        (lettering || active) && room && affordable && this.#claim(q.x - 8, q.y - 11, wide, 22, active);
+      if (chip) {
+        chipped.add(q.m.id);
+        spent++;
+      }
       else if (!this.#claim(q.x - 8, q.y - 11, 16, 20)) continue;
       this.#pin(q.m, q, chip || active, active);
     }
@@ -293,6 +321,12 @@ export class LabelLayer {
     const el = node.el;
     el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
     el.style.opacity = (this.dimmed.has(m.id) ? 0.28 : 1) * clamp(p.edge, 0, 1);
+    // A hard stop at the right edge, over the top of the estimate that decided
+    // this plate would fit. estWidth measures a string against an average
+    // glyph and is occasionally optimistic by a dozen pixels — which on a
+    // desktop is slack nobody notices, and on a phone is a ministry's name
+    // hanging off the side of the screen. The plate ellipsises instead.
+    el.style.setProperty("--chip-max", `${Math.max(56, Math.round(this.width - p.x - 26))}px`);
     el.classList.toggle("show-chip", chip);
     el.classList.toggle("is-urgent", m.urgentNeeds > 0);
     el.classList.toggle("is-active", active);

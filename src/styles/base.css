@@ -47,6 +47,17 @@
 
   --panel-w: 346px;
   --edge: 28px;
+
+  /* The notch, the Dynamic Island and the home indicator.
+     Zero in a browser, and zero on the desktop, so every rule that adds one of
+     these is a no-op everywhere except an installed iOS app — which is the
+     only place the page paints under the hardware. They exist as tokens rather
+     than as env() inline so that the handful of edge-anchored elements can add
+     them by name and nothing has to remember the fallback. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
   --ease: cubic-bezier(0.22, 0.61, 0.24, 1);
   --ease-out: cubic-bezier(0.16, 0.84, 0.28, 1);
   /* For the entrance: the find bar riding up into the top bar.
@@ -70,7 +81,13 @@
 
   --surface: #121b29;
   --surface-veil: rgba(18, 27, 41, 0.88);
-  --paper: #0b111b;
+  /* The dark theme's ground is no longer paper: it is the sky the globe is
+     photographed against, and in the reference that sky is *black* — the
+     corners of the frame measure #000000 to #00030a. Not "very dark blue":
+     black, so that the rim light is unarguably the brightest thing on the
+     page. Everything that mixes from --paper — the top bar's wash, the
+     hero's halo, the sign-in scrim — follows it there on its own. */
+  --paper: #000206;
   --surface-soft: #18222f;
   --surface-sunk: #1d2836;
 
@@ -154,10 +171,17 @@ button {
   background-size: 100% 100%;
 }
 
+/* Stars, not a wash. Tiled rather than stretched: the sheet is built to wrap
+   (tools/make_stars.py), so the field stays the same density on a laptop and
+   on a wall, where a stretched one would smear into streaks. */
 :root[data-theme="dark"] .paper::before {
-  background-image: url("/textures/paper-dark.jpg");
-  opacity: 1;
+  background-image: url("/textures/stars.png");
+  background-size: 1024px 1024px;
+  background-repeat: repeat;
+  opacity: 0.85;
 }
+
+
 
 .paper::after {
   content: "";
@@ -169,9 +193,19 @@ button {
   mix-blend-mode: multiply;
 }
 
+/* Grain is a property of paper, and over a night sky it is only noise — so
+   the dark theme drops it.
+
+   It used to be spent on a CSS gradient standing in for the rim light
+   bleeding off the top of the limb, because the halo shader's bloom stopped
+   at the edge of the globe. It no longer does: the spill now reaches 1.2
+   radii past the limb, which at the framed distance is most of the way to the
+   top of the window, and it is anchored to the *disc* rather than to the
+   viewport. Two glows, one following the globe and one bolted to the top of
+   the page, drifted apart the moment anybody dragged — and the CSS one gave
+   itself away as a soft ellipse sitting over the sky. */
 :root[data-theme="dark"] .paper::after {
-  opacity: 0.06;
-  mix-blend-mode: screen;
+  content: none;
 }
 
 /* ---------- hero ---------- */
@@ -470,5 +504,70 @@ body.is-hero.hero-in .hero {
   * {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- touch ----------
+
+   Everything here applies only where the pointer is coarse, so a mouse keeps
+   its hover states and a finger gets the feedback it can actually perceive:
+   a finger covers the thing it is pressing, so a colour change under it is
+   invisible and a size change is not. */
+
+@media (hover: none) and (pointer: coarse) {
+  /* iOS paints a grey box over anything tappable. It fires on a 300ms delay,
+     lands after the press has already been acknowledged, and looks like a
+     rendering fault. */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Hover states are unreachable, and worse, sticky: iOS leaves the last
+     tapped element in :hover until something else is tapped, so a button you
+     pressed a minute ago is still lit. */
+  .btn:hover,
+  .chip__btn:hover,
+  .nav__item:hover {
+    background: inherit;
+  }
+
+  .btn:active,
+  .chip__btn:active,
+  .dial__btn:active,
+  .pin:active .pin__dot {
+    scale: 0.94;
+  }
+
+  .btn,
+  .chip__btn,
+  .dial__btn {
+    transition: scale 0.12s cubic-bezier(0.2, 0, 0, 1), background 0.2s;
+  }
+
+  /* A card is a target, not a hover surface. */
+  .need:active,
+  .board .need:active {
+    scale: 0.985;
+  }
+
+  .need {
+    transition: scale 0.12s cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* Rubber-banding the whole page behind a fixed-position app reveals the
+     browser's background under the globe. The sheet and the board still
+     scroll; they contain their own overscroll. */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+
+  /* Anything that scrolls does so with momentum, and keeps its rubber band to
+     itself so it cannot hand a flick back to the page. */
+  .scroll,
+  .panel__body,
+  .board {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
   }
 }

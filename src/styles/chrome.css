@@ -43,14 +43,16 @@ body.is-live .chrome {
 .topbar {
   position: absolute;
   inset: 0 0 auto 0;
-  height: 68px;
+  height: calc(68px + var(--safe-t));
   /* So the wash below can sit behind the bar's own labels without falling
      behind the globe as well. */
   isolation: isolate;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  padding: 0 var(--edge);
+  /* The top inset goes in the padding, not on a separate padding-top: the
+     shorthand below it would have reset it, which is exactly what happened. */
+  padding: var(--safe-t) calc(var(--edge) + var(--safe-r)) 0 calc(var(--edge) + var(--safe-l));
   gap: 16px;
 }
 
@@ -80,20 +82,32 @@ body.is-live .chrome {
   min-width: 0;
 }
 
+/* The watercolour mark, lifted out of the supplied lockup.
+   Bigger than the line drawing it replaces — a painted mark needs a few more
+   pixels than a 1.35px stroke before its continents read as continents — and
+   with a breath of shadow under it on the night sky, where a cut-out with no
+   ground under it floats. */
 .brand__mark {
-  width: 21px;
-  height: 21px;
+  width: 29px;
+  height: 29px;
   flex: none;
-  fill: none;
-  stroke: var(--ink);
-  stroke-width: 1.35;
-  stroke-linecap: round;
+  object-fit: contain;
 }
 
+:root[data-theme="dark"] .brand__mark {
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.55));
+}
+
+/* Set in a serif to answer the wordmark under the globe in the supplied
+   lockup, rather than reproducing that wordmark as a picture: it is navy, and
+   navy is invisible against this theme's sky. As text it takes --ink and is
+   legible in both themes, stays crisp at any zoom, and is still selectable
+   and readable to a screen reader. */
 .brand__name {
-  font-size: 16.5px;
-  font-weight: 620;
-  letter-spacing: -0.015em;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
   color: var(--ink);
 }
 
@@ -163,8 +177,8 @@ body.is-live .chrome {
 
 .crumbs {
   position: absolute;
-  top: 60px;
-  left: var(--edge);
+  top: calc(60px + var(--safe-t));
+  left: calc(var(--edge) + var(--safe-l));
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -203,9 +217,9 @@ body.is-live .chrome {
   /* above the panel: an open chip menu or a suggestion list may reach across
      the panel's edge, and it must not be painted underneath it */
   z-index: 5;
-  top: 92px;
-  left: var(--edge);
-  right: calc(var(--edge) + var(--panel-w) + 62px);
+  top: calc(92px + var(--safe-t));
+  left: calc(var(--edge) + var(--safe-l));
+  right: calc(var(--edge) + var(--safe-r) + var(--panel-w) + 62px);
   transition: top 0.9s var(--ease-move), left 0.9s var(--ease-move), right 0.9s var(--ease-move);
 }
 
@@ -558,6 +572,13 @@ body.is-hero .search input {
   color: var(--urgent);
 }
 
+/* A phone has no B key. The hint is for the people who can use it. */
+@media (hover: none) and (pointer: coarse) {
+  .opt__kbd {
+    display: none;
+  }
+}
+
 .opt__kbd {
   margin-left: auto;
   padding-left: 10px;
@@ -754,11 +775,43 @@ body.is-hero .search input {
 
 .dial {
   position: absolute;
-  left: var(--edge);
-  bottom: var(--edge);
+  left: calc(var(--edge) + var(--safe-l));
+  bottom: calc(var(--edge) + var(--safe-b));
   display: flex;
   flex-direction: column;
   gap: 11px;
+}
+
+/* Above the dial, measured rather than nested: four 34px buttons and three
+   11px gaps, plus the dial's own bottom offset. Nesting it inside the dial
+   was simpler and wrong — the dial does not exist on a phone. */
+.credit {
+  position: absolute;
+  left: calc(var(--edge) + var(--safe-l));
+  bottom: calc(var(--edge) + var(--safe-b) + 4 * 34px + 3 * 11px + 13px);
+  max-width: min(46vw, calc(100vw - 2 * var(--edge)));
+  padding: 5px 10px;
+  border-radius: 999px;
+  /* The one piece of chrome that is only ever read against satellite imagery
+     — bright, busy, and a different brightness every time the camera moves.
+     Nothing sits over that legibly on its own, so it takes the same veil the
+     dial and the filter chips have, and stops being an orphan besides. */
+  background: var(--surface-veil);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(12px) saturate(1.4);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 1.5;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--body);
+  white-space: nowrap;
+  pointer-events: none;
+  /* Driven by the globe's own fade, as a custom property rather than as
+     `style.opacity`, so that the rules below can still take it off screen
+     without having to out-shout an inline style. */
+  opacity: var(--credit-on, 0);
+  transition: opacity 0.55s var(--ease);
 }
 
 .dial__btn {
@@ -804,7 +857,7 @@ body.is-hero .search input {
 .hint {
   position: absolute;
   left: 50%;
-  bottom: 34px;
+  bottom: calc(34px + var(--safe-b));
   translate: -50% 0;
   font-family: var(--mono);
   font-size: 10.5px;
@@ -819,7 +872,7 @@ body.is-hero .search input {
 .grabber {
   position: absolute;
   left: 50%;
-  bottom: 9px;
+  bottom: calc(9px + var(--safe-b));
   translate: -50% 0;
   width: 38px;
   height: 5px;
@@ -841,7 +894,7 @@ body.is-hero .search input {
   left: 50%;
   /* clear of the hint, which the reference keeps standing at the foot of the
      globe for as long as nobody has touched it */
-  bottom: 62px;
+  bottom: calc(62px + var(--safe-b));
   translate: -50% 0;
   display: flex;
   flex-direction: column;
@@ -929,5 +982,246 @@ body.is-hero .search input {
   }
   .hero__sub {
     display: none;
+  }
+}
+
+/* ---------- phone ----------
+
+   Below 720px the desktop arrangement stops working rather than merely getting
+   cramped: a fixed right-hand rail is most of a phone screen, and the filter
+   row runs underneath it. So the rail becomes a bottom sheet (panel.css), the
+   filters become one scrolling row, and the top bar gives up everything that
+   is not the brand or a control.
+
+   Nothing here is a phone-shaped copy of the desktop rules — the desktop
+   layout is untouched above this breakpoint. */
+
+/* "Phone" is not a width. A handset held upright is narrow; the same handset
+   turned sideways is 874px wide — over any sensible width breakpoint — and
+   402px tall, which is far less room than the narrow case. Both want the same
+   answer, so the query asks for either. */
+@media (max-width: 720px), (max-width: 1000px) and (max-height: 520px) {
+  :root {
+    --edge: 14px;
+    /* The rail is a sheet now; the width token only still exists because the
+       find bar subtracts it, and on a phone it must subtract nothing. */
+    --panel-w: 0px;
+  }
+
+  /* The product name is the one thing in the bar that can go: the mark and
+     the word Terra carry it, and the bar needs the width for controls. */
+  .brand__sep,
+  .brand__product,
+  .brand .badge--demo {
+    display: none;
+  }
+
+  .brand__name {
+    font-size: 17.5px;
+  }
+
+  .brand__mark {
+    width: 26px;
+    height: 26px;
+  }
+
+  .topbar {
+    height: calc(52px + var(--safe-t));
+    grid-template-columns: auto 1fr;
+    gap: 8px;
+  }
+
+  .topbar::before {
+    inset: 0 0 -30px 0;
+  }
+
+  .topbar__actions {
+    gap: 6px;
+  }
+
+  /* A plus, not a sentence. */
+  .topbar__actions .btn--accent {
+    padding: 0;
+    width: 34px;
+    height: 34px;
+    justify-content: center;
+  }
+
+  .topbar__actions .btn--accent span,
+  .topbar__actions .btn--accent {
+    font-size: 0;
+  }
+
+  .topbar__actions .btn--accent .ico {
+    font-size: initial;
+    width: 17px;
+    height: 17px;
+  }
+
+  .crumbs {
+    display: none;
+  }
+
+  .findbar {
+    top: calc(56px + var(--safe-t));
+    left: var(--edge);
+    right: var(--edge);
+    /* The filter row has left the stack, so the bar is the search field and
+       nothing else — and it must not reserve height for a row that is now
+       fixed to the bottom of the screen. */
+    height: auto;
+  }
+
+  /* The globe is drawn centred in its canvas, and on a phone the middle of the
+     canvas is behind the sheet. Rather than offset the projection — which the
+     label layer, the visible-cap maths and the halo radius all read — the
+     canvas itself is lifted and the label overlay lifted with it by exactly
+     the same amount, so every projection stays honest and the disc simply
+     sits where there is room for it. */
+  /* The disc is centred in its canvas, and on a phone the centre of the
+     canvas is behind the sheet. Lifting the canvas and the label overlay by
+     the same amount puts it in the gap between the search field and the sheet
+     without desynchronising a single projection. */
+  #globe,
+  .overlay {
+    top: -13vh;
+  }
+
+  .search input {
+    font-size: 16px; /* iOS zooms the page for anything smaller on focus */
+  }
+
+  /* Off the top and down onto the map.
+
+     Stacked under the search field the filters cost 46px of the tallest,
+     scarcest thing on a phone before the globe had drawn a pixel — and they
+     are map controls, not a header. Down here they read as one: a row of
+     categories over the map, scrolling sideways, sitting just above the sheet
+     and travelling with it. */
+  .filters {
+    position: fixed;
+    left: 0;
+    right: 0;
+    /* Clear of the sheet's top edge, and the sheet's height includes the
+       home-indicator inset that JS deliberately does not know about. */
+    bottom: calc(var(--sheet-lift, 208px) + var(--safe-b) + 14px);
+    z-index: 4;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: visible;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 var(--edge) 2px;
+    margin: 0;
+    justify-content: flex-start;
+    pointer-events: auto;
+    transition: bottom 0.42s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.25s var(--ease);
+  }
+
+  /* Following a thumb, so it must not interpolate either. */
+  body.sheet-dragging .filters {
+    transition: opacity 0.25s var(--ease);
+  }
+
+  /* No sheet to sit on. */
+  body.no-panel .filters {
+    bottom: calc(var(--safe-b) + 14px);
+  }
+
+  /* At the tallest detent the sheet *is* the page. The chips pinned over its
+     top edge become clutter on top of content, and the search field — which
+     is positioned against the top of the window, not against the sheet — ends
+     up floating over the list. Both stand down; raising the sheet above them
+     instead would leave a search field visible that scrolls nothing. */
+  body.sheet-full .filters,
+  body.sheet-full .findbar,
+  body.sheet-full .credit,
+  /*
+   * ...and the same for the needs board, which is a different sheet and was
+   * not covered by the rule above. `--sheet-lift` is published by the panel
+   * sheet alone, so with the board up the filter row went on hovering at the
+   * panel's last height — which put a row of chips, and the search field with
+   * it, floating in the middle of the list. Nothing that perches on the map
+   * has anywhere to perch when the map is not on screen.
+   */
+  body.board-open .filters,
+  body.board-open .findbar,
+  body.board-open .credit {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .findbar {
+    transition: opacity 0.25s var(--ease);
+  }
+
+  .filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .chip {
+    flex: none;
+  }
+
+  /* The dial is a mouse affordance. Fingers pinch and drag, and on a phone
+     these four buttons only cover the globe. */
+  .dial,
+  .hint {
+    display: none;
+  }
+
+  /* No dial to sit on, so it rides above the filter row instead — on the same
+     sheet-driven offset, so the two travel together. */
+  .credit {
+    bottom: calc(var(--sheet-lift, 208px) + var(--safe-b) + 14px + 42px);
+    max-width: calc(100vw - 2 * var(--edge));
+    transition: bottom 0.42s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.25s var(--ease);
+  }
+
+  body.no-panel .credit {
+    bottom: calc(var(--safe-b) + 14px + 42px);
+  }
+
+  body.sheet-dragging .credit {
+    transition: opacity 0.25s var(--ease);
+  }
+
+  .toasts {
+    bottom: calc(var(--safe-b) + 84px);
+    width: calc(100vw - 2 * var(--edge));
+  }
+}
+
+/* Landscape on a phone: short and wide.
+   Here the sheet is the wrong answer — 38% of 400px is a letterbox, and there
+   is no shortage of *width*. So the rail comes back, narrower, and the height
+   is what everything else economises on. */
+@media (max-width: 1000px) and (orientation: landscape) and (max-height: 520px) {
+  :root {
+    --panel-w: 264px;
+  }
+
+  .topbar {
+    height: calc(44px + var(--safe-t));
+  }
+
+  .findbar {
+    top: calc(48px + var(--safe-t));
+    right: calc(var(--edge) + var(--safe-r) + var(--panel-w) + 14px);
+  }
+
+  #globe,
+  .overlay {
+    top: 0;
+  }
+
+  /* No sheet here, so nothing to perch on: the chips go back under the search
+     field where the rail leaves room for them. */
+  .filters {
+    position: static;
+    padding: 2px 0 0;
+    margin: 0;
+    opacity: 1;
+    pointer-events: auto;
   }
 }

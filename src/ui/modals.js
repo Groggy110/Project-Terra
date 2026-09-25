@@ -6,8 +6,9 @@ import { FOCUS_BY_ID, NEED_TYPES, TYPE_BY_ID, URGENCIES, URGENCY_BY_ID } from ".
 import { MINISTRIES, MINISTRY_BY_ID } from "../data/ministries.js";
 
 export class ModalLayer {
-  constructor(root) {
+  constructor(root, { onToggle } = {}) {
     this.root = root;
+    this.onToggle = onToggle;
     this.current = null;
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this.current) {
@@ -27,6 +28,7 @@ export class ModalLayer {
     this.current = null;
     scrim.classList.add("is-out");
     modal.classList.add("is-out");
+    this.onToggle?.(false);
     modal.addEventListener("animationend", () => {
       scrim.remove();
       modal.remove();
@@ -49,6 +51,7 @@ export class ModalLayer {
     add(modal, [build(() => this.close())]);
     this.root.append(scrim, modal);
     this.current = { scrim, modal };
+    this.onToggle?.(true);
     const focusTarget =
       modal.querySelector("[data-autofocus]") ??
       modal.querySelector("input,select,textarea,button:not(.modal__x)");
@@ -79,7 +82,11 @@ export function aboutModal(layer, { stats, onPostNeed }) {
             }),
             h("p", {
               text:
-                "The globe grades NASA Blue Marble imagery in real time: land lifted through a tone curve, snow separated from desert by chroma, the ocean recoloured from depth, hillshade from a topography channel, and a synthesised cloud sheet that thins out as you come in. Every line on it — coast, border, lake, river — is vector, and repaints at tile resolution for whatever is on screen, switching to a finer dataset as you approach. So zooming reveals detail rather than magnifying blur, and city labels fade in as you get closer.",
+                "The globe grades NASA Blue Marble imagery in real time: land lifted through a tone curve, snow separated from desert by chroma, the ocean recoloured from depth, hillshade from a topography channel, and a synthesised cloud sheet that thins out as you come in. Every line on it — coast, border, lake, river — is vector, and repaints at tile resolution for whatever is on screen, switching to a finer dataset as you approach.",
+            }),
+            h("p", {
+              text:
+                "Blue Marble is fifteen pixels to the degree, which is a planet rather than a map, so past a region satellite tiles stream in underneath and take the land over — reprojected in the shader rather than on the way in, graded to the theme you are in, and faded up as they arrive. The modelling that belongs to a planet retires as they do: the faceting, the terminator, the cloud sheet, and finally the styled ocean, whose coastline is a kilometre coarser than the imagery it would be cutting across. So coming in on a city shows the city.",
             }),
           ),
           h("div", { class: "notice" }, [
@@ -112,7 +119,8 @@ export function aboutModal(layer, { stats, onPostNeed }) {
 function specTable(stats) {
   const rows = [
     ["Renderer", `three.js r${stats.three} · ${stats.renderer}`],
-    ["Imagery", "NASA Blue Marble 5400×2700"],
+    ["Base imagery", "NASA Blue Marble 5400×2700"],
+    ["Detail imagery", stats.imagery || "not configured — painted base only"],
     ["Cloud", "synthesised · tools/make_clouds.py"],
     ["Vectors", "Natural Earth 1:50m · 1:10m on zoom"],
     ["Vector canvas", `${stats.size} · ${stats.features} features · ${stats.lastMs} ms`],

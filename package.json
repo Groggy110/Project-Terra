@@ -2,11 +2,13 @@
   "name": "terra-live",
   "private": true,
   "version": "1.0.0",
-  "description": "Terra — Ministry Needs Network. A vector-over-satellite globe of what ministries need.",
+  "description": "Terra \u2014 Ministry Needs Network. A vector-over-satellite globe of what ministries need.",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:sandbox": "vite --open /sandbox.html",
     "build": "vite build",
+    "build:sandbox": "TERRA_SANDBOX=1 vite build",
     "preview": "vite preview --port 4173",
     "assets": "./tools/fetch_sources.sh && python3 tools/make_earth_textures.py && python3 tools/make_clouds.py && python3 tools/make_ui_textures.py && python3 tools/build_vectors.py"
   },

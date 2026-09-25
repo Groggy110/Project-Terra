@@ -14,6 +14,13 @@ const H = Number(process.env.H || 749);
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+const setTheme = (page, name) =>
+  page.evaluate((n) => {
+    if (document.documentElement.dataset.theme !== n) {
+      document.querySelector('[data-action="cycle-theme"]').click();
+    }
+  }, name);
+
 const STATES = {
   async default() {},
 
@@ -90,13 +97,16 @@ const STATES = {
     await wait(500);
   },
 
-  async dark(page) {
-    await page.click('[data-action="cycle-theme"]');
+  // Dark is the default now, so every other state above is already the night
+  // sky. These two are the *other* theme — set rather than toggled, because a
+  // toggle only says "the one you are not in".
+  async light(page) {
+    await setTheme(page, "light");
     await wait(1200);
   },
 
-  async darkCity(page) {
-    await page.click('[data-action="cycle-theme"]');
+  async lightCity(page) {
+    await setTheme(page, "light");
     await page.evaluate(() => window.terra.globe.flyTo({ lat: 41, lon: 29, dist: 1.6, ms: 10 }));
     await wait(1900);
   },

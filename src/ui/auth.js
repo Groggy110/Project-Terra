@@ -27,7 +27,16 @@ export class AuthGate {
     this.busy = false;
     this.sent = null;
 
-    this.card = h("div", { class: "gate__card", role: "dialog", "aria-modal": "true", "aria-label": "Sign in to Terra" });
+    // Two boxes, not one: the shell carries the wash and the rounded edge and
+    // never scrolls, the body scrolls inside it. A single scrolling box put
+    // its own padding and its painted ground on the move together, so on a
+    // short window the card's tint slid up past its corner.
+    this.body = h("div", { class: "gate__body" });
+    this.card = h(
+      "div",
+      { class: "gate__card", role: "dialog", "aria-modal": "true", "aria-label": "Sign in to Terra" },
+      this.body,
+    );
     this.el = h(
       "div",
       { class: "gate", hidden: true },
@@ -71,7 +80,7 @@ export class AuthGate {
   /* ------------------------------------------------------------- render */
 
   render() {
-    clear(this.card);
+    clear(this.body);
     if (this.sent) return this.renderSent();
 
     const isSignup = this.mode === "signup";
@@ -135,7 +144,7 @@ export class AuthGate {
       }),
     ]);
 
-    add(this.card, [
+    add(this.body, [
       svg("0 0 24 24", MARK, "gate__mark"),
       h("h2", { class: "gate__title", text: isSignup ? "Join Terra" : isMagic ? "Sign in without a password" : "Welcome back" }),
       h("p", { class: "gate__sub", text: isSignup
@@ -156,7 +165,7 @@ export class AuthGate {
   }
 
   renderSent() {
-    add(this.card, [
+    add(this.body, [
       h("div", { class: "gate__sent" },
         svg("0 0 24 24", ENVELOPE, ""),
         h("h2", { class: "gate__title", text: "Check your email" }),

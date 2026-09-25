@@ -9,6 +9,7 @@ import { Board } from "./board.js";
 import { Filters } from "./filters.js";
 import { ModalLayer, aboutModal, needModal } from "./modals.js";
 import { Panel } from "./panel.js";
+import { PanelSheet } from "./sheet.js";
 import { add, clear, h, icons, nf } from "./dom.js";
 import { openPop, menuIcons } from "./pop.js";
 import { store } from "./store.js";
@@ -51,6 +52,7 @@ export class App {
       overlay: document.getElementById("overlay"),
       hero: document.getElementById("hero"),
       hint: document.getElementById("hint"),
+      credit: document.getElementById("credit"),
       crumbs: document.getElementById("crumbs"),
       nav: document.getElementById("nav"),
       filters: document.getElementById("filters"),
@@ -66,9 +68,33 @@ export class App {
       chrome: document.querySelector(".chrome"),
     };
 
-    this.modals = new ModalLayer(this.el.modals);
+    this.modals = new ModalLayer(this.el.modals, { onToggle: () => this.#syncCovered() });
     this.panel = new Panel(this.el.panel, { net: this.net, on: this.#panelHandlers() });
+    // "Search needs, ministries, skills or places" is 44 characters and a
+    // phone shows about 28 of them, so the field advertises itself with a
+    // truncated word. Swapped rather than shrunk: 16px is the floor below
+    // which iOS zooms the whole page when the field takes focus.
+    const narrow = window.matchMedia("(max-width: 720px)");
+    const placeholder = () => {
+      if (!this.el.search) return;
+      this.el.search.placeholder = narrow.matches ? "Search needs or places" : "Search needs, ministries, skills or places";
+    };
+    narrow.addEventListener("change", placeholder);
+    placeholder();
+
     this.board = new Board(this.el.sheet, { net: this.net, on: this.#boardHandlers() });
+    // After the board, because it reports its first detent immediately and
+    // syncReserved reads every piece of chrome including the board's sheet.
+    // Phones only; above the breakpoint it stands itself down.
+    this.sheet = new PanelSheet(this.el.panel, {
+      // The sheet is one of the rectangles the label layer has to keep clear
+      // of, and its height changes on every drag, so the reserved list is
+      // recomputed whenever it settles.
+      onDetent: () => {
+        this.syncReserved();
+        this.#syncCovered();
+      },
+    });
     this.filtersUi = new Filters(this.el.filters, {
       net: this.net,
       query: this.query,
@@ -91,7 +117,7 @@ export class App {
     // globe has flown in.
     document.body.classList.add("is-hero");
     this.panel.setOpen(false);
-    this.#theme(store.theme || "light", { quiet: true });
+    this.#theme(store.theme || "dark", { quiet: true });
     this.#bindChrome();
     this.#bindKeys();
 
@@ -112,6 +138,7 @@ export class App {
       await this.globe.start();
       this.globe.setTheme(this.theme);
       this.globe.setMinistries(this.net.ministries);
+      this.#initCredit();
     } catch (err) {
       boot.fail(err);
       throw err;
@@ -205,7 +232,7 @@ export class App {
         { class: "boot__inner" },
         h("span", {
           class: "boot__mark",
-          html: '<svg viewBox="0 0 24 24" class="boot__mark"><circle cx="12" cy="12" r="9.4"/><ellipse cx="12" cy="12" rx="4" ry="9.4"/><path d="M2.9 8.7h18.2M2.9 15.3h18.2"/></svg>',
+          html: '<img class="boot__mark" src="/logo-mark.png" alt="" width="256" height="256" />',
         }),
         label,
         h("div", { class: "boot__bar" }, fill),
@@ -389,6 +416,7 @@ export class App {
       stats: {
         three: REVISION,
         renderer: stats.renderer ?? "WebGL2",
+        imagery: stats.imagery,
         size: stats.size ?? "—",
         features: stats.features ?? 0,
         lastMs: stats.lastMs ?? 0,
@@ -693,6 +721,7 @@ export class App {
       clearFilters: () => this.clearFilters(),
       boardToggled: (open) => {
         document.body.classList.toggle("board-open", open);
+        this.#syncCovered();
         setTimeout(() => this.syncReserved(), 560);
         this.el.hint.style.opacity = open ? 0 : this.hintOpacity ?? 1;
         this.#renderCrumbs();
@@ -837,10 +866,49 @@ export class App {
     this.#renderCrumbs();
   }
 
+  /**
+   * The imagery credit. Every provider requires attribution while their tiles
+   * are on screen, and none of them requires it while they are not — so it
+   * rides the same fade the imagery does rather than standing there over a
+   * globe that is still entirely painted.
+   */
+  /**
+   * Tells the globe when nothing of it is on screen.
+   *
+   * A full-height sheet or a dialog on a phone leaves the renderer drawing a
+   * planet — the heaviest thing on the page — underneath something opaque, at
+   * sixty frames a second, while a finger is trying to scroll the thing on
+   * top. That is most of why the list stuttered. On a desktop the board is a
+   * card in the middle of a visible globe, so none of this applies.
+   */
+  #syncCovered() {
+    const phone = window.matchMedia("(max-width: 720px)").matches;
+    const covered =
+      !!this.modals?.isOpen ||
+      (phone && (!!this.board?.open || document.body.classList.contains("sheet-full")));
+    this.globe?.setCovered(covered);
+  }
+
+  #initCredit() {
+    const text = this.globe?.imagery?.attribution;
+    if (!text || !this.el.credit) return;
+    this.el.credit.textContent = text;
+    this.el.credit.hidden = false;
+  }
+
   #onCamera(z) {
     if (!this.hintHidden) {
       this.hintOpacity = 1 - smoothstep(0.05, 0.3, z);
       if (!this.board.open) this.el.hint.style.opacity = this.hintOpacity;
+    }
+    if (this.el.credit && !this.el.credit.hidden) {
+      // Rounded, because this runs on every camera frame and writing an
+      // unchanged string is still a style invalidation.
+      const on = Math.round(clamp(this.globe.detailMix * 1.6, 0, 1) * 20) / 20;
+      if (on !== this.creditOn) {
+        this.creditOn = on;
+        this.el.credit.style.setProperty("--credit-on", on);
+      }
     }
   }
 

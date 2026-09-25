@@ -128,11 +128,15 @@ const STYLE = {
     rivers: { color: "108,158,201", width: 0.8, alpha: 0.6 },
     lakeEdge: { color: "255,255,255", width: 0.8, alpha: 0.6 },
   },
+  // Against the night sky the coast is drawn as shallow water rather than as
+  // an outline: the reference has no line round its continents, it has a band
+  // of lit turquoise where the shelf comes up. So the ink is turquoise and
+  // faint enough to read as the sea getting shallower.
   dark: {
-    coast: { color: "158,205,246", width: 1.05, alpha: 0.5 },
-    borders: { color: "186,214,242", width: 0.85, alpha: 0.26 },
-    rivers: { color: "86,140,192", width: 0.8, alpha: 0.62 },
-    lakeEdge: { color: "158,205,246", width: 0.8, alpha: 0.34 },
+    coast: { color: "108,196,226", width: 1.05, alpha: 0.3 },
+    borders: { color: "186,214,242", width: 0.85, alpha: 0.2 },
+    rivers: { color: "86,140,192", width: 0.8, alpha: 0.5 },
+    lakeEdge: { color: "108,196,226", width: 0.8, alpha: 0.24 },
   },
 };
 
@@ -423,7 +427,7 @@ function recentre(win, lonSpan, latSpan, lonMid, latMid) {
   };
 }
 
-function padBounds(b, pad) {
+export function padBounds(b, pad) {
   if (b.lonSpan >= 359.99) {
     const latPad = Math.min(b.latSpan * (pad - 1) * 0.5, 20);
     const latMin = clamp(b.latMin - latPad, -90, 90);
