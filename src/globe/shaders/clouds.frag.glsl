@@ -1,6 +1,13 @@
 precision highp float;
 
 uniform sampler2D uClouds;
+// NASA's Blue Marble cloud composite: a real day's weather, storm spirals and
+// all, used for the whole-globe portrait. Its own ramp, because it is a
+// photograph with a grey floor rather than a synthesised 0..1 sheet.
+uniform sampler2D uCloudsReal;
+uniform float uRealMix;     // 0 synthetic sheet, 1 the photograph
+uniform float uRealLo;
+uniform float uRealHi;
 uniform vec3 uSun;
 uniform vec3 uTint;
 uniform vec3 uShadow;
@@ -41,6 +48,10 @@ void main() {
   // the dense cores and takes the skirts to nothing, so what is left reads as
   // separate cumulus with sky between them rather than as haze.
   a = pow(smoothstep(uLo, uHi, a), uGamma);
+  if (uRealMix > 0.002) {
+    float r = texture2DGradEXT(uCloudsReal, uv, ddx, ddy).r;
+    a = mix(a, smoothstep(uRealLo, uRealHi, r), uRealMix);
+  }
   if (a < 0.004) discard;
 
   vec3 V = normalize(cameraPosition - vWorld);

@@ -72,6 +72,28 @@ export const THEMES = {
     halo: { inner: "#a8cdf0", outer: "#e8f1fa", strength: 0.7, spread: 0.1, topBias: 0.5, falloff: 1.0, bloom: 0.18, bloomSpread: 0.42 },
     // Straight up the screen. Not a world direction — see globe.js.
     sunView: [0, 0.97, 0.24],
+    // The portrait. At the whole-globe view — the entrance, under the
+    // headline — the planet is the picture rather than the map, and it can
+    // afford to be graded like one: deeper, richer water, the haze pulled
+    // back to a bright rim at the limb instead of a milky veil over the disc,
+    // crisp white weather, a glint off the sea and a glow round the whole
+    // silhouette. Blended in by zoom (globe.js), gone by WORK, so the working
+    // map keeps the preset above untouched.
+    hero: {
+      ocean: { deep: "#133f6d", mid: "#1c5c97", shelf: "#3f93c8" },
+      atmo: "#dcecfb",
+      land: { sat: 1.42, gain: 1.07 },
+      relief: 5.8,
+      ambient: 0.6,
+      spec: 0.36,
+      fresnel: 0.78,
+      fresnelPow: 4.4,
+      rimBase: 0.72,
+      // `real` swaps the synthetic sheet for the NASA photograph; realLo/Hi
+      // are where its grey floor ends and where it is solid cloud.
+      clouds: { opacity: 0.9, shadow: "#c9d8e8", real: 1, realLo: 0.19, realHi: 0.82 },
+      halo: { inner: "#ffffff", outer: "#b6d6f4", strength: 1.3, spread: 0.07, topBias: 0.82, falloff: 0.7, bloom: 0.5, bloomSpread: 0.36 },
+    },
   },
 
   /**
@@ -223,6 +245,10 @@ export function createClouds({ clouds }) {
   prepare(clouds);
   const uniforms = {
     uClouds: { value: clouds },
+    uCloudsReal: { value: clouds },
+    uRealMix: { value: 0 },
+    uRealLo: { value: 0.2 },
+    uRealHi: { value: 0.9 },
     uSun: { value: new Vector3(0.4, 0.5, 0.76) },
     uTint: { value: new Color() },
     uShadow: { value: new Color() },
@@ -283,6 +309,71 @@ export function createHalo() {
   return { mesh, material, uniforms };
 }
 
+const colours = new Map();
+const colour = (hex) => {
+  let c = colours.get(hex);
+  if (!c) colours.set(hex, (c = new Color(hex)));
+  return c;
+};
+const mixNum = (a, b, w) => (b === undefined ? a : a + (b - a) * w);
+const mixCol = (target, a, b, w) => (b === undefined ? target.copy(colour(a)) : target.lerpColors(colour(a), colour(b), w));
+
+/**
+ * Blends a preset toward its `hero` grade by `w` (1 at the whole-globe view,
+ * 0 once the camera is working). Called every frame; a preset without a hero
+ * block is left exactly as applyTheme set it.
+ *
+ * Cloud opacity, sunMix and the facets are not touched here: the frame loop
+ * already drives those by zoom, and takes the hero cloud opacity from
+ * heroCloudOpacity() instead.
+ */
+export function applyHero(t, w, earth, clouds, halo) {
+  const h = t.hero;
+  if (!h) return;
+  const u = earth.uniforms;
+  mixCol(u.uDeep.value, t.ocean.deep, h.ocean?.deep, w);
+  mixCol(u.uMid.value, t.ocean.mid, h.ocean?.mid, w);
+  mixCol(u.uShelf.value, t.ocean.shelf, h.ocean?.shelf, w);
+  mixCol(u.uAtmo.value, t.atmo, h.atmo, w);
+  u.uLandSat.value = mixNum(t.land.sat, h.land?.sat, w);
+  u.uLandGain.value = mixNum(t.land.gain, h.land?.gain, w);
+  u.uRelief.value = mixNum(t.relief, h.relief, w);
+  u.uAmbient.value = mixNum(t.ambient, h.ambient, w);
+  u.uSpec.value = mixNum(t.spec, h.spec, w);
+  u.uFresnel.value = mixNum(t.fresnel, h.fresnel, w);
+  u.uFresnelPow.value = mixNum(t.fresnelPow, h.fresnelPow, w);
+  u.uRimBase.value = mixNum(t.rimBase, h.rimBase, w);
+
+  const c = clouds.uniforms;
+  const hc = h.clouds || {};
+  mixCol(c.uShadow.value, t.clouds.shadow, hc.shadow, w);
+  c.uLo.value = mixNum(t.clouds.lo ?? 0.43, hc.lo, w);
+  c.uHi.value = mixNum(t.clouds.hi ?? 0.96, hc.hi, w);
+  c.uGamma.value = mixNum(t.clouds.gamma ?? 1.0, hc.gamma, w);
+  c.uAmbient.value = u.uAmbient.value;
+  // Only once the photograph has actually arrived (globe.js flips
+  // realReady); until then the synthetic sheet stands in.
+  c.uRealMix.value = (hc.real ?? 0) * w * (clouds.realReady ?? 0);
+  c.uRealLo.value = hc.realLo ?? 0.2;
+  c.uRealHi.value = hc.realHi ?? 0.9;
+
+  const g = halo.uniforms;
+  const hh = h.halo || {};
+  mixCol(g.uInner.value, t.halo.inner, hh.inner, w);
+  mixCol(g.uOuter.value, t.halo.outer, hh.outer, w);
+  g.uStrength.value = mixNum(t.halo.strength, hh.strength, w);
+  g.uSpread.value = mixNum(t.halo.spread, hh.spread, w);
+  g.uTopBias.value = mixNum(t.halo.topBias, hh.topBias, w);
+  g.uFalloff.value = mixNum(t.halo.falloff ?? 1.0, hh.falloff, w);
+  g.uBloom.value = mixNum(t.halo.bloom, hh.bloom, w);
+  g.uBloomSpread.value = mixNum(t.halo.bloomSpread, hh.bloomSpread, w);
+}
+
+/** The cloud sheet's base opacity at hero weight `w`. */
+export function heroCloudOpacity(t, w) {
+  return mixNum(t.clouds.opacity, t.hero?.clouds?.opacity, w);
+}
+
 /** Pushes a preset into the live uniforms; called on every theme change. */
 export function applyTheme(name, earth, clouds, halo) {
   const t = THEMES[name] || THEMES.light;
@@ -328,6 +419,7 @@ export function applyTheme(name, earth, clouds, halo) {
   c.uHi.value = t.clouds.hi ?? 0.96;
   c.uGamma.value = t.clouds.gamma ?? 1.0;
   c.uFade.value = t.clouds.fade ?? 0.0;
+  c.uRealMix.value = 0;
   c.uAmbient.value = t.ambient;
   c.uTermWidth.value = t.termWidth;
   c.uTermGamma.value = t.termGamma;
