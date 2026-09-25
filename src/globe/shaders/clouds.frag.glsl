@@ -2,7 +2,7 @@ precision highp float;
 
 uniform sampler2D uClouds;
 // NASA's Blue Marble cloud composite: a real day's weather, storm spirals and
-// all, used for the whole-globe portrait. Its own ramp, because it is a
+// all, in place of the synthetic sheet. Its own ramp, because it is a
 // photograph with a grey floor rather than a synthesised 0..1 sheet.
 uniform sampler2D uCloudsReal;
 uniform float uRealMix;     // 0 synthetic sheet, 1 the photograph

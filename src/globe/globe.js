@@ -9,7 +9,7 @@
  */
 import { PerspectiveCamera, Scene, TextureLoader, Vector2, Vector3, WebGLRenderer } from "three";
 
-import { applyHero, applyTheme, createClouds, createEarth, createHalo, heroCloudOpacity, THEMES } from "./earth.js";
+import { applyTheme, createClouds, createEarth, createHalo, THEMES } from "./earth.js";
 import { clamp, DEG, lerp, smoothstep, viewBounds, visibleCapRadius, visibleExtent } from "./geo.js";
 import { DIST_FAR, GlobeControls, distForZoom, zoomLevel } from "./controls.js";
 import { ImageryLayer } from "./imagery.js";
@@ -205,7 +205,7 @@ export class Globe {
     const load = (url) =>
       new Promise((resolve, reject) => loader.load(url, resolve, undefined, () => reject(new Error(url))));
 
-    // The photographic cloud sheet for the whole-globe view. Nearly two
+    // The photographic cloud sheet (THEMES.light.clouds.real). Nearly two
     // megabytes, and nothing needs it to draw, so it is not on the loading
     // bar: it streams alongside and fades in when it lands (see #tick).
     const realClouds = load("/textures/clouds-real.jpg").catch(() => null);
@@ -680,14 +680,14 @@ export class Globe {
     // is barely twice its height above it, so what used to be a haze over the
     // world becomes a *ceiling* — its own limb cuts a band across the top of
     // the frame and the fifth that was left reads as fog over the city.
-    // The whole-globe portrait grade (THEMES.*.hero): full at HOME, gone by
-    // the time the camera reaches WORK, so the working map is unchanged.
-    const hero = 1 - smoothstep(0.015, 0.12, z);
+    // The photographic sheet fades in over the synthetic one as it lands,
+    // and takes its own opacity with it.
     if (this.clouds.realArrived && this.clouds.realReady < 1) {
       this.clouds.realReady = Math.min(1, this.clouds.realReady + dt / 0.6);
     }
-    if (this.themeDef?.hero) applyHero(this.themeDef, hero, this.earth, this.clouds, this.halo);
-    const cloudBase = this.themeDef ? heroCloudOpacity(this.themeDef, hero) : this.cloudBase;
+    const real = (this.themeDef?.clouds.real ?? 0) * this.clouds.realReady;
+    c.uRealMix.value = real;
+    const cloudBase = lerp(this.cloudBase, this.themeDef?.clouds.realOpacity ?? this.cloudBase, real);
     c.uOpacity.value = lerp(cloudBase, 0, smoothstep(0.12, 0.72, z));
 
     // The cells are a fixed angular size, so coming in makes each one bigger
