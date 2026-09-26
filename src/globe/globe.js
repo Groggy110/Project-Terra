@@ -47,9 +47,9 @@ const SETTLED_PAINT_MS = 220;
  * the map at any distance where you can see it is a globe, and it should still
  * be doing most of the work at the point where the tiles first help.
  */
-const DETAIL_IN = [0.3, 0.54];
+const DETAIL_IN = [0.25, 0.44];
 /** Tiles are fetched a beat before they are shown, so the fade has them. */
-const DETAIL_ARM = 0.24;
+const DETAIL_ARM = 0.2;
 /** Time constant of the fade. Long: imagery should arrive, not appear. */
 const DETAIL_TAU = 0.28;
 /** Floor between tile windows while the camera is moving. */

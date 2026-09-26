@@ -64,15 +64,12 @@ export const THEMES = {
     // running the same curve over it a second time is what turned Bangkok
     // milky — a city with no blacks in it, behind what looked like haze.
     //
-    // So most of the curve comes back out — but not all of it, and less here
-    // than in the night preset: net gamma 0.70 and a gain over one, because
-    // this page is paper. Matched honestly to the imagery the light theme came
-    // out *darker* than the dark one, which is the single thing a light theme
-    // may not be; what it wants is the aerial as it would be printed, opened
-    // up and a shade off full colour.
-    // (sat and gain are divided back out of the land grade above, so the
-    // tiles land exactly where they did before it was richened.)
-    detail: { gamma: 1.25, sat: 0.89, gain: 1.09, lift: 0.0, sea: 0.4 },
+    // So nearly all of the curve comes back out — a shade less than in the
+    // night preset, because this page is paper.
+    // Net of the land grade above: gamma ~0.9, saturation ~1.05, gain ~1.04 —
+    // Esri's imagery very nearly as Esri publishes it, opened up a shade for
+    // the paper.
+    detail: { gamma: 1.6, sat: 0.81, gain: 1.01, lift: 0.0, sea: 0.4 },
     // `real` swaps the synthetic sheet for NASA's Blue Marble cloud composite
     // once it has streamed in (globe.js) — a real day's weather, at
     // `realOpacity`. realLo/Hi are where its grey floor ends and where it is
@@ -130,9 +127,9 @@ export const THEMES = {
     facet: { amount: 0.7, scale: 74, tilt: 0.08, flat: 0.06, edge: 0.055, edgeInk: -0.5 },
     // Same idea against a much harder grade: gamma 0.5, saturation 1.62 and a
     // gain over one would turn a satellite tile into a poster. Net: gamma
-    // 0.95, saturation 1.26, gain 1.06 — the imagery as shot, with the
+    // 1.0, saturation 1.05, gain 1.0 — the imagery as published, with the
     // theme's colour laid over it rather than through it twice.
-    detail: { gamma: 1.9, sat: 0.78, gain: 0.93, lift: 0.0, sea: 0.5 },
+    detail: { gamma: 2.0, sat: 0.65, gain: 0.88, lift: 0.0, sea: 0.5 },
     clouds: { tint: "#ffffff", shadow: "#0a1524", opacity: 0.98, sunMix: 0.72, lo: 0.42, hi: 0.95, gamma: 2.2, fade: 1 },
     halo: { inner: "#eaf5ff", outer: "#4180c6", strength: 1.9, spread: 0.058, topBias: 0.006, falloff: 4.0, bloom: 1.0, bloomSpread: 1.4 },
     // Behind and above, a touch to the left — see the note above.
