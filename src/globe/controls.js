@@ -351,6 +351,11 @@ export class GlobeControls {
     this.#zoomTo(next, e);
   };
 
+  /** The wheel handler, for layers stacked over the canvas to forward to. */
+  wheel(e) {
+    this.#wheel(e);
+  }
+
   #dbl = (e) => {
     const at = this.pointAt(e);
     this.flyTo({

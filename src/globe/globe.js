@@ -194,6 +194,12 @@ export class Globe {
       onPinHover: opts.onPinHover,
     });
 
+    // Pins and plates sit in an overlay above the canvas and take the pointer
+    // for their clicks, which also swallowed the wheel: zooming stopped dead
+    // with the cursor over a city. The wheel is the globe's, whatever is under
+    // it, so it is handed straight on.
+    opts.overlay?.addEventListener("wheel", (e) => this.controls.wheel(e), { passive: false });
+
     canvas.addEventListener("click", (e) => {
       if (this.controls.moved) return;
       this.opts.onGlobeClick?.(this.controls.pointAt(e));
