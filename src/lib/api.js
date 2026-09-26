@@ -288,3 +288,42 @@ export async function toggleInterest(needId, on) {
     if (error) throw error;
   }
 }
+
+/* -------------------------------------------------------------- meetings */
+
+/**
+ * Books a first call about a need. The server creates the Google Calendar
+ * event with its Meet link and emails both sides the invitation.
+ */
+export async function scheduleMeeting({ needId, startsAt, durationMin, note }) {
+  const sb = requireSupabase();
+  const { data, error } = await sb.functions.invoke("schedule-meeting", {
+    body: { need_id: needId, starts_at: startsAt, duration_min: durationMin, note },
+  });
+  if (error) {
+    const detail = await error.context?.json?.().catch(() => null);
+    throw new Error(detail?.error ?? error.message);
+  }
+  return data;
+}
+
+/** Upcoming calls the signed-in person is part of, soonest first. */
+export async function myMeetings() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("meetings")
+    .select("id, starts_at, duration_min, meet_url, status, need_id, needs(title), ministries(name)")
+    .eq("status", "scheduled")
+    .gte("starts_at", new Date(Date.now() - 60 * 60_000).toISOString())
+    .order("starts_at");
+  if (error) throw error;
+  return (data ?? []).map((m) => ({
+    id: m.id,
+    startsAt: m.starts_at,
+    minutes: m.duration_min,
+    meetUrl: m.meet_url,
+    needId: m.need_id,
+    needTitle: m.needs?.title ?? "A need",
+    ministryName: m.ministries?.name ?? "",
+  }));
+}

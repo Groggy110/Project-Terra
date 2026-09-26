@@ -235,7 +235,7 @@ export function postNeedModal(layer, { ministryId, onPublish }) {
 
 /* ----------------------------------------------------------- need detail */
 
-export function needModal(layer, need, { onPickUp, onMinistry, onDrop }, { side = false } = {}) {
+export function needModal(layer, need, { onPickUp, onMinistry, onDrop, onSchedule }, { side = false } = {}) {
   return layer.show((close) => {
     const cell = (label, value) =>
       h("div", { class: "detail__cell" }, h("div", { class: "ml", text: label }), h("strong", { text: value }));
@@ -293,7 +293,11 @@ export function needModal(layer, need, { onPickUp, onMinistry, onDrop }, { side 
       h(
         "div",
         { class: "modal__foot" },
-        pick,
+        onSchedule
+          ? h("button", { class: "btn btn--accent", onclick: () => { close(); onSchedule(need); } }, "Schedule a call")
+          : null,
+        // With a call on offer, that is the primary action; interest steps back.
+        (onSchedule && pick.classList.replace("btn--accent", "btn--soft"), pick),
         h("button", { class: "btn btn--soft", onclick: () => { onMinistry(need); close(); } }, "See the ministry"),
         h("span", { class: "modal__note spacer", text: "Saved in this browser only." }),
       ),
@@ -301,3 +305,144 @@ export function needModal(layer, need, { onPickUp, onMinistry, onDrop }, { side 
   }, { width: 600, side });
 }
 
+
+/* --------------------------------------------------------------- meetings */
+
+const pad = (n) => String(n).padStart(2, "0");
+const localDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+/**
+ * Book a first call about a need: a day, a time, how long, and a line to the
+ * ministry. The server creates the Google Meet and sends both invitations;
+ * this shows the link as soon as it exists.
+ */
+export function scheduleModal(layer, need, { onBook }) {
+  return layer.show((close) => {
+    const field = (label, control) =>
+      h("div", { class: "field" }, h("span", { class: "ml", text: label }), control);
+
+    const tomorrow = new Date(Date.now() + 86_400_000);
+    const date = h("input", {
+      class: "input",
+      type: "date",
+      value: localDate(tomorrow),
+      min: localDate(new Date()),
+      max: localDate(new Date(Date.now() + 89 * 86_400_000)),
+      "data-autofocus": true,
+    });
+    const time = h("input", { class: "input", type: "time", value: "10:00", step: 900 });
+    let minutes = 30;
+    const seg = h(
+      "div",
+      { class: "gate__seg seg-inline" },
+      [15, 30, 45].map((m) =>
+        h("button", {
+          type: "button",
+          class: m === minutes ? "is-on" : "",
+          onclick: (e) => {
+            minutes = m;
+            for (const b of seg.children) b.classList.toggle("is-on", b === e.currentTarget);
+          },
+        }, `${m} min`),
+      ),
+    );
+    const note = h("textarea", {
+      class: "area",
+      placeholder: `Hi, I'd love to help with "${need.title}". A little about me…`,
+    });
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone.replace(/_/g, " ");
+    const error = h("span", { class: "modal__note", style: { color: "var(--urgent)" } });
+    const book = h("button", { class: "btn btn--accent" }, "Book the call");
+    const body = h("div", { class: "modal__body scroll" });
+
+    const success = (res) => {
+      const when = new Date(res.meeting.starts_at);
+      body.replaceChildren(
+        h("div", { class: "modal__eyebrow", text: "Call booked" }),
+        h("h2", { class: "modal__title", text: "You're meeting " + need.ministryName }),
+        h("p", {
+          class: "modal__lede",
+          text: `${when.toLocaleString(undefined, { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" })} · ${res.meeting.duration_min} minutes. Google Calendar invitations are on their way to you and the ministry.`,
+        }),
+        res.meetUrl
+          ? h("a", { class: "meet-link", href: res.meetUrl, target: "_blank", rel: "noopener" },
+              h("span", { class: "meet-link__ico", text: "▶" }),
+              h("span", {}, h("b", { text: "Google Meet" }), h("span", { text: res.meetUrl.replace(/^https?:\/\//, "") })),
+            )
+          : null,
+      );
+      foot.replaceChildren(
+        res.meetUrl ? h("a", { class: "btn btn--accent", href: res.meetUrl, target: "_blank", rel: "noopener" }, "Open Google Meet") : null,
+        h("button", { class: "btn btn--soft", onclick: close }, "Done"),
+      );
+    };
+
+    book.addEventListener("click", async () => {
+      const start = new Date(`${date.value}T${time.value}`);
+      if (isNaN(start.getTime())) return (error.textContent = "Pick a day and a time.");
+      if (start.getTime() < Date.now() + 10 * 60_000) return (error.textContent = "Pick a time at least ten minutes from now.");
+      error.textContent = "";
+      book.disabled = true;
+      book.textContent = "Creating the call…";
+      try {
+        success(await onBook({ needId: need.id, startsAt: start.toISOString(), durationMin: minutes, note: note.value.trim() }));
+      } catch (e) {
+        error.textContent = e.message || "Something went wrong. Please try again.";
+        book.disabled = false;
+        book.textContent = "Book the call";
+      }
+    });
+
+    body.append(
+      h("div", { class: "modal__eyebrow", text: "First call" }),
+      h("h2", { class: "modal__title", text: "Meet " + need.ministryName }),
+      h("p", { class: "modal__lede", text: `A short video call about "${need.title}". We'll create a Google Meet and send you both an invitation.` }),
+      h("div", { class: "form" },
+        h("div", { class: "row2" }, field("Day", date), field("Time", time)),
+        h("div", { class: "modal__note", text: `Times are in your time zone (${zone}).` }),
+        field("Length", seg),
+        field("Message to the ministry (optional)", note),
+      ),
+    );
+    const foot = h("div", { class: "modal__foot" }, book, h("button", { class: "btn btn--soft", onclick: close }, "Cancel"), error);
+    return h("div", { class: "modal__inner" }, body, foot);
+  }, { width: 560 });
+}
+
+/** The signed-in person's upcoming calls. */
+export function meetingsModal(layer, { load, onOpenNeed }) {
+  return layer.show((close) => {
+    const list = h("div", { class: "calls" }, h("p", { class: "modal__lede", text: "Loading…" }));
+    load().then(
+      (calls) => {
+        if (!calls.length) {
+          list.replaceChildren(h("p", { class: "modal__lede", text: "No calls booked yet. Open a need and choose “Schedule a call”." }));
+          return;
+        }
+        list.replaceChildren(
+          ...calls.map((c) => {
+            const when = new Date(c.startsAt);
+            return h("div", { class: "call" },
+              h("div", { class: "call__when" },
+                h("b", { text: when.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) }),
+                h("span", { text: when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) + ` · ${c.minutes} min` }),
+              ),
+              h("button", { class: "call__what", onclick: () => { close(); onOpenNeed(c.needId); } },
+                h("b", { text: c.needTitle }), h("span", { text: c.ministryName }),
+              ),
+              c.meetUrl ? h("a", { class: "btn btn--soft", href: c.meetUrl, target: "_blank", rel: "noopener" }, "Join") : null,
+            );
+          }),
+        );
+      },
+      (e) => list.replaceChildren(h("p", { class: "modal__lede", text: e.message })),
+    );
+    return h("div", { class: "modal__inner" },
+      h("div", { class: "modal__body scroll" },
+        h("div", { class: "modal__eyebrow", text: "Your calls" }),
+        h("h2", { class: "modal__title", text: "Upcoming calls" }),
+        list,
+      ),
+    );
+  }, { width: 560 });
+}

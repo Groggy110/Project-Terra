@@ -7,7 +7,7 @@ import { clamp, smoothstep } from "../globe/geo.js";
 import { Network, emptyQuery, queryIsEmpty } from "../data/network.js";
 import { Board } from "./board.js";
 import { Filters } from "./filters.js";
-import { ModalLayer, aboutModal, needModal } from "./modals.js";
+import { ModalLayer, aboutModal, meetingsModal, needModal, scheduleModal } from "./modals.js";
 import { Panel } from "./panel.js";
 import { PanelSheet } from "./sheet.js";
 import { add, clear, h, icons, nf } from "./dom.js";
@@ -569,6 +569,7 @@ export class App {
       items: [
         { label: this.profile?.full_name || this.session.user.email, note: isMinistry ? "Ministry account" : "Volunteer account", icon: menuIcons.info },
         null,
+        { label: "Your calls", note: "Upcoming video calls", icon: menuIcons.board, run: () => this.openMeetings() },
         !isMinistry && { label: "Suggested for you", note: "Matched to your answers", icon: menuIcons.board, run: () => this.openSuggestions() },
         !isMinistry && { label: "Answer the five questions", icon: menuIcons.panel, run: () => this.openQuestionnaire() },
         isMinistry && !this.ministry && { label: "Put your ministry on the map", icon: menuIcons.panel, run: () => this.openMinistrySetup() },
@@ -794,7 +795,30 @@ export class App {
         const m = this.net.ministryById.get(n.ministry);
         if (m) this.openMinistry(m, { fly: true });
       },
+      onSchedule: api.isConfigured ? (n) => this.openSchedule(n) : null,
     }, { side: !!m });
+  }
+
+  /** Book a first video call about a need; signing in comes first. */
+  openSchedule(need) {
+    if (!this.session) {
+      this.toast("Sign in to book a call with the ministry.");
+      return this.gate.open("signup");
+    }
+    scheduleModal(this.modals, this.net.needById(need.id) ?? need, {
+      onBook: (fields) => api.scheduleMeeting(fields),
+    });
+  }
+
+  openMeetings() {
+    if (!this.session) return this.gate.open("signin");
+    meetingsModal(this.modals, {
+      load: () => api.myMeetings(),
+      onOpenNeed: (id) => {
+        const n = this.net.needById(id);
+        if (n) this.openNeed(n, { fly: true });
+      },
+    });
   }
 
   /**

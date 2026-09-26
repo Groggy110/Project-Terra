@@ -567,3 +567,95 @@
 .steps b {
   color: var(--ink);
 }
+
+/* ---------- first calls ---------- */
+
+.seg-inline {
+  display: inline-flex;
+  width: fit-content;
+}
+
+.seg-inline button {
+  padding-inline: 16px;
+}
+
+.meet-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-inner);
+  background: var(--surface-soft);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.meet-link:hover {
+  border-color: var(--accent);
+}
+
+.meet-link__ico {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+}
+
+.meet-link b,
+.meet-link span span {
+  display: block;
+}
+
+.meet-link span span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.calls {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.call {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-inner);
+}
+
+.call__when b,
+.call__when span,
+.call__what b,
+.call__what span {
+  display: block;
+}
+
+.call__when span,
+.call__what span {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.call__what {
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ink);
+  font: inherit;
+}
+
+.modal--side .modal__foot {
+  flex-wrap: wrap;
+}
