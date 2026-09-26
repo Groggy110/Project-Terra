@@ -13,6 +13,7 @@ import {
   LinearMipmapLinearFilter,
   Mesh,
   PlaneGeometry,
+  RepeatWrapping,
   ShaderMaterial,
   SphereGeometry,
   Vector2,
@@ -233,6 +234,10 @@ export function createEarth({ base, aux, lines, mask, baseInk, window, detail, d
 
 export function createClouds({ clouds }) {
   prepare(clouds);
+  // The sheet drifts east (uDrift), so its u runs past 1 at the antimeridian.
+  // Clamped, the texture's last column was smeared across that gap as a fan
+  // of streaks along the parallels; it has to wrap.
+  clouds.wrapS = RepeatWrapping;
   const uniforms = {
     uClouds: { value: clouds },
     uCloudsReal: { value: clouds },

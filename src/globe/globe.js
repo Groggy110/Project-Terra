@@ -7,7 +7,7 @@
  * during motion, and a full-resolution one lands shortly after the camera
  * settles.
  */
-import { PerspectiveCamera, Scene, TextureLoader, Vector2, Vector3, WebGLRenderer } from "three";
+import { PerspectiveCamera, RepeatWrapping, Scene, TextureLoader, Vector2, Vector3, WebGLRenderer } from "three";
 
 import { applyTheme, createClouds, createEarth, createHalo, THEMES } from "./earth.js";
 import { clamp, DEG, lerp, smoothstep, viewBounds, visibleCapRadius, visibleExtent } from "./geo.js";
@@ -230,6 +230,7 @@ export class Globe {
     realClouds.then((tex) => {
       if (!tex) return;
       tex.flipY = false;
+      tex.wrapS = RepeatWrapping; // it drifts with the sheet — see createClouds
       tex.generateMipmaps = true;
       tex.anisotropy = 8;
       this.clouds.uniforms.uCloudsReal.value = tex;
