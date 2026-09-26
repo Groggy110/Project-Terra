@@ -191,7 +191,32 @@ export class Globe {
       if (this.controls.moved) return;
       this.opts.onGlobeClick?.(this.controls.pointAt(e));
     });
+
+    // The land mask, the ink and the tile mosaic are 2D canvases, and a
+    // browser may drop a canvas's backing store — a GPU reset, memory
+    // pressure, a tab put to sleep — and hand it back blank. Nothing here
+    // would notice: the painter still believes its window is current, so it
+    // never paints again, and a blank mask reads as "all water" — the land
+    // goes the colour of the sea, lit only by the imagery's brightness. So
+    // whenever a canvas comes back, or the tab does, everything is redrawn
+    // from memory (tiles are cached; nothing is fetched again).
+    for (const c of [this.painter.lines, this.painter.mask, this.painter.base, this.imagery.canvas]) {
+      c.addEventListener("contextrestored", this.#recover);
+    }
+    canvas.addEventListener("webglcontextrestored", this.#recover);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) this.#recover();
+    });
   }
+
+  #recover = () => {
+    if (!this.earth) return;
+    this.painter.painted = null;
+    this.painter.baseTheme = null;
+    this.painter.repaintBase(this.theme);
+    this.imagery.dirty = true;
+    this.dirty = true;
+  };
 
   /* ----------------------------------------------------------------- boot */
 
