@@ -1,7 +1,7 @@
 /**
  * Dialogs. One layer, one at a time, closed by scrim, Escape or the corner x.
  */
-import { add, h, icons, joinDot, nf, plural, since } from "./dom.js";
+import { add, h, icons, plural, since } from "./dom.js";
 import { FOCUS_BY_ID, NEED_TYPES, TYPE_BY_ID, URGENCIES, URGENCY_BY_ID } from "../data/taxonomy.js";
 import { MINISTRIES, MINISTRY_BY_ID } from "../data/ministries.js";
 
@@ -83,22 +83,21 @@ export function aboutModal(layer, { stats, onPostNeed }) {
           "div",
           { class: "modal__body scroll" },
           h("div", { class: "modal__eyebrow", text: "About" }),
-          h("h2", { class: "modal__title", text: "A map of what's needed" }),
+          h("h2", { class: "modal__title", text: "Serve ministries from anywhere" }),
           h(
             "div",
             { class: "prose" },
             h("p", {
               text:
-                "Ministries post what they need — volunteers, expertise, supplies, funding, partners. Each pin is a ministry in the city where the work happens. Open a pin to read its needs, then pick one up and introduce yourself.",
+                "Terra connects ministries around the world with people who can help them online. Every pin on the globe is a ministry, and every need is something that can be done from wherever you are.",
             }),
-            h("p", {
-              text:
-                "The globe grades NASA Blue Marble imagery in real time: land lifted through a tone curve, snow separated from desert by chroma, the ocean recoloured from depth, hillshade from a topography channel, and a synthesised cloud sheet that thins out as you come in. Every line on it — coast, border, lake, river — is vector, and repaints at tile resolution for whatever is on screen, switching to a finer dataset as you approach.",
-            }),
-            h("p", {
-              text:
-                "Blue Marble is fifteen pixels to the degree, which is a planet rather than a map, so past a region satellite tiles stream in underneath and take the land over — reprojected in the shader rather than on the way in, graded to the theme you are in, and faded up as they arrive. The modelling that belongs to a planet retires as they do: the faceting, the terminator, the cloud sheet, and finally the styled ocean, whose coastline is a kilometre coarser than the imagery it would be cutting across. So coming in on a city shows the city.",
-            }),
+          ),
+          h(
+            "ol",
+            { class: "steps" },
+            h("li", {}, h("b", { text: "Ministries post what they need." }), " A logo, a part-time HR adviser, a bookkeeper, a translator, an online tutor — whatever would help."),
+            h("li", {}, h("b", { text: "You offer your skills." }), " Search for what you do, or answer five questions and let Terra suggest needs that fit you."),
+            h("li", {}, h("b", { text: "Meet on a video call." }), " Pick a time for a first conversation right in Terra, and a meeting link is sent to you both."),
           ),
           h("div", { class: "notice" }, [
             h("b", { text: "Everything on this map is fictional sample data." }),
@@ -106,7 +105,6 @@ export function aboutModal(layer, { stats, onPostNeed }) {
             h("code", { text: "example.org" }),
             ", which cannot receive mail. Interests you express and needs you post are saved in this browser only.",
           ]),
-          specTable(stats),
           h(
             "div",
             { class: "prose" },
@@ -124,25 +122,6 @@ export function aboutModal(layer, { stats, onPostNeed }) {
         ),
       ),
     { width: 660 },
-  );
-}
-
-function specTable(stats) {
-  const rows = [
-    ["Renderer", `three.js r${stats.three} · ${stats.renderer}`],
-    ["Base imagery", "NASA Blue Marble 5400×2700"],
-    ["Detail imagery", stats.imagery || "not configured — painted base only"],
-    ["Cloud", "synthesised · tools/make_clouds.py"],
-    ["Vectors", "Natural Earth 1:50m · 1:10m on zoom"],
-    ["Vector canvas", `${stats.size} · ${stats.features} features · ${stats.lastMs} ms`],
-    ["Network", joinDot(`${nf.format(stats.needs)} needs`, `${nf.format(stats.people)} people`, `${stats.ministries} ministries`)],
-  ];
-  return h(
-    "div",
-    { class: "spec" },
-    rows.map(([k, v]) =>
-      h("div", { class: "spec__row" }, h("span", { class: "spec__k", text: k }), h("span", { class: "spec__v", text: v })),
-    ),
   );
 }
 

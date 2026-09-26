@@ -528,3 +528,42 @@
 .modal--side .modal__note {
   display: none;
 }
+
+/* The About dialog's three steps: numbered, each with its lead in bold. */
+.steps {
+  margin: 18px 0 20px;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  display: grid;
+  gap: 12px;
+}
+
+.steps li {
+  position: relative;
+  padding-left: 40px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--body);
+  counter-increment: step;
+}
+
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.steps b {
+  color: var(--ink);
+}

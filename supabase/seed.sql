@@ -108,7 +108,7 @@ insert into public.needs
   (ministry_id, title, type, urgency, people, focus, remote, commitment, skills, detail, posted, status)
 select m.id, 'Winter appeal campaign design', 'expertise', 'soon', 1, 'shelter', true, '10 hrs total · 3 weeks', array['Graphic design', 'Canva or Figma']::text[], 'A set of social posts, a one-page flyer and an email header for our winter insulation appeal. We supply the photos and the words; we need them to look like one campaign.', '2026-08-29'::date, 'live' from public.ministries m where m.slug = 'ulaanbaatar-ger'
 union all
-select m.id, 'Winter night shelter volunteers', 'volunteers', 'urgent', 4, 'shelter', false, '2 nights/week · Dec–Mar', array['Mongolian', 'First aid']::text[], 'Two people a night on a rota with our staff, from December through March. Training and a bed in the building are provided.', '2026-08-21'::date, 'live' from public.ministries m where m.slug = 'ulaanbaatar-ger'
+select m.id, 'Volunteer rota coordinator', 'volunteers', 'urgent', 1, 'shelter', true, '3 hrs/week · Dec–Mar', array['Scheduling', 'Google Sheets', 'Mongolian or Russian helpful']::text[], 'Keep our winter shelter rota running from home: scheduling volunteers in a shared calendar and sending reminders over WhatsApp.', '2026-08-21'::date, 'live' from public.ministries m where m.slug = 'ulaanbaatar-ger'
 union all
 select m.id, 'Structural engineer (remote review)', 'expertise', 'urgent', 1, 'shelter', true, '4 hrs/week · 2 months', array['Structural engineering', 'Arabic helpful']::text[], 'Reviewing photographs, measurements and sketches of damaged load-bearing walls, and telling the committee which buildings can be reoccupied. Fully remote, on our timetable.', '2026-09-01'::date, 'live' from public.ministries m where m.slug = 'aleppo-neighbours'
 union all
@@ -120,55 +120,55 @@ select m.id, 'Bookkeeping set-up for a recycling co-op', 'expertise', 'soon', 1,
 union all
 select m.id, 'Swahili Bible study reviewers', 'volunteers', 'soon', 3, 'translation', true, '3 hrs/week · 2 months', array['Swahili', 'Theology']::text[], 'We write our own study material and need first-language Swahili readers with some theological training to check it before it goes to print. Shared documents, comments by email.', '2026-08-18'::date, 'live' from public.ministries m where m.slug = 'nairobi-mathare'
 union all
-select m.id, 'Clinic nurse (3 months)', 'volunteers', 'urgent', 1, 'health', false, 'full time · 3 months', array['Nursing', 'Kenyan registration']::text[], 'One registered nurse to hold the clinic''s morning list while our own staff complete their midwifery training.', '2026-08-26'::date, 'live' from public.ministries m where m.slug = 'nairobi-mathare'
+select m.id, 'Telehealth nurse adviser', 'expertise', 'urgent', 1, 'health', true, '2 hrs/week · 3 months', array['Nursing', 'Telehealth']::text[], 'A registered nurse to answer our clinic staff''s questions by video while our own nurses complete their midwifery training.', '2026-08-26'::date, 'live' from public.ministries m where m.slug = 'nairobi-mathare'
 union all
 select m.id, 'Website refresh', 'expertise', 'soon', 1, 'children', true, '20 hrs total · 6 weeks', array['Web design', 'WordPress or Squarespace']::text[], 'Our site is six years old and does not work on a phone, which is where every parent and donor sees it. Five pages, our content, and a donate button that works.', '2026-08-04'::date, 'live' from public.ministries m where m.slug = 'nairobi-mathare'
 union all
 select m.id, 'Boat-safety course materials', 'expertise', 'soon', 1, 'work', true, '10 hrs total', array['Instructional design', 'Urdu helpful']::text[], 'Turn our boat-safety checklist into a picture-led handout and a short slide deck our own staff can teach from on the dock. Most of the crew do not read.', '2026-08-14'::date, 'live' from public.ministries m where m.slug = 'karachi-dockside'
 union all
-select m.id, 'School exercise books', 'supplies', 'ongoing', 0, 'education', false, 'termly', '{}', 'Standing need: exercise books and pencils for around two hundred children each term.', '2026-06-19'::date, 'live' from public.ministries m where m.slug = 'karachi-dockside'
+select m.id, 'Donor database clean-up', 'volunteers', 'ongoing', 1, 'education', true, '6 hrs total', array['Spreadsheets', 'Data entry']::text[], 'Merge three years of donor lists into one clean spreadsheet so we can thank people properly and stop posting letters twice.', '2026-06-19'::date, 'live' from public.ministries m where m.slug = 'karachi-dockside'
 union all
 select m.id, 'Arabic-English interpreters (phone)', 'volunteers', 'urgent', 4, 'refugees', true, '2 hrs/week · on call', array['Arabic', 'English']::text[], 'Joining registration and medical appointments by phone or video when a family has no one in the room who speaks both languages. The thing we are most short of.', '2026-08-31'::date, 'live' from public.ministries m where m.slug = 'amman-welcome'
 union all
 select m.id, 'Trauma counselling supervision', 'expertise', 'soon', 1, 'trauma', true, '2 hrs/fortnight · 6 months', array['Clinical supervision', 'Trauma']::text[], 'Video supervision for six caseworkers carrying heavy stories with no one above them to take it to.', '2026-08-09'::date, 'live' from public.ministries m where m.slug = 'amman-welcome'
 union all
-select m.id, 'Generators and fuel', 'supplies', 'urgent', 0, 'shelter', false, 'before first frost', '{}', 'Portable generators and diesel for twelve apartment blocks, so lifts, pumps and a warm room keep running through the outages.', '2026-09-02'::date, 'live' from public.ministries m where m.slug = 'kyiv-winter'
+select m.id, 'Part-time fundraising lead', 'expertise', 'urgent', 1, 'shelter', true, '6 hrs/week · 4 months', array['Fundraising', 'Grant research']::text[], 'Find and apply for winter-response grants, and keep a simple pipeline of deadlines our director can follow.', '2026-09-02'::date, 'live' from public.ministries m where m.slug = 'kyiv-winter'
 union all
 select m.id, 'Donor newsletter writer', 'expertise', 'soon', 1, 'shelter', true, '4 hrs/month', array['Copywriting', 'Email marketing']::text[], 'A monthly email to our supporters. We send notes, photos and numbers; you turn them into something people open and read.', '2026-08-25'::date, 'live' from public.ministries m where m.slug = 'kyiv-winter'
 union all
 select m.id, 'Host-matching database set-up', 'expertise', 'soon', 1, 'refugees', true, '15 hrs · 1 month', array['Airtable or Notion', 'Data']::text[], 'We match families with hosts from three spreadsheets and a WhatsApp group. Build us one simple base with sign-up forms, and train two coordinators to run it.', '2026-08-07'::date, 'live' from public.ministries m where m.slug = 'warsaw-hosts'
 union all
-select m.id, 'Legal aid partner', 'partners', 'ongoing', 0, 'refugees', true, 'standing referral', array['Immigration law']::text[], 'A firm or legal clinic that will take referrals for residence and work-permit questions, by video.', '2026-05-22'::date, 'live' from public.ministries m where m.slug = 'warsaw-hosts'
+select m.id, 'Pro bono immigration adviser', 'expertise', 'ongoing', 1, 'refugees', true, '3 hrs/month', array['Immigration law', 'Polish or Ukrainian helpful']::text[], 'Answer residence and work-permit questions for families we host, by video, a few hours a month.', '2026-05-22'::date, 'live' from public.ministries m where m.slug = 'warsaw-hosts'
 union all
-select m.id, 'Youth club mentors', 'volunteers', 'soon', 4, 'children', false, '1 evening/week · 1 year', array['Youth work', 'DBS check']::text[], 'Turning up, week after week, for the same group of teenagers. Consistency matters more to us than experience.', '2026-08-16'::date, 'live' from public.ministries m where m.slug = 'london-estates'
+select m.id, 'Online youth mentors', 'volunteers', 'soon', 3, 'children', true, '1 hr/week · 6 months', array['Mentoring', 'DBS check']::text[], 'A weekly video call with one teenager from our youth club, helping with coursework, CVs and college applications.', '2026-08-16'::date, 'live' from public.ministries m where m.slug = 'london-estates'
 union all
-select m.id, 'Food round drivers', 'volunteers', 'ongoing', 2, 'food', false, '1 morning/week', array['Driving licence']::text[], 'Collecting from two supermarkets and dropping off across three estates. Van provided.', '2026-07-11'::date, 'live' from public.ministries m where m.slug = 'london-estates'
+select m.id, 'Volunteer welcome pack', 'expertise', 'ongoing', 1, 'food', true, '8 hrs total', array['Writing', 'Canva']::text[], 'Turn our scattered notes into a short welcome pack and a two-minute video for new volunteers.', '2026-07-11'::date, 'live' from public.ministries m where m.slug = 'london-estates'
 union all
 select m.id, 'Spanish conversation partners (video)', 'volunteers', 'soon', 5, 'education', true, '1 hr/week · 3 months', array['Spanish', 'Patience']::text[], 'Half-hour video calls with adult learners who have finished the classroom course and need to practise before job interviews.', '2026-08-12'::date, 'live' from public.ministries m where m.slug = 'madrid-puente'
 union all
 select m.id, 'CV and LinkedIn reviewers', 'volunteers', 'ongoing', 3, 'work', true, '2 hrs/month', array['Recruitment or HR', 'Spanish']::text[], 'Reviewing CVs and LinkedIn profiles for engineers, nurses and teachers whose qualifications are real but written for another country.', '2026-06-28'::date, 'live' from public.ministries m where m.slug = 'madrid-puente'
 union all
-select m.id, 'Water tanks', 'supplies', 'urgent', 0, 'water', false, '18 tanks', '{}', 'Eighteen 1,100-litre tanks for homes on the upper slopes, where the truck comes twice a week and there is nowhere to keep what it brings.', '2026-08-28'::date, 'live' from public.ministries m where m.slug = 'lima-pueblos'
+select m.id, 'Online fundraising campaign', 'expertise', 'urgent', 1, 'water', true, '10 hrs total', array['Fundraising', 'Copywriting', 'Spanish helpful']::text[], 'Set up an online giving page and a two-week email campaign for our water-tank appeal.', '2026-08-28'::date, 'live' from public.ministries m where m.slug = 'lima-pueblos'
 union all
 select m.id, 'Summer club curriculum', 'expertise', 'soon', 1, 'children', true, '12 hrs total', array['Curriculum design', 'Spanish']::text[], 'Six weeks of children''s club sessions written up so any of our volunteers can lead them: a game, a story and a take-home activity for each.', '2026-08-02'::date, 'live' from public.ministries m where m.slug = 'lima-pueblos'
 union all
-select m.id, 'Family caseworkers', 'volunteers', 'urgent', 2, 'refugees', false, '3 days/week · 3 months', array['Spanish', 'Casework']::text[], 'Sitting with Venezuelan families at the day house to work through documents, school places and next steps.', '2026-08-27'::date, 'live' from public.ministries m where m.slug = 'bogota-casa'
+select m.id, 'Case notes assistant', 'volunteers', 'urgent', 2, 'refugees', true, '4 hrs/week · 3 months', array['Spanish', 'Admin', 'Data protection']::text[], 'Typing up caseworkers'' voice notes into tidy family files, securely and from home.', '2026-08-27'::date, 'live' from public.ministries m where m.slug = 'bogota-casa'
 union all
 select m.id, 'Case-management system advice', 'expertise', 'soon', 1, 'refugees', true, '6 hrs total', array['Nonprofit CRM', 'Data protection']::text[], 'We track four hundred families on paper. Help us choose a simple, secure case-management tool and set up the first version.', '2026-08-06'::date, 'live' from public.ministries m where m.slug = 'bogota-casa'
 union all
-select m.id, 'Music school instruments', 'supplies', 'ongoing', 0, 'children', false, 'rolling', '{}', 'Violins, guitars and keyboards in playable condition. They go home with the students, so they wear out.', '2026-07-03'::date, 'live' from public.ministries m where m.slug = 'saopaulo-luz'
+select m.id, 'Online music theory teacher', 'volunteers', 'ongoing', 2, 'children', true, '1 hr/week', array['Music theory', 'Portuguese']::text[], 'Teach a small online theory class for our advanced music students between their lessons.', '2026-07-03'::date, 'live' from public.ministries m where m.slug = 'saopaulo-luz'
 union all
 select m.id, 'Concert video editor', 'expertise', 'soon', 1, 'children', true, '5 hrs/month', array['Video editing', 'Portuguese helpful']::text[], 'Our students film their concerts on phones. Turn the footage into short videos for families and supporters each month.', '2026-08-19'::date, 'live' from public.ministries m where m.slug = 'saopaulo-luz'
 union all
-select m.id, 'Night outreach team', 'volunteers', 'ongoing', 4, 'food', false, '1 night/week · Jun–Sep', array['Spanish']::text[], 'Walking the winter night round in pairs with soup and blankets, alongside one of our staff.', '2026-06-14'::date, 'live' from public.ministries m where m.slug = 'santiago-manos'
+select m.id, 'Part-time HR adviser', 'expertise', 'ongoing', 1, 'food', true, '3 hrs/month', array['Human resources', 'Employment contracts']::text[], 'Help us write simple staff contracts, a volunteer policy and a fair grievance process for a team of six.', '2026-06-14'::date, 'live' from public.ministries m where m.slug = 'santiago-manos'
 union all
-select m.id, 'Winter blankets', 'supplies', 'soon', 0, 'shelter', false, '200 blankets', '{}', 'Warm, washable blankets for the night round. We hand out around fifty a week through July.', '2026-08-05'::date, 'live' from public.ministries m where m.slug = 'santiago-manos'
+select m.id, 'Annual report design', 'expertise', 'soon', 1, 'shelter', true, '12 hrs total', array['Graphic design', 'Layout']::text[], 'Design a short, beautiful annual report from our text and photos, for supporters and funders.', '2026-08-05'::date, 'live' from public.ministries m where m.slug = 'santiago-manos'
 union all
 select m.id, 'Flood-resilient housing designer', 'expertise', 'urgent', 1, 'shelter', true, '6 hrs/week · 3 months', array['Architecture', 'Flood engineering']::text[], 'Drawing a raised, re-buildable house our local builders can put up for under a set budget. We send site photos and measurements; you send drawings.', '2026-08-24'::date, 'live' from public.ministries m where m.slug = 'dhaka-riverside'
 union all
 select m.id, 'Bengali reading exercises', 'volunteers', 'soon', 3, 'education', true, '3 hrs/week · 3 months', array['Bengali', 'Teaching']::text[], 'Recording and checking short reading exercises for a phone app our teachers use in classrooms without books.', '2026-08-13'::date, 'live' from public.ministries m where m.slug = 'dhaka-riverside'
 union all
-select m.id, 'Station night watch volunteers', 'volunteers', 'urgent', 4, 'children', false, '1 night/week · 6 months', array['Bengali or Hindi', 'Safeguarding']::text[], 'Meeting the night trains alongside our staff and staying with children who arrive alone until the morning team takes over.', '2026-08-30'::date, 'live' from public.ministries m where m.slug = 'kolkata-sealdah'
+select m.id, 'Counselling for night staff', 'expertise', 'urgent', 1, 'children', true, '1 hr/week · 6 months', array['Counselling', 'Hindi or Bengali helpful']::text[], 'Regular video sessions for our night team, who carry a lot home from the station.', '2026-08-30'::date, 'live' from public.ministries m where m.slug = 'kolkata-sealdah'
 union all
 select m.id, 'Safeguarding policy review', 'expertise', 'soon', 1, 'children', true, '10 hrs total', array['Child safeguarding', 'Policy writing']::text[], 'Review our child-protection policy against current Indian law and good practice, and help us write the staff training that goes with it.', '2026-07-27'::date, 'live' from public.ministries m where m.slug = 'kolkata-sealdah'
 union all
@@ -176,7 +176,7 @@ select m.id, 'Online shop set-up', 'expertise', 'soon', 1, 'work', true, '15 hrs
 union all
 select m.id, 'Pricing and costing workshop', 'expertise', 'soon', 1, 'work', true, '2 video sessions', array['Small business', 'Costing']::text[], 'Two video workshops for our workshop leads on pricing a product so it pays the maker a fair wage.', '2026-08-10'::date, 'live' from public.ministries m where m.slug = 'mumbai-dharavi'
 union all
-select m.id, 'Cyclone shelter retrofit funding', 'funding', 'urgent', 0, 'shelter', false, 'single grant', '{}', 'Storm shutters, a raised water tank and a generator for the community hall that three hundred families shelter in during a cyclone.', '2026-08-29'::date, 'live' from public.ministries m where m.slug = 'chennai-coastal'
+select m.id, 'Grant researcher', 'expertise', 'urgent', 1, 'shelter', true, '10 hrs total', array['Grant research', 'Spreadsheets']::text[], 'Find foundations that fund cyclone preparedness in India and build a shortlist with amounts and deadlines.', '2026-08-29'::date, 'live' from public.ministries m where m.slug = 'chennai-coastal'
 union all
 select m.id, 'Tamil translation checkers', 'volunteers', 'ongoing', 3, 'translation', true, '3 hrs/week', array['Tamil', 'Careful reading']::text[], 'Reading draft passages against the source and flagging anything unclear or unnatural. Shared documents; work whenever suits you.', '2026-05-30'::date, 'live' from public.ministries m where m.slug = 'chennai-coastal'
 union all
@@ -184,17 +184,17 @@ select m.id, 'Kannada-Hindi phone interpreters', 'volunteers', 'soon', 3, 'refug
 union all
 select m.id, 'Payroll and compliance advisor', 'expertise', 'ongoing', 1, 'work', true, '3 hrs/month', array['Labour law', 'Payroll']::text[], 'Checking wage slips families bring us against the law, and advising our team on which disputes are worth taking further.', '2026-06-08'::date, 'live' from public.ministries m where m.slug = 'bengaluru-migrant'
 union all
-select m.id, 'Landslide risk surveyor', 'expertise', 'soon', 1, 'shelter', false, '2 weeks on site', array['Geotechnical survey']::text[], 'Walking the slopes above our rebuild sites and telling us where it is safe to build before the next monsoon.', '2026-08-08'::date, 'live' from public.ministries m where m.slug = 'kathmandu-hillside'
+select m.id, 'GIS mapping volunteer', 'expertise', 'soon', 1, 'shelter', true, '10 hrs total', array['GIS', 'QGIS']::text[], 'Map our rebuild sites and the slopes above them from satellite imagery and our survey notes.', '2026-08-08'::date, 'live' from public.ministries m where m.slug = 'kathmandu-hillside'
 union all
 select m.id, 'Online English tutors', 'volunteers', 'ongoing', 4, 'children', true, '1 hr/week', array['English teaching']::text[], 'One-to-one video lessons for teenagers in our youth programme preparing for their school-leaving exams.', '2026-08-17'::date, 'live' from public.ministries m where m.slug = 'kathmandu-hillside'
 union all
 select m.id, 'Drainage advocacy research', 'expertise', 'soon', 1, 'water', true, '10 hrs total', array['Policy research', 'Urban planning']::text[], 'Pull together the evidence (rainfall, flood reports, city budgets) for a short briefing we will take to the barangay council.', '2026-06-02'::date, 'live' from public.ministries m where m.slug = 'manila-estero'
 union all
-select m.id, 'Feeding programme cooks', 'volunteers', 'urgent', 3, 'food', false, '2 mornings/week', array['Filipino']::text[], 'Cooking breakfast for around ninety children before school, in our kitchen by the creek.', '2026-09-03'::date, 'live' from public.ministries m where m.slug = 'manila-estero'
+select m.id, 'Nutrition plan adviser', 'expertise', 'urgent', 1, 'food', true, '4 hrs total', array['Nutrition', 'Dietetics']::text[], 'Review our feeding programme menu on a video call and suggest a cheap, balanced weekly plan.', '2026-09-03'::date, 'live' from public.ministries m where m.slug = 'manila-estero'
 union all
 select m.id, 'Fire-safety explainer video', 'expertise', 'soon', 1, 'shelter', true, '15 hrs total', array['Animation', 'Indonesian helpful']::text[], 'A two-minute animated video on cooking-fire safety that we can play from a phone at community meetings. The script is drafted; we need it made.', '2026-08-01'::date, 'live' from public.ministries m where m.slug = 'jakarta-kampung'
 union all
-select m.id, 'Literacy class volunteers', 'volunteers', 'ongoing', 4, 'education', false, '3 hrs/week', array['Indonesian']::text[], 'Helping in after-school reading classes for children aged seven to twelve.', '2026-07-08'::date, 'live' from public.ministries m where m.slug = 'jakarta-kampung'
+select m.id, 'Online reading buddies', 'volunteers', 'ongoing', 4, 'education', true, '1 hr/week', array['Indonesian', 'Patience']::text[], 'Read with a child over video once a week, using picture books we share on screen.', '2026-07-08'::date, 'live' from public.ministries m where m.slug = 'jakarta-kampung'
 union all
 select m.id, 'Aftercare case consultation', 'expertise', 'urgent', 1, 'prison', true, '2 hrs/fortnight · 6 months', array['Social work', 'Thai helpful']::text[], 'A qualified social worker to review cases with our two aftercare staff by video, and help them plan each person''s first month out.', '2026-08-23'::date, 'live' from public.ministries m where m.slug = 'bangkok-klongtoey'
 union all
@@ -202,17 +202,17 @@ select m.id, 'Study booklet layout', 'expertise', 'soon', 1, 'discipleship', tru
 union all
 select m.id, 'English conversation hosts (video)', 'volunteers', 'soon', 4, 'education', true, '1 evening/week · 3 months', array['English', 'Khmer helpful']::text[], 'Hosting a small online conversation group for our evening-class students who want to practise with a native speaker.', '2026-08-20'::date, 'live' from public.ministries m where m.slug = 'phnompenh-riverside'
 union all
-select m.id, 'Micro-loan partner', 'partners', 'ongoing', 0, 'work', false, 'standing', array['Microfinance']::text[], 'A licensed lender willing to run small loans through our savings groups, with us doing the relationships and the follow-up.', '2026-05-16'::date, 'live' from public.ministries m where m.slug = 'phnompenh-riverside'
+select m.id, 'Loan tracking spreadsheet', 'expertise', 'ongoing', 1, 'work', true, '6 hrs total', array['Google Sheets or Excel', 'Microfinance helpful']::text[], 'Build a simple sheet that tracks our small loans, repayments and savings groups, and show our staff how to use it.', '2026-05-16'::date, 'live' from public.ministries m where m.slug = 'phnompenh-riverside'
 union all
-select m.id, 'Stilt-school carpenters', 'volunteers', 'urgent', 4, 'education', false, '3 weeks on site', array['Carpentry']::text[], 'Working alongside the community''s own carpenters on the rebuild of the school platform. Lodging with families.', '2026-08-26'::date, 'live' from public.ministries m where m.slug = 'lagos-makoko'
+select m.id, 'Remote project planner', 'expertise', 'urgent', 1, 'education', true, '3 hrs/week · 2 months', array['Project management']::text[], 'Plan the school rebuild with our carpenters: a schedule, a materials list and a weekly video check-in.', '2026-08-26'::date, 'live' from public.ministries m where m.slug = 'lagos-makoko'
 union all
 select m.id, 'School logo and signage', 'expertise', 'soon', 1, 'education', true, '8 hrs total', array['Logo design', 'Branding']::text[], 'The rebuilt school needs a name board, a logo and a simple look we can paint on the walls and print on uniforms.', '2026-08-03'::date, 'live' from public.ministries m where m.slug = 'lagos-makoko'
 union all
 select m.id, 'Wolof translation reviewers', 'volunteers', 'ongoing', 3, 'translation', true, '4 hrs/week', array['Wolof', 'French']::text[], 'Checking draft Wolof passages against the French for accuracy and natural flow. Fully online.', '2026-06-11'::date, 'live' from public.ministries m where m.slug = 'dakar-medina'
 union all
-select m.id, 'Girls'' football coaches', 'volunteers', 'soon', 2, 'children', false, '2 evenings/week', array['Coaching', 'French or Wolof']::text[], 'Coaching two teams in our girls'' league, in the courtyard on Tuesday and Thursday evenings.', '2026-08-22'::date, 'live' from public.ministries m where m.slug = 'dakar-medina'
+select m.id, 'Football coaching plans', 'volunteers', 'soon', 1, 'children', true, '6 hrs total', array['Football coaching', 'French']::text[], 'Write a season of simple training sessions our volunteer coaches can follow with the girls'' teams.', '2026-08-22'::date, 'live' from public.ministries m where m.slug = 'dakar-medina'
 union all
-select m.id, 'Borehole drilling partner', 'partners', 'urgent', 0, 'water', false, '3 boreholes', array['Drilling']::text[], 'A drilling organisation to sink three boreholes on the western edge of the city, where the piped supply stops.', '2026-09-04'::date, 'live' from public.ministries m where m.slug = 'kinshasa-ngaliema'
+select m.id, 'Clean-water proposal writer', 'expertise', 'urgent', 1, 'water', true, '15 hrs · one proposal', array['Proposal writing', 'French']::text[], 'Turn our survey data into a funding proposal for three community wells, in French and English.', '2026-09-04'::date, 'live' from public.ministries m where m.slug = 'kinshasa-ngaliema'
 union all
 select m.id, 'Nurse training course materials', 'expertise', 'soon', 1, 'health', true, '4 hrs/week · 2 months', array['Nurse education', 'French']::text[], 'Help our trainers turn their teaching notes into French-language modules and short quizzes for the training room.', '2026-08-12'::date, 'live' from public.ministries m where m.slug = 'kinshasa-ngaliema'
 union all
@@ -220,19 +220,19 @@ select m.id, 'Financial literacy course', 'expertise', 'soon', 1, 'work', true, 
 union all
 select m.id, 'Audio editor for Amharic recordings', 'expertise', 'ongoing', 1, 'translation', true, '4 hrs/week', array['Audio editing', 'Amharic helpful']::text[], 'Editing and mastering the Scripture readings our volunteers record in the Merkato room, for people who do not read.', '2026-05-28'::date, 'live' from public.ministries m where m.slug = 'addis-merkato'
 union all
-select m.id, 'Gang-exit mentors', 'volunteers', 'urgent', 3, 'prison', false, '1 day/week · 1 year', array['Xhosa', 'Mentoring']::text[], 'Walking alongside young men leaving gangs, with our staff, for a full year.', '2026-08-31'::date, 'live' from public.ministries m where m.slug = 'capetown-khayelitsha'
+select m.id, 'Mentor training (video)', 'expertise', 'urgent', 1, 'prison', true, '3 video sessions', array['Mentoring', 'Motivational interviewing']::text[], 'Train our gang-exit mentors in motivational interviewing over three video sessions.', '2026-08-31'::date, 'live' from public.ministries m where m.slug = 'capetown-khayelitsha'
 union all
 select m.id, 'Trauma debrief facilitator', 'expertise', 'soon', 1, 'trauma', true, '3 hrs/fortnight', array['Trauma debriefing']::text[], 'Leading a video debrief for our mentors after hard weeks, so the people doing this work have somewhere to put it.', '2026-08-07'::date, 'live' from public.ministries m where m.slug = 'capetown-khayelitsha'
 union all
 select m.id, 'Project management support', 'expertise', 'urgent', 1, 'shelter', true, '4 hrs/week · 3 months', array['Project management', 'Arabic or French helpful']::text[], 'Help our site lead plan the last ninety households: a schedule, a materials tracker, and a weekly call to keep it on track.', '2026-08-25'::date, 'live' from public.ministries m where m.slug = 'beirut-karantina'
 union all
-select m.id, 'Window glazing supplies', 'supplies', 'soon', 0, 'shelter', false, '90 windows', '{}', 'Glass, frames and sealant for the last ninety windows in the quarter closest to the port.', '2026-07-24'::date, 'live' from public.ministries m where m.slug = 'beirut-karantina'
+select m.id, 'Part-time bookkeeper', 'expertise', 'soon', 1, 'shelter', true, '4 hrs/month', array['Bookkeeping', 'Xero or QuickBooks']::text[], 'Keep our rebuild accounts up to date each month and prepare simple reports for our funders.', '2026-07-24'::date, 'live' from public.ministries m where m.slug = 'beirut-karantina'
 union all
 select m.id, 'Social media volunteer', 'volunteers', 'soon', 1, 'children', true, '3 hrs/week', array['Social media', 'Russian helpful']::text[], 'Running our Instagram and Facebook: two posts a week from the photos and stories our youth leaders send.', '2026-08-14'::date, 'live' from public.ministries m where m.slug = 'bishkek-novostroyka'
 union all
-select m.id, 'Winter coal fund', 'funding', 'soon', 0, 'shelter', false, 'seasonal', '{}', 'Coal for sixty households before the first hard frost, bought in bulk in October while it is cheapest.', '2026-08-02'::date, 'live' from public.ministries m where m.slug = 'bishkek-novostroyka'
+select m.id, 'Russian-English translator', 'volunteers', 'soon', 1, 'children', true, '3 hrs/week', array['Russian', 'English']::text[], 'Translate our updates and grant reports so English-speaking supporters can follow the work.', '2026-08-02'::date, 'live' from public.ministries m where m.slug = 'bishkek-novostroyka'
 union all
-select m.id, 'Newcomer welcome hosts', 'volunteers', 'ongoing', 6, 'refugees', false, '1 evening/week', array['English', 'Cooking']::text[], 'Cooking and sharing the weekly Scarborough meal with newly arrived claimants.', '2026-07-16'::date, 'live' from public.ministries m where m.slug = 'toronto-newcomer'
+select m.id, 'Online settlement guide', 'volunteers', 'ongoing', 4, 'refugees', true, '1 hr/week', array['English', 'Canadian systems']::text[], 'Video calls with newly arrived families to help with forms, banking and finding local services.', '2026-07-16'::date, 'live' from public.ministries m where m.slug = 'toronto-newcomer'
 union all
 select m.id, 'Immigration lawyer (pro bono)', 'expertise', 'soon', 1, 'refugees', true, '4 hrs/month', array['Immigration law']::text[], 'Reviewing claims by video before hearings, and joining the monthly table when you can.', '2026-08-11'::date, 'live' from public.ministries m where m.slug = 'toronto-newcomer'
 ;

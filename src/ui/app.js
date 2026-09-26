@@ -78,14 +78,14 @@ export class App {
 
     this.modals = new ModalLayer(this.el.modals, { onToggle: () => this.#syncCovered() });
     this.panel = new Panel(this.el.panel, { net: this.net, on: this.#panelHandlers() });
-    // "Search needs, ministries, skills or places" is 44 characters and a
+    // "Search skills, needs or ministries" is 44 characters and a
     // phone shows about 28 of them, so the field advertises itself with a
     // truncated word. Swapped rather than shrunk: 16px is the floor below
     // which iOS zooms the whole page when the field takes focus.
     const narrow = window.matchMedia("(max-width: 720px)");
     const placeholder = () => {
       if (!this.el.search) return;
-      this.el.search.placeholder = narrow.matches ? "Search needs or places" : "Search needs, ministries, skills or places";
+      this.el.search.placeholder = narrow.matches ? "Search skills or needs" : "Search skills, needs or ministries";
     };
     narrow.addEventListener("change", placeholder);
     placeholder();

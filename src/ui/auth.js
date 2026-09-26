@@ -138,7 +138,7 @@ export class AuthGate {
         h("div", { class: "gate__label", style: { marginTop: "16px" }, text: "I am here to" }),
         h("div", { class: "gate__roles" },
           role("volunteer", HAND, "Offer help", "Answer five questions and we will suggest needs that fit you."),
-          role("ministry", BUILDING, "Post what we need", "Put your ministry on the map and publish what you are short of."),
+          role("ministry", BUILDING, "Post what we need", "Put your ministry on the map and get help online."),
         ),
       ]);
     }
@@ -153,10 +153,10 @@ export class AuthGate {
     add(this.body, [
       h("h2", { class: "gate__title", text: isSignup ? "Join Terra" : isMagic ? "Sign in without a password" : "Welcome back" }),
       h("p", { class: "gate__sub", text: isSignup
-        ? "A map of what ministries need, and the people who can meet it."
+        ? "Help ministries online, or post what yours needs."
         : isMagic
         ? "We will email you a link that signs you in. No password to remember."
-        : "Sign in to pick up needs, or to post what your ministry is short of." }),
+        : "Sign in to offer your skills, or to post what your ministry needs." }),
       h("div", { class: "gate__seg" }, seg("signin", "Sign in"), seg("signup", "Create account"), seg("magic", "Email link")),
       form,
       this.error && h("div", { class: "gate__msg gate__msg--bad", text: this.error }),
