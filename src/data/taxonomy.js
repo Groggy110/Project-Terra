@@ -1,8 +1,11 @@
 /** Shared vocabulary. Filter chips, forms and badges all read from here. */
 
 export const NEED_TYPES = [
-  { id: "volunteers", label: "Volunteers", short: "Volunteers" },
-  { id: "expertise", label: "Expertise", short: "Expertise" },
+  // The two kinds of help a person gives online. The ids predate the labels
+  // (and the database checks them), so only the words changed: hands-on is
+  // doing the work yourself, advisory is guiding the ministry's own people.
+  { id: "volunteers", label: "Hands-on", short: "Hands-on", note: "You do the work" },
+  { id: "expertise", label: "Advisory", short: "Advisory", note: "You advise their team" },
   { id: "supplies", label: "Supplies", short: "Supplies" },
   { id: "funding", label: "Funding", short: "Funding" },
   { id: "partners", label: "Partners", short: "Partners" },
@@ -27,6 +30,14 @@ export const FOCUS_AREAS = [
   { id: "discipleship", label: "Discipleship" },
   { id: "work", label: "Livelihoods & work" },
   { id: "prison", label: "Prison & aftercare" },
+  { id: "technology", label: "Technology & IT" },
+  { id: "media", label: "Media & communications" },
+  { id: "design", label: "Design & creative" },
+  { id: "admin", label: "Finance & administration" },
+  { id: "legal", label: "Legal & HR" },
+  { id: "fundraising", label: "Fundraising & development" },
+  { id: "leadership", label: "Leadership & strategy" },
+  { id: "worship", label: "Worship & music" },
 ];
 
 export const REGIONS = [

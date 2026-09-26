@@ -77,14 +77,14 @@ export const PROVIDERS = {
  * display. Set too low this does not fail, it quietly drops a zoom level and
  * the ground goes soft — which is the bug it is easiest to ship by accident.
  */
-const TILE_BUDGET = 160;
+const TILE_BUDGET = 256; // the whole 16x16 canvas MAX_SIDE allows
 /** Hard ceiling on the composited canvas, in pixels a side. */
 const MAX_SIDE = 4096;
 /** Tiles kept decoded. Roughly three windows' worth, so a pull-back is instant. */
 const CACHE_MAX = 640;
 /** Requests in flight. Enough to fill a window in one round trip, not so many
  *  that a fast drag queues fifty dead fetches ahead of the ones that matter. */
-const MAX_INFLIGHT = 10;
+const MAX_INFLIGHT = 16;
 /** How far up the quadtree to look for something to draw while a tile loads. */
 const ANCESTORS = 6;
 /**

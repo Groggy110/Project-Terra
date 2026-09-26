@@ -23,6 +23,7 @@
 import { CanvasTexture, LinearFilter, LinearMipmapLinearFilter, Vector4 } from "three";
 
 import { boundsContain, clamp, DEG, smoothstep, wrapDelta } from "./geo.js";
+import { STYLE } from "../style/styleConfig.js";
 
 const LINE_LAYERS = ["coast", "borders", "rivers"];
 const POLY_LAYERS = ["land", "lakes"];
@@ -121,24 +122,21 @@ export class VectorStore {
 
 /* ----------------------------------------------------------------- styles */
 
-const STYLE = {
-  light: {
-    coast: { color: "255,255,255", width: 1.05, alpha: 0.82 },
-    borders: { color: "56,78,104", width: 0.85, alpha: 0.4 },
-    rivers: { color: "108,158,201", width: 0.8, alpha: 0.6 },
-    lakeEdge: { color: "255,255,255", width: 0.8, alpha: 0.6 },
-  },
-  // Against the night sky the coast is drawn as shallow water rather than as
-  // an outline: the reference has no line round its continents, it has a band
-  // of lit turquoise where the shelf comes up. So the ink is turquoise and
-  // faint enough to read as the sea getting shallower.
-  dark: {
-    coast: { color: "108,196,226", width: 1.05, alpha: 0.3 },
-    borders: { color: "186,214,242", width: 0.85, alpha: 0.2 },
-    rivers: { color: "86,140,192", width: 0.8, alpha: 0.5 },
-    lakeEdge: { color: "108,196,226", width: 0.8, alpha: 0.24 },
-  },
-};
+/**
+ * The ink for a theme: STYLE.themes[theme].lines, with each colour turned into
+ * the "r,g,b" the stroke styles are assembled from. Against the night sky the
+ * coast is drawn as shallow water rather than as an outline, which is why the
+ * dark theme's ink is a faint turquoise.
+ */
+function inkFor(theme) {
+  const lines = (STYLE.themes[theme] || STYLE.themes.light).lines;
+  const out = {};
+  for (const [key, s] of Object.entries(lines)) {
+    const n = parseInt(s.color.slice(1), 16);
+    out[key] = { color: `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`, width: s.width, alpha: s.alpha };
+  }
+  return out;
+}
 
 /* ---------------------------------------------------------------- painter */
 
@@ -260,7 +258,7 @@ export class VectorPainter {
       w: BASE_W,
       h: BASE_H,
     };
-    this.#paintLines(set, view, STYLE[theme] || STYLE.light, 0, 1, BASE_FADE, this.baseCtx);
+    this.#paintLines(set, view, inkFor(theme), 0, 1, BASE_FADE, this.baseCtx);
     this.baseTexture.needsUpdate = true;
     this.baseTheme = theme;
     return true;
@@ -325,7 +323,7 @@ export class VectorPainter {
       this.maskTexture.dispose();
     }
 
-    const style = STYLE[theme] || STYLE.light;
+    const style = inkFor(theme);
     const view = {
       lonMin: win.lonMin,
       latMax: win.latMin + win.latSpan,

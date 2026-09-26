@@ -68,6 +68,7 @@ void main() {
   // thickens toward the limb where the line of sight cuts through more of it.
   vec3 col = mix(uShadow, uTint, mix(1.0, lit, uSunMix));
   col *= mix(1.0, lit, uSunMix);
+  col += uTint * terraLights(n, V);
   float limb = 1.0 + 0.55 * pow(1.0 - ndv, 2.2);
 
   // Clouds go out with the light, not grey with it.
@@ -87,5 +88,7 @@ void main() {
   // whole point is that it has none. uFade is 1 and 0 respectively.
   float vis = mix(1.0, mix(uAmbient, 1.0, day), uFade);
 
-  gl_FragColor = vec4(col, clamp(a * uOpacity * limb * vis, 0.0, 1.0));
+  gl_FragColor = vec4(terraGrade(terraFog(col, vWorld)), clamp(a * uOpacity * limb * vis, 0.0, 1.0));
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }

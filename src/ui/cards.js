@@ -1,10 +1,9 @@
-/** The need card, shared by the panel rail and the board. */
-import { h, joinDot, since } from "./dom.js";
-import { FOCUS_BY_ID, TYPE_BY_ID, URGENCY_BY_ID } from "../data/taxonomy.js";
+/** The need card in the panel rail. (The board draws rows; see board.js.) */
+import { h, joinDot } from "./dom.js";
+import { TYPE_BY_ID } from "../data/taxonomy.js";
 
-export function needCard(need, { onOpen, full = false } = {}) {
+export function needCard(need, { onOpen } = {}) {
   const type = TYPE_BY_ID.get(need.type)?.label ?? need.type;
-  const urgency = URGENCY_BY_ID.get(need.urgency)?.label ?? need.urgency;
 
   const top = h(
     "div",
@@ -32,21 +31,7 @@ export function needCard(need, { onOpen, full = false } = {}) {
     top,
     h("div", { class: "need__title", text: need.title }),
     h("div", { class: "need__meta", text: meta }),
-    full
-      ? h(
-          "div",
-          { class: "need__foot" },
-          h(
-            "span",
-            { class: `need__urg ${need.urgency}` },
-            urgency,
-          ),
-          h("span", { text: FOCUS_BY_ID.get(need.focus)?.label ?? "" }),
-          need.taken ? h("span", { class: "badge badge--remote", text: "Picked up" }) : null,
-        )
-      : null,
   );
-  if (full) card.title = `${need.title} — posted ${since(need.posted)}`;
   return card;
 }
 

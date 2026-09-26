@@ -7,10 +7,11 @@ import { clamp, smoothstep } from "../globe/geo.js";
 import { Network, emptyQuery, queryIsEmpty } from "../data/network.js";
 import { Board } from "./board.js";
 import { Filters } from "./filters.js";
-import { ModalLayer, aboutModal, needModal } from "./modals.js";
+import { ModalLayer, aboutModal, meetingsModal, needModal, pickUpModal, scheduleModal } from "./modals.js";
+import { dashboardModal } from "./dashboard.js";
 import { Panel } from "./panel.js";
 import { PanelSheet } from "./sheet.js";
-import { add, clear, h, icons, nf } from "./dom.js";
+import { add, clear, h, icons, plural } from "./dom.js";
 import { openPop, menuIcons } from "./pop.js";
 import { store } from "./store.js";
 import { REVISION } from "three";
@@ -19,22 +20,50 @@ import { questionnaireModal } from "./questionnaire.js";
 import { ministryModal, postNeedModal as postNeedForm } from "./ministry.js";
 import { Recommendations } from "./recommend.js";
 import * as api from "../lib/api.js";
+import { applyStyle } from "../style/applyStyle.js";
 
-const THEME_LABELS = { light: "Soft light", dark: "Deep night" };
 
 /** How long after the loading screen lifts the headline lands. */
 const HERO_IN_MS = 520;
+
+/** The side-by-side entrance: wide enough for two columns, and landscape. */
+const HERO_SPLIT = window.matchMedia("(min-width: 1000px) and (min-aspect-ratio: 4/3)");
 /**
- * And how long it then holds before the page settles into the working view.
- * Measured from the headline's cue, not from its arrival: the words take
- * 1.1s to land, so this is about eight tenths of a second of stillness with
- * the sentence fully up. It is a headline over a globe, not a splash screen —
- * it has to be gone before anyone starts waiting for it.
+ * The split entrance is tuned in one reference frame, 1951 x 820, and every
+ * other window gets that same picture scaled — see --u in base.css, which
+ * this must match. In the reference the planet's centre sits 409.5px left of
+ * the window's middle (0.21 of the width), at a camera distance of 4.05.
  */
-const HERO_HOLD_MS = 1900;
+const HERO_REF = { w: 1951, h: 820, offset: 409.5, dist: 4.05 };
+
+/** One reference pixel, in real pixels, clamped as --u is. */
+function heroUnit() {
+  const u = Math.min(window.innerHeight / HERO_REF.h, window.innerWidth / HERO_REF.w);
+  return Math.min(Math.max(u, 0.72), 1.25);
+}
+
+/**
+ * The camera for the split entrance at this window size. The globe's size on
+ * screen is set by the height, so where the unit is held back by the width,
+ * the camera withdraws until the disc is `u` reference pixels per pixel too:
+ * the silhouette's radius goes as tan(asin(1/d)), so scaling that tangent by
+ * the ratio scales the disc exactly.
+ */
+function heroFrame() {
+  const u = heroUnit();
+  const k = (u * HERO_REF.h) / window.innerHeight;
+  const tan = Math.tan(Math.asin(1 / HERO_REF.dist)) * k;
+  return {
+    shift: (HERO_REF.offset * u) / window.innerWidth,
+    dist: 1 / Math.sin(Math.atan(tan)),
+  };
+}
 
 export class App {
   constructor() {
+    // The look — sky, pins, labels — is STYLE, written into the page before
+    // anything is drawn over it. The globe picks up its half when it starts.
+    applyStyle();
     // Empty until the backend answers. ?demo loads the fictional set instead,
     // which is the only way to see a populated globe before anyone has posted.
     this.demo = new URLSearchParams(location.search).has("demo");
@@ -64,20 +93,20 @@ export class App {
       search: document.getElementById("searchInput"),
       clearSearch: document.getElementById("searchClear"),
       suggest: document.getElementById("suggest"),
-      themeName: document.getElementById("themeName"),
+      themeBtn: document.getElementById("themeBtn"),
       chrome: document.querySelector(".chrome"),
     };
 
     this.modals = new ModalLayer(this.el.modals, { onToggle: () => this.#syncCovered() });
     this.panel = new Panel(this.el.panel, { net: this.net, on: this.#panelHandlers() });
-    // "Search needs, ministries, skills or places" is 44 characters and a
+    // "Search skills, needs or ministries" is 44 characters and a
     // phone shows about 28 of them, so the field advertises itself with a
     // truncated word. Swapped rather than shrunk: 16px is the floor below
     // which iOS zooms the whole page when the field takes focus.
     const narrow = window.matchMedia("(max-width: 720px)");
     const placeholder = () => {
       if (!this.el.search) return;
-      this.el.search.placeholder = narrow.matches ? "Search needs or places" : "Search needs, ministries, skills or places";
+      this.el.search.placeholder = narrow.matches ? "Search skills or needs" : "Search skills, needs or ministries";
     };
     narrow.addEventListener("change", placeholder);
     placeholder();
@@ -103,9 +132,6 @@ export class App {
         this.applyQuery();
       },
     });
-
-    this.rail = h("div", { class: "rail" });
-    this.el.chrome.appendChild(this.rail);
   }
 
   /* ----------------------------------------------------------------- boot */
@@ -116,16 +142,29 @@ export class App {
     // network figures where the panel will be. Everything settles once the
     // globe has flown in.
     document.body.classList.add("is-hero");
+    // On a wide landscape window the entrance splits: the planet large on the
+    // left, the words and the find bar on the right. Anything narrower keeps
+    // the centred composition, where there is no room for two columns.
+    const split = HERO_SPLIT.matches;
+    document.body.classList.toggle("hero-split", split);
     this.panel.setOpen(false);
-    this.#theme(store.theme || "dark", { quiet: true });
+    // Every visit opens on the night globe; the toggle lasts for the visit.
+    this.#theme("dark");
     this.#bindChrome();
     this.#bindKeys();
 
     this.globe = new Globe(this.el.canvas, {
       overlay: this.el.overlay,
+      hero: split ? heroFrame() : undefined,
       onProgress: (p, label) => boot.progress(p, label),
-      onPinClick: (m) => this.openMinistry(m, { fly: true }),
-      onGlobeClick: () => this.#deselect(),
+      onPinClick: (m) => {
+        this.#leaveHero();
+        this.openMinistry(m, { fly: true });
+      },
+      onGlobeClick: () => {
+        if (document.body.classList.contains("is-hero")) return this.#leaveHero({ settle: true });
+        this.#deselect();
+      },
       onFirstGesture: () => {
         this.#leaveHero();
         this.#hideHint();
@@ -138,6 +177,7 @@ export class App {
       await this.globe.start();
       this.globe.setTheme(this.theme);
       this.globe.setMinistries(this.net.ministries);
+      this.#renderHeroCount();
       this.#initCredit();
     } catch (err) {
       boot.fail(err);
@@ -159,6 +199,9 @@ export class App {
       await this.#afterAuth({ quiet: true });
       api.onAuthChange((session) => {
         const was = this.session?.user?.id ?? null;
+        // Every refresh rotates the token; keep the latest so switching back
+        // to this account later works without a password.
+        if (session && session.user.id === was) api.rememberAccount(session, this.profile);
         this.session = session;
         if ((session?.user?.id ?? null) !== was) this.#afterAuth({ quiet: true });
       });
@@ -168,7 +211,6 @@ export class App {
 
     this.panel.render(this.query);
     this.#renderCrumbs();
-    this.#renderRail();
     this.#renderAccount();
     this.syncReserved();
     // Coalesced: a window drag-resize delivers a stream of these, and each one
@@ -192,7 +234,8 @@ export class App {
     // globe has said where they want to be, and having it fly out from under
     // them is the rudest thing the page could do.
     this.heroInTimer = setTimeout(() => document.body.classList.add("hero-in"), HERO_IN_MS);
-    this.heroTimer = setTimeout(() => this.#leaveHero({ settle: true }), HERO_IN_MS + HERO_HOLD_MS);
+    // No timed exit: the landing screen holds until someone engages — a
+    // click or drag on the globe, or a search submitted with Enter.
 
     if (!store.seen) {
       store.markSeen();
@@ -205,7 +248,9 @@ export class App {
     if (!document.body.classList.contains("is-hero")) return;
     clearTimeout(this.heroTimer);
     clearTimeout(this.heroInTimer);
-    document.body.classList.remove("is-hero", "hero-in");
+    document.body.classList.remove("is-hero", "hero-in", "hero-split");
+    // The split framing glides back to centre whichever way the hero ends.
+    this.globe?.setShift(0);
     // Whichever way the hero went, the opening frame is over and the globe is
     // free to turn again. On the timed exit the settle starts the turn itself;
     // on a gesture the drift picks it up once the hand comes off.
@@ -230,10 +275,7 @@ export class App {
       h(
         "div",
         { class: "boot__inner" },
-        h("span", {
-          class: "boot__mark",
-          html: '<img class="boot__mark" src="/logo-mark.png" alt="" width="256" height="256" />',
-        }),
+        h("span", { class: "boot__mark brand__name", text: "Terra" }),
         label,
         h("div", { class: "boot__bar" }, fill),
       ),
@@ -306,10 +348,7 @@ export class App {
       this.#renderSuggest();
       this.applyQuery();
     });
-    search.addEventListener("focus", () => {
-      this.#leaveHero();
-      this.#renderSuggest();
-    });
+    search.addEventListener("focus", () => this.#renderSuggest());
     search.addEventListener("blur", () => setTimeout(() => this.#hideSuggest(), 140));
     search.addEventListener("keydown", (e) => this.#suggestKeys(e));
     this.el.clearSearch.addEventListener("click", () => {
@@ -364,7 +403,7 @@ export class App {
         },
         null,
         {
-          label: `Switch to ${dark ? "deep night" : "soft light"}`,
+          label: `Switch to ${dark ? "dark" : "light"} mode`,
           icon: menuIcons.theme,
           kbd: "T",
           run: () => this.#theme(dark ? "dark" : "light"),
@@ -385,13 +424,15 @@ export class App {
     });
   }
 
-  #theme(name, { quiet = false } = {}) {
+  #theme(name) {
     this.theme = name;
     document.documentElement.dataset.theme = name;
-    this.el.themeName.textContent = THEME_LABELS[name] ?? name;
-    store.setTheme(name);
+    // The icon is the whole control (the sun or moon swaps in CSS), so the
+    // words live in its label, and a toast would only repeat what just changed.
+    const next = name === "light" ? "Switch to dark mode" : "Switch to light mode";
+    this.el.themeBtn?.setAttribute("aria-label", next);
+    this.el.themeBtn?.setAttribute("title", next);
     this.globe?.setTheme(name);
-    if (!quiet) this.toast(`${THEME_LABELS[name]}`);
   }
 
   /* ---------------------------------------------------------------- views */
@@ -453,33 +494,13 @@ export class App {
     return "Open needs";
   }
 
-  /**
-   * Whole-network figures, not the filtered ones: it is captioned NETWORK and
-   * stands where the panel would be, which is where the filtered count already
-   * lives when the panel is up.
-   */
-  #renderRail() {
+  /** The landing headline's pill: whole-network figures, in a sentence. */
+  #renderHeroCount() {
+    const el = document.getElementById("heroCount");
     const stats = this.net.stats();
-    const countries = new Set(this.net.ministries.map((m) => m.country)).size;
-    clear(this.rail);
-    const key = (kind, label) =>
-      h("span", {}, h("i", { class: `rail__dot rail__dot--${kind}` }), label);
-    const row = (label, value) =>
-      h(
-        "div",
-        { class: "rail__row" },
-        h("span", { class: "rail__k", text: label }),
-        h("span", { class: "rail__v", text: nf.format(value) }),
-      );
-    add(this.rail, [
-      h("div", { class: "rail__legend" }, key("urgent", "Urgent"), key("open", "Open"), key("city", "City")),
-      h("div", { class: "rail__head", text: "Network" }),
-      row("Ministries", this.net.ministries.length),
-      row("Open needs", stats.needs),
-      row("People needed", stats.people),
-      row("Countries", countries),
-      h("div", { class: "rail__foot", text: "Fictional sample data" }),
-    ]);
+    if (el && stats.needs) {
+      el.textContent = `${plural(stats.needs, "open need", "open needs")} · ${plural(this.net.ministries.length, "ministry", "ministries")}`;
+    }
   }
 
   /* ------------------------------------------------------------- backend */
@@ -491,7 +512,6 @@ export class App {
       this.net.setData(data);
       this.globe?.setMinistries(this.net.ministries);
       this.applyQuery();
-      this.#renderRail();
     } catch (err) {
       console.error("[terra] could not load the network", err);
       this.toast("Could not reach the network just now.");
@@ -506,18 +526,81 @@ export class App {
     this.session = await api.currentSession();
     this.profile = this.session ? await api.myProfile() : null;
     this.ministry = this.profile?.role === "ministry" ? await api.myMinistry() : null;
+    if (this.session) api.rememberAccount(this.session, this.profile);
+
+    // Finishing a link started from the other account: this is the new
+    // (or newly signed-in) account arriving, so the two are joined now.
+    if (this.session && api.pendingLink()) {
+      try {
+        if (await api.completeLink()) this.toast("Accounts linked. Switch between them from your account menu.");
+      } catch (e) {
+        this.toast(e.message);
+      }
+    }
+    this.linked = this.session ? await api.linkedAccounts().catch(() => []) : [];
     this.#renderAccount();
 
     if (!this.session) return;
     if (!quiet) this.toast(`Signed in as ${this.profile?.full_name || this.session.user.email}`);
 
-    // A volunteer who has never answered the questions is asked once, after a
-    // beat — immediately on top of a sign-in reads as a second gate.
-    if (this.profile?.role === "volunteer" && !this.askedQuestions) {
-      this.askedQuestions = true;
+    // Each account is onboarded once, after a beat — immediately on top of a
+    // sign-in reads as a second gate. A volunteer answers the questions; a
+    // ministry tells us who it is, which fills in everything it posts.
+    this.onboarded ??= new Set();
+    const id = this.session.user.id;
+    if (this.onboarded.has(id)) return;
+    this.onboarded.add(id);
+    if (this.profile?.role === "volunteer") {
       const existing = await api.loadQuestionnaire();
       if (!existing) setTimeout(() => this.openQuestionnaire(), 900);
+    } else if (this.profile?.role === "ministry" && !this.ministry) {
+      setTimeout(() => this.openMinistrySetup(), 900);
     }
+  }
+
+  /** Links a second account to this one: a personal account, or a ministry. */
+  startLink(role) {
+    if (!this.session) return;
+    api.beginLink(this.session.user.id, role);
+    const from = this.ministry?.name || this.profile?.full_name || "this account";
+    this.gate.open("signup", {
+      role,
+      title: role === "ministry" ? "Create your ministry account" : "Create your personal account",
+      sub: `It stays linked to ${from}, so you can switch in one click. Use a different email address, or sign in if you already have one.`,
+      onCancel: () => api.cancelLink(),
+    });
+  }
+
+  async switchTo(other) {
+    try {
+      await api.switchAccount(other.id);
+      // onAuthChange notices the new user and runs #afterAuth.
+      this.toast(other.role === "ministry" ? "Switched to your ministry account." : "Switched to your personal account.");
+    } catch (e) {
+      if (!e.needsSignIn) return this.toast(e.message);
+      this.gate.open("signin", {
+        role: other.role,
+        email: e.email ?? "",
+        title: other.role === "ministry" ? "Sign in to your ministry account" : "Sign in to your personal account",
+        sub: "You only need to do this once on this device. After that, switching is one click.",
+      });
+    }
+  }
+
+  openDashboard() {
+    if (!this.session) return this.gate.open("signin");
+    dashboardModal(this.modals, {
+      load: () => api.ministryDashboard(),
+      onSetStatus: async (id, status) => {
+        await api.setNeedStatus(id, status);
+        await this.reloadNetwork();
+      },
+      onPost: () => this.postNeed(),
+      onShowNeed: (id) => {
+        const n = this.net.needById(id);
+        if (n) this.openNeed(n, { fly: true });
+      },
+    });
   }
 
   /** The chip in the top bar: sign in, or who you are. */
@@ -533,11 +616,15 @@ export class App {
       slot.appendChild(h("button", { class: "btn btn--ghost", "data-action": "sign-in" }, "Sign in"));
       return;
     }
-    const name = this.profile?.full_name || this.session.user.email || "You";
+    const isMinistry = this.profile?.role === "ministry";
+    const name = isMinistry && this.ministry ? this.ministry.name : this.profile?.full_name || this.session.user.email || "You";
+    // Their own logo or photo if they have added one; otherwise just the name.
+    const picture = isMinistry ? this.ministry?.logo : this.profile?.avatar_url;
     slot.appendChild(
-      h("button", { class: "acct", "data-action": "account", title: this.session.user.email },
-        h("span", { class: "acct__dot", text: name.trim().charAt(0).toUpperCase() }),
-        h("span", { class: "acct__name", text: name.split(" ")[0] }),
+      h("button", { class: `acct${isMinistry ? " acct--ministry" : ""}${picture ? "" : " acct--bare"}`, "data-action": "account", title: this.session.user.email },
+        picture ? h("img", { class: "acct__pic", src: picture, alt: "" }) : null,
+        h("span", { class: "acct__name", text: isMinistry ? name : name.split(" ")[0] }),
+        this.linked?.length ? h("span", { class: "acct__role", text: isMinistry ? "Ministry" : "Personal" }) : null,
       ),
     );
   }
@@ -548,16 +635,59 @@ export class App {
       anchor,
       parent: this.el.chrome,
       items: [
-        { label: this.profile?.full_name || this.session.user.email, note: isMinistry ? "Ministry account" : "Volunteer account", icon: menuIcons.info },
+        { label: (isMinistry && this.ministry?.name) || this.profile?.full_name || this.session.user.email, note: isMinistry ? "Ministry account" : "Personal account", icon: menuIcons.info },
+        ...(this.linked ?? []).map((other) => ({
+          label: other.role === "ministry" ? "Switch to ministry account" : "Switch to personal account",
+          note: other.name || other.email || "Linked account",
+          icon: menuIcons.panel,
+          run: () => this.switchTo(other),
+        })),
+        !this.linked?.length && isMinistry && { label: "Create your personal account", note: "Serve as yourself, linked to this ministry", icon: menuIcons.panel, run: () => this.startLink("volunteer") },
+        !this.linked?.length && !isMinistry && { label: "Set up a ministry account", note: "Linked to this one", icon: menuIcons.panel, run: () => this.startLink("ministry") },
         null,
+        isMinistry && this.ministry && { label: "Your needs", note: "Posts and who responded", icon: menuIcons.board, run: () => this.openDashboard() },
+        { label: "Your calls", note: "Upcoming video calls", icon: menuIcons.board, run: () => this.openMeetings() },
         !isMinistry && { label: "Suggested for you", note: "Matched to your answers", icon: menuIcons.board, run: () => this.openSuggestions() },
         !isMinistry && { label: "Answer the five questions", icon: menuIcons.panel, run: () => this.openQuestionnaire() },
         isMinistry && !this.ministry && { label: "Put your ministry on the map", icon: menuIcons.panel, run: () => this.openMinistrySetup() },
         isMinistry && this.ministry && { label: "Post a need", icon: menuIcons.board, run: () => this.postNeed() },
         null,
+        (!isMinistry || this.ministry) && {
+          label: isMinistry ? (this.ministry.logo ? "Change logo" : "Upload a logo") : this.profile?.avatar_url ? "Change photo" : "Upload a photo",
+          note: "Shown beside your name",
+          icon: menuIcons.panel,
+          run: () => this.pickAvatar(),
+        },
+        (isMinistry ? this.ministry?.logo : this.profile?.avatar_url) && {
+          label: isMinistry ? "Remove logo" : "Remove photo",
+          icon: menuIcons.trash,
+          run: () => this.saveAvatar(null),
+        },
+        null,
         { label: "Sign out", icon: menuIcons.trash, run: async () => { await api.signOut(); this.session = null; this.profile = null; this.ministry = null; this.#renderAccount(); this.toast("Signed out."); } },
       ].filter((x) => x !== false),
     });
+  }
+
+  /** Chooses an image for the account chip; see api.setAvatar. */
+  pickAvatar() {
+    const input = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/svg+xml" });
+    input.addEventListener("change", () => input.files[0] && this.saveAvatar(input.files[0]));
+    input.click();
+  }
+
+  async saveAvatar(file) {
+    const isMinistry = this.profile?.role === "ministry";
+    const opts = { ministryId: isMinistry ? this.ministry?.id : null };
+    try {
+      const url = file ? await api.setAvatar(file, opts) : await api.removeAvatar(opts);
+      if (isMinistry) this.ministry = { ...this.ministry, logo: url };
+      else this.profile = { ...this.profile, avatar_url: url };
+      this.#renderAccount();
+      this.toast(file ? (isMinistry ? "Logo updated." : "Photo updated.") : isMinistry ? "Logo removed." : "Photo removed.");
+    } catch (e) {
+      this.toast(e.message || "Could not update the picture.");
+    }
   }
 
   openQuestionnaire() {
@@ -588,6 +718,7 @@ export class App {
     ministryModal(this.modals, {
       onCreated: async (m) => {
         this.ministry = m;
+        this.#renderAccount();
         this.toast(`${m.name} is on the map.`);
         await this.reloadNetwork();
         this.postNeed();
@@ -598,10 +729,10 @@ export class App {
   /* --------------------------------------------------------------- query */
 
   applyQuery() {
+    this.#renderHeroCount();
     this.panel.render(this.query);
     if (this.board.open) this.board.render(this.query);
     this.globe?.setDimmed(this.net.excluded(this.query));
-    this.#renderRail();
     this.#renderCrumbs();
   }
 
@@ -616,28 +747,75 @@ export class App {
 
   /* ----------------------------------------------------------- suggestions */
 
+  /**
+   * The list under the search bar: the needs that match, best first, as you
+   * type — then a few other things the text could mean (a skill, a
+   * ministry, a filter). Enter with nothing highlighted submits the search:
+   * the page settles into the working view and the list stays open.
+   */
   #renderSuggest() {
-    const rows = this.net.suggest(this.el.search.value);
+    const text = this.el.search.value.trim();
     const box = this.el.suggest;
     clear(box);
-    this.suggestRows = rows;
+    this.suggestRows = [];
     this.suggestCursor = -1;
-    if (!rows.length) {
+    if (text.length < 2) {
       box.hidden = true;
       return;
     }
-    for (const row of rows) {
-      box.appendChild(
-        h(
+
+    const results = this.net.select(this.query);
+    const needRows = results.slice(0, 6).map((n) => ({ kind: "need", need: n }));
+    const others = this.net.suggest(text, 6).filter((r) => r.kind !== "need").slice(0, 4);
+    this.suggestRows = [...needRows, ...others];
+
+    const row = (r) => {
+      if (r.kind === "need") {
+        const n = r.need;
+        return h(
           "button",
-          { class: "suggest__row", onclick: () => this.#takeSuggestion(row) },
-          h("span", { class: "suggest__kind", text: row.kind }),
-          h("b", { text: row.label }),
-          h("span", { text: row.note }),
-        ),
+          { class: "suggest__row result", onclick: () => this.#takeSuggestion(r) },
+          h("span", { class: `dot dot--${n.urgency}` }),
+          h("span", { class: "result__text" },
+            h("b", { text: n.title }),
+            h("small", { text: `${n.ministryName} · ${n.city}` }),
+          ),
+          h("span", { class: "result__meta", text: n.commitment || "" }),
+        );
+      }
+      return h(
+        "button",
+        { class: "suggest__row", onclick: () => this.#takeSuggestion(r) },
+        h("span", { class: "suggest__kind", text: r.kind }),
+        h("b", { text: r.label }),
+        h("span", { text: r.note }),
+      );
+    };
+
+    box.appendChild(
+      h("div", { class: "suggest__group ml" },
+        results.length ? `${results.length} open need${results.length === 1 ? "" : "s"}` : "No open needs match",
+      ),
+    );
+    needRows.forEach((r) => box.appendChild(row(r)));
+    if (results.length > needRows.length) {
+      box.appendChild(
+        h("button", { class: "suggest__more", onclick: () => { this.#hideSuggest(); this.setView("needs"); } },
+          `See all ${results.length} on the needs board →`),
       );
     }
+    if (others.length) {
+      box.appendChild(h("div", { class: "suggest__group ml", text: "Also try" }));
+      others.forEach((r) => box.appendChild(row(r)));
+    }
     box.hidden = false;
+  }
+
+  /** Enter: take the search into the working view, results still showing. */
+  #submitSearch() {
+    this.#leaveHero({ settle: true });
+    this.applyQuery();
+    this.#renderSuggest();
   }
 
   #hideSuggest() {
@@ -650,17 +828,20 @@ export class App {
       this.#hideSuggest();
       return;
     }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (this.suggestCursor >= 0 && rows[this.suggestCursor]) this.#takeSuggestion(rows[this.suggestCursor]);
+      else if (this.el.search.value.trim()) this.#submitSearch();
+      return;
+    }
     if (!rows.length || this.el.suggest.hidden) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const dir = e.key === "ArrowDown" ? 1 : -1;
       this.suggestCursor = (this.suggestCursor + dir + rows.length) % rows.length;
-      const items = [...this.el.suggest.children];
+      const items = [...this.el.suggest.querySelectorAll(".suggest__row")];
       items.forEach((el, i) => el.classList.toggle("is-cursor", i === this.suggestCursor));
       items[this.suggestCursor]?.scrollIntoView({ block: "nearest" });
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      this.#takeSuggestion(rows[Math.max(this.suggestCursor, 0)]);
     }
   }
 
@@ -674,7 +855,7 @@ export class App {
       this.applyQuery();
       this.openMinistry(row.ministry, { fly: true });
     } else if (row.kind === "need") {
-      this.openNeed(row.need);
+      this.openNeed(row.need, { fly: true });
     } else if (row.kind === "skill") {
       this.el.search.value = row.skill;
       this.query.text = row.skill;
@@ -707,9 +888,9 @@ export class App {
     return {
       postNeed: (ministryId) => this.postNeed(ministryId),
       openBoard: () => this.setView("needs"),
-      openNeed: (need) => this.openNeed(need),
+      openNeed: (need) => this.openNeed(need, { fly: true }),
       clearFilters: () => this.clearFilters(),
-      focusMinistry: (m) => this.globe?.focus(m, { zoom: 0.68 }),
+      focusMinistry: (m) => this.globe?.focus(m, { zoom: 1 }),
       layoutChanged: () => setTimeout(() => this.syncReserved(), 480),
     };
   }
@@ -719,6 +900,15 @@ export class App {
       postNeed: (ministryId) => this.postNeed(ministryId),
       openNeed: (need) => this.openNeed(need),
       clearFilters: () => this.clearFilters(),
+      query: () => this.query,
+      // The board's categories edit the shared query in place; the chips, the
+      // search field and the globe are brought into line with it here.
+      queryChanged: () => {
+        this.el.search.value = this.query.text;
+        this.el.clearSearch.hidden = !this.query.text;
+        this.filtersUi.render();
+        this.applyQuery();
+      },
       boardToggled: (open) => {
         document.body.classList.toggle("board-open", open);
         this.#syncCovered();
@@ -735,35 +925,80 @@ export class App {
     this.globe?.select(full.id);
     this.globe?.setSpin(false);
     this.panel.showMinistry(full);
-    if (fly) this.globe?.focus(full, { zoom: Math.max(this.globe.zoom, 0.55) });
+    // All the way in: choosing a ministry is choosing a city, not a region.
+    if (fly) this.globe?.focus(full, { zoom: 1 });
     this.#renderCrumbs();
   }
 
-  openNeed(need) {
+  /**
+   * `fly` takes the globe to the ministry first and stands the need beside
+   * its pin, rather than over a blurred world — for picks made from the
+   * panel and the search, where the map is the context.
+   */
+  openNeed(need, { fly = false } = {}) {
     const fresh = this.net.needById(need.id) ?? need;
+    const m = fly ? this.net.ministryById.get(fresh.ministry) : null;
+    if (m) {
+      this.#leaveHero();
+      this.openMinistry(m, { fly: true });
+    }
     needModal(this.modals, fresh, {
-      onPickUp: (n) => {
-        // Written to the browser either way, and to the database as well when
-        // there is somebody to attribute it to. A signed-out visitor still gets
-        // to mark a need rather than being stopped to sign in first.
-        this.net.toggleInterest(n.id);
-        this.#afterDataChange();
-        if (this.session) api.toggleInterest(n.id, true).catch(() => {});
-        this.toast(
-          this.session
-            ? `Interest noted — ${n.ministryName} can see it.`
-            : `Noted in this browser. Sign in so ${n.ministryName} can see it.`,
-        );
-      },
+      onPickUp: (n) => this.openPickUp(n),
       onDrop: (n) => {
         this.net.toggleInterest(n.id);
         this.#afterDataChange();
-        if (this.session) api.toggleInterest(n.id, false).catch(() => {});
+        if (this.session) api.withdrawInterest(n.id).catch(() => {});
         this.toast("Interest withdrawn.");
       },
       onMinistry: (n) => {
         const m = this.net.ministryById.get(n.ministry);
         if (m) this.openMinistry(m, { fly: true });
+      },
+      onSchedule: api.isConfigured ? (n) => this.openSchedule(n) : null,
+    }, { side: !!m });
+  }
+
+  /**
+   * The application behind "Pick this up". Written to the browser either way,
+   * and to the database as well when there is somebody to attribute it to: a
+   * signed-out visitor can still answer and share links, just not upload.
+   */
+  openPickUp(need) {
+    const live = api.isConfigured && !this.demo;
+    pickUpModal(this.modals, this.net.needById(need.id) ?? need, {
+      canUpload: live && !!this.session,
+      onSignIn: live ? () => this.gate.open("signin") : null,
+      onSubmit: async (answers) => {
+        if (this.session) await api.expressInterest(need.id, answers);
+        this.net.toggleInterest(need.id, { ...answers, files: answers.files.map((f) => f.name) });
+        this.#afterDataChange();
+        this.toast(
+          this.session
+            ? `Sent — ${need.ministryName} can see your answers.`
+            : `Saved in this browser. Sign in so ${need.ministryName} can see it.`,
+        );
+      },
+    });
+  }
+
+  /** Book a first video call about a need; signing in comes first. */
+  openSchedule(need) {
+    if (!this.session) {
+      this.toast("Sign in to book a call with the ministry.");
+      return this.gate.open("signup");
+    }
+    scheduleModal(this.modals, this.net.needById(need.id) ?? need, {
+      onBook: (fields) => api.scheduleMeeting(fields),
+    });
+  }
+
+  openMeetings() {
+    if (!this.session) return this.gate.open("signin");
+    meetingsModal(this.modals, {
+      load: () => api.myMeetings(),
+      onOpenNeed: (id) => {
+        const n = this.net.needById(id);
+        if (n) this.openNeed(n, { fly: true });
       },
     });
   }
@@ -815,7 +1050,6 @@ export class App {
       this.panel.render(this.query);
     }
     if (this.board.open) this.board.render(this.query);
-    this.#renderRail();
   }
 
   /**
@@ -850,7 +1084,7 @@ export class App {
     for (const chip of document.querySelectorAll(".filters .chip")) push(chip, 3);
     push(document.querySelector(".dial"));
     push(document.querySelector(".hint"), 3);
-    if (!this.panel.open) push(this.rail, 4);
+    push(this.el.grabber, 4);
     if (this.panel.open) push(this.el.panel);
     if (this.board.open) push(this.el.sheet);
     this.globe?.setReserved(rects);
@@ -884,7 +1118,7 @@ export class App {
   #syncCovered() {
     const phone = window.matchMedia("(max-width: 720px)").matches;
     const covered =
-      !!this.modals?.isOpen ||
+      !!this.modals?.covers ||
       (phone && (!!this.board?.open || document.body.classList.contains("sheet-full")));
     this.globe?.setCovered(covered);
   }

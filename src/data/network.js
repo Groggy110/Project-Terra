@@ -29,6 +29,78 @@ export const queryIsEmpty = (q) =>
   !q.regions.size &&
   !q.locations.size;
 
+/* ------------------------------------------------------------- relevance */
+
+const STOP = new Set(["a", "an", "and", "the", "of", "for", "to", "in", "on", "with", "or", "need", "needs", "help"]);
+
+const normalise = (t) =>
+  String(t ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const tokens = (t) => normalise(t).split(" ").filter(Boolean);
+
+/** True when some word in `words` starts with `w` ("design" finds "designer"). */
+const hasWord = (words, w) => words.some((x) => x.startsWith(w));
+
+/**
+ * How well a need answers a search, 0 for not at all.
+ *
+ * The AI tags carry most of it. They are ordered most specific first, so a
+ * tag that *is* the search ("logo design") on a need scores far above the
+ * same search merely containing a broad tag ("design"), and an early tag
+ * beats a late one. Title and typed skills count next; place and ministry
+ * names let "Nairobi" work; the description only ever tips a tie.
+ */
+function relevance(n, q) {
+  const words = tokens(q).filter((w) => !STOP.has(w));
+  if (!words.length) return 0;
+  const tags = (n.tags || []).map(normalise);
+  const title = normalise(n.title);
+  const skills = (n.skills || []).map(normalise);
+  let score = 0;
+
+  // Whole-phrase matches.
+  tags.forEach((t, i) => {
+    const w = 1 - Math.min(i, 9) * 0.06;
+    if (t === q) score += 100 * w;
+    else if (t.includes(q)) score += 70 * w;
+    else if (q.includes(t) && t.includes(" ")) score += 55 * w;
+  });
+  if (title.includes(q)) score += 80;
+  if (skills.some((s) => s === q || s.includes(q))) score += 60;
+
+  // Word by word, so "logo design" still finds every design job.
+  const titleWords = tokens(n.title);
+  const tagWords = tags.map((t) => t.split(" "));
+  const skillWords = skills.flatMap((s) => s.split(" "));
+  const placeWords = tokens(`${n.city} ${n.country} ${n.ministryName}`);
+  const labelWords = tokens(
+    `${TYPE_BY_ID.get(n.type)?.label ?? ""} ${FOCUS_BY_ID.get(n.focus)?.label ?? ""} ${n.remote ? "remote" : ""}`,
+  );
+  const detailWords = tokens(`${n.detail} ${n.commitment}`);
+  let matched = 0;
+  for (const w of words) {
+    let best = 0;
+    tagWords.forEach((tw, i) => {
+      if (hasWord(tw, w)) best = Math.max(best, 14 - Math.min(i, 9));
+    });
+    if (hasWord(titleWords, w)) best = Math.max(best, 12);
+    if (hasWord(skillWords, w)) best = Math.max(best, 9);
+    if (hasWord(placeWords, w)) best = Math.max(best, 16);
+    if (hasWord(labelWords, w)) best = Math.max(best, 6);
+    if (best) matched++;
+    else if (hasWord(detailWords, w)) score += 2;
+    score += best;
+  }
+  // Nothing but a passing mention in the description is not a match.
+  if (!matched && score < 50) return 0;
+  return score + matched * 5;
+}
+
 export class Network {
   /**
    * Starts empty. The globe used to be a view over two files that were always
@@ -101,35 +173,69 @@ export class Network {
     };
   }
 
-  /** Needs matching a query, most pressing first. */
+  /**
+   * Needs matching a query. With no text, most pressing first. With text, by
+   * relevance: each need is scored against the search, and the list comes back
+   * best match first and flagged `relevance` so the panel and the board keep
+   * that order instead of re-sorting by urgency.
+   */
   select(query = emptyQuery()) {
-    const text = query.text.trim().toLowerCase();
-    const words = text ? text.split(/\s+/) : [];
+    const text = normalise(query.text);
     const out = this.needs.filter((n) => {
       if (query.types.size && !query.types.has(n.type)) return false;
       if (query.urgencies.size && !query.urgencies.has(n.urgency)) return false;
       if (query.focus.size && !query.focus.has(n.focus)) return false;
       if (query.regions.size && !query.regions.has(n.region)) return false;
       if (query.locations.size && !query.locations.has(n.ministry)) return false;
-      if (!words.length) return true;
-      const hay = [
-        n.title,
-        n.ministryName,
-        n.city,
-        n.country,
-        n.detail,
-        n.commitment,
-        (n.skills || []).join(" "),
-        TYPE_BY_ID.get(n.type)?.label,
-        FOCUS_BY_ID.get(n.focus)?.label,
-        URGENCY_BY_ID.get(n.urgency)?.label,
-        n.remote ? "remote" : "",
-      ]
-        .join(" ")
-        .toLowerCase();
-      return words.every((w) => hay.includes(w));
+      return true;
     });
-    return this.rank(out);
+    if (!text) return this.rank(out);
+
+    // Direct matches first...
+    const direct = new Map(out.map((n) => [n, relevance(n, text)]));
+
+    // ...then what the AI tags say is *related*. The needs that match the
+    // search as a whole phrase ("logo design") lend their other tags —
+    // "brand identity", "graphic design" — and every need sharing them is
+    // pulled up, even one whose own words never mention the search. The
+    // specific family tags count for more than a bare "design".
+    // Only the strongest few lend: a need that merely mentions the phrase in
+    // passing must not drag its whole neighbourhood up with it.
+    const seeds = [...direct]
+      .filter(([n, score]) => score >= 55 && (n.tags || []).some((t) => normalise(t).includes(text)))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .filter(([, score], i, all) => score >= all[0][1] * 0.6);
+    // With one strong match its tags are the family; with several, only the
+    // tags they have in common are — what the matches are *about*, not what
+    // any one of them happens to be about as well.
+    const counts = new Map();
+    for (const [n] of seeds) {
+      for (const tag of new Set((n.tags || []).map(normalise))) {
+        if (!tag.includes(text)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+    }
+    const family = new Map();
+    for (const [tag, count] of counts) {
+      if (seeds.length > 1 && count < 2) continue;
+      family.set(tag, tag.includes(" ") ? 18 : 8);
+    }
+
+    const scored = [];
+    for (const [n, base] of direct) {
+      let related = 0;
+      if (family.size) for (const t of n.tags || []) related += family.get(normalise(t)) ?? 0;
+      const score = base + Math.min(related, 60);
+      if (base > 0 || related >= 16) scored.push({ n, score, direct: base > 0 });
+    }
+    const pressing = new Map(this.rank(scored.map((s) => s.n)).map((n, i) => [n, i]));
+    scored.sort((a, b) => b.score - a.score || pressing.get(a.n) - pressing.get(b.n));
+    // Anything that answers the search directly stays. What is only related
+    // has to be meaningfully so: a faint tail of those reads as noise.
+    const floor = (scored[0]?.score ?? 0) * 0.2;
+    const ranked = scored.filter((s) => s.direct || s.score >= floor).map((s) => s.n);
+    ranked.relevance = true;
+    return ranked;
   }
 
   rank(needs) {
@@ -147,9 +253,9 @@ export class Network {
    * urgency decides and then the order the ministry itself listed them in.
    */
   pressing(limit = 6, needs = this.needs) {
-    const ordered = [...needs].sort(
-      (a, b) => URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency] || a.order - b.order,
-    );
+    const ordered = needs.relevance
+      ? needs
+      : [...needs].sort((a, b) => URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency] || a.order - b.order);
     const seen = new Set();
     const out = [];
     for (const need of ordered) {
@@ -168,7 +274,7 @@ export class Network {
     if (mode === "people") {
       return [...needs].sort((a, b) => (b.people || 0) - (a.people || 0));
     }
-    return this.rank(needs);
+    return needs.relevance ? needs : this.rank(needs);
   }
 
   /** Ministry ids that a query leaves out, for dimming their pins. */
@@ -217,9 +323,13 @@ export class Network {
 
     const skills = new Map();
     for (const n of this.needs) {
-      for (const s of n.skills || []) {
-        if (!s.toLowerCase().includes(q)) continue;
-        skills.set(s, (skills.get(s) || 0) + 1);
+      // Skills the ministry typed, and the AI tags — deduplicated by case.
+      const seenHere = new Set();
+      for (const s of [...(n.skills || []), ...(n.tags || [])]) {
+        const key = s.toLowerCase();
+        if (!key.includes(q) || seenHere.has(key)) continue;
+        seenHere.add(key);
+        skills.set(key, (skills.get(key) || 0) + 1);
       }
     }
     for (const [skill, count] of skills) {
@@ -257,8 +367,8 @@ export class Network {
     return id;
   }
 
-  toggleInterest(id) {
-    const on = store.toggleInterest(id);
+  toggleInterest(id, application) {
+    const on = store.toggleInterest(id, application);
     this.refresh();
     return on;
   }

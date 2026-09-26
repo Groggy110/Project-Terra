@@ -13,7 +13,6 @@
 import { h, add, clear, svg } from "./dom.js";
 import { signIn, signUp, sendMagicLink } from "../lib/api.js";
 
-const MARK = '<circle cx="12" cy="12" r="9.4"/><ellipse cx="12" cy="12" rx="4" ry="9.4"/><path d="M2.9 8.7h18.2M2.9 15.3h18.2"/>';
 const ENVELOPE = '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="m3.8 7 7.1 5.3a2 2 0 0 0 2.2 0L20.2 7"/>';
 const HAND = '<path d="M7.5 12.8V6.3a1.8 1.8 0 0 1 3.6 0v4.8m0 0V4.5a1.8 1.8 0 0 1 3.6 0v6.9m0 0V6.9a1.8 1.8 0 0 1 3.6 0v7.8c0 3.6-2.6 6.3-6.3 6.3s-6.3-2.7-6.3-6.3l-2.1-2.1"/>';
 const BUILDING = '<path d="M4 20.5V6.2a1.7 1.7 0 0 1 1.7-1.7h7.1a1.7 1.7 0 0 1 1.7 1.7v14.3M14.5 20.5V11h3.8a1.7 1.7 0 0 1 1.7 1.7v7.8M2.5 20.5h19M7.4 8.3h3.7M7.4 11.9h3.7M7.4 15.5h3.7"/>';
@@ -41,6 +40,12 @@ export class AuthGate {
       "div",
       { class: "gate", hidden: true },
       h("div", { class: "gate__scrim", onclick: () => this.skip() }),
+      // The real lockup, where it sits on every other screen: top left.
+      h(
+        "div",
+        { class: "brand gate__brand", "aria-hidden": "true" },
+        h("span", { class: "brand__name", text: "Terra" }),
+      ),
       this.card,
     );
     document.body.appendChild(this.el);
@@ -54,8 +59,15 @@ export class AuthGate {
     return this.el.classList.contains("is-open");
   }
 
-  open(mode = "signin") {
+  /**
+   * `intent` reshapes the screen for the linked-accounts flows:
+   *   { role, title, sub, email, onCancel } — the role is fixed (no picker),
+   *   the headline explains what is being linked, and the email may be filled.
+   */
+  open(mode = "signin", intent = null) {
     this.mode = mode;
+    this.intent = intent;
+    if (intent?.role) this.role = intent.role;
     this.sent = null;
     this.error = null;
     this.el.hidden = false;
@@ -74,7 +86,9 @@ export class AuthGate {
 
   skip() {
     this.close();
-    this.onSkip?.();
+    if (this.intent?.onCancel) this.intent.onCancel();
+    else this.onSkip?.();
+    this.intent = null;
   }
 
   /* ------------------------------------------------------------- render */
@@ -113,12 +127,12 @@ export class AuthGate {
 
     if (isSignup) {
       add(form, [
-        field("Your name", { id: "gate-name", name: "name", autocomplete: "name", placeholder: "Stefan Jungmichel", required: true }),
+        field("Your name", { id: "gate-name", name: "name", autocomplete: "name", placeholder: "Your full name", required: true }),
       ]);
     }
 
     add(form, [
-      field("Email", { id: "gate-email", name: "email", type: "email", autocomplete: "email", placeholder: "you@example.org", required: true }),
+      field("Email", { id: "gate-email", name: "email", type: "email", autocomplete: "email", placeholder: "you@example.org", required: true, value: this.intent?.email ?? "" }),
       !isMagic && field("Password", {
         id: "gate-pass", name: "password", type: "password",
         autocomplete: isSignup ? "new-password" : "current-password",
@@ -127,12 +141,12 @@ export class AuthGate {
       }),
     ]);
 
-    if (isSignup) {
+    if (isSignup && !this.intent?.role) {
       add(form, [
         h("div", { class: "gate__label", style: { marginTop: "16px" }, text: "I am here to" }),
         h("div", { class: "gate__roles" },
           role("volunteer", HAND, "Offer help", "Answer five questions and we will suggest needs that fit you."),
-          role("ministry", BUILDING, "Post what we need", "Put your ministry on the map and publish what you are short of."),
+          role("ministry", BUILDING, "Post what we need", "Put your ministry on the map and get help online."),
         ),
       ]);
     }
@@ -145,13 +159,12 @@ export class AuthGate {
     ]);
 
     add(this.body, [
-      svg("0 0 24 24", MARK, "gate__mark"),
-      h("h2", { class: "gate__title", text: isSignup ? "Join Terra" : isMagic ? "Sign in without a password" : "Welcome back" }),
-      h("p", { class: "gate__sub", text: isSignup
-        ? "A map of what ministries need, and the people who can meet it."
+      h("h2", { class: "gate__title", text: this.intent?.title ?? (isSignup ? "Join Terra" : isMagic ? "Sign in without a password" : "Welcome back") }),
+      h("p", { class: "gate__sub", text: this.intent?.sub ? this.intent.sub : isSignup
+        ? "Help ministries online, or post what yours needs."
         : isMagic
         ? "We will email you a link that signs you in. No password to remember."
-        : "Sign in to pick up needs, or to post what your ministry is short of." }),
+        : "Sign in to offer your skills, or to post what your ministry needs." }),
       h("div", { class: "gate__seg" }, seg("signin", "Sign in"), seg("signup", "Create account"), seg("magic", "Email link")),
       form,
       this.error && h("div", { class: "gate__msg gate__msg--bad", text: this.error }),
@@ -160,7 +173,7 @@ export class AuthGate {
           ? [ "Already have an account? ", h("button", { type: "button", onclick: () => { this.mode = "signin"; this.render(); } }, "Sign in") ]
           : [ "New here? ", h("button", { type: "button", onclick: () => { this.mode = "signup"; this.render(); } }, "Create an account") ],
       ),
-      h("button", { class: "gate__skip", type: "button", onclick: () => this.skip(), text: "Look around without an account" }),
+      h("button", { class: "gate__skip", type: "button", onclick: () => this.skip(), text: this.intent ? "Cancel" : "Look around without an account" }),
     ]);
   }
 

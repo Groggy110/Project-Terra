@@ -9,46 +9,33 @@
 import { Raycaster, Sphere, Vector2, Vector3 } from "three";
 
 import { clamp, DEG, latLonToVec3, pixelsPerDegree, RAD, smoothstep, vec3ToLatLon, wrapDelta } from "./geo.js";
+import { STYLE } from "../style/styleConfig.js";
 
-/**
- * The close stop, and it is a *height*, not a distance: 1.055 is fifty-five
- * thousandths of an earth radius above the surface, which frames about a
- * thousand kilometres — a country, never a city. That was the right stop while
- * the only imagery was a 5400-pixel Blue Marble, because there was nothing
- * further in to see; with streamed tiles under it there is, and stopping a
- * thousand kilometres up is stopping the map short of the thing it now knows.
+/*
+ * Every number that shapes the camera — the zoom ladder's two ends, the idle
+ * drift, the smoothing and the wheel — lives in STYLE.camera and STYLE.motion
+ * and is read live, so a restyle takes effect on the next frame.
  *
- * 1.014 frames about ninety kilometres: a city and the country it sits in,
- * which is as close as a *globe* has any business going — past that you are
- * looking at a plane and the product stops being a world.
+ * The close stop, camera.minDist, is a *height*, not a distance: 1.014 frames
+ * about ninety kilometres — a city and the country it sits in, which is as
+ * close as a *globe* has any business going. `zoom` is the log of the distance
+ * normalised over minDist..maxDist, so moving either end rescales the whole
+ * ladder; in logs the moves are small, and every threshold keyed off zoom() is
+ * written as a smoothstep wide enough to absorb them.
  *
- * Cheap in the one place that would have been expensive. `zoom` is the log of
- * the distance normalised over NEAR..FAR, so moving this end rescales the
- * whole ladder — but in logs the move is 3%, because the distance barely
- * changes even as the height falls fourfold. Every threshold keyed off zoom()
- * lands within 0.02 of where it did, which is inside the smoothsteps they are
- * all written as.
+ * The drift rate is set in *pixels of ground per second*, not degrees: a
+ * degree is worth twice as much screen at the working view as it is at the
+ * whole globe, and a fixed angular rate that reads as a slow turn from far off
+ * reads as a pan you cannot read over the top of once you have come in.
+ *
+ * The zoom smoothing sits a shade softer than the rotation's: a distance that
+ * snaps reads as the ground jumping at you, where a turn that snaps just reads
+ * as quick. The wheel's gain is applied in the exponent, so a notch is worth
+ * the same *proportion* of the remaining approach at every zoom.
  */
-export const DIST_NEAR = 1.014;
-export const DIST_FAR = 4.45;
-const LAT_LIMIT = 87;
+const cam = () => STYLE.camera;
+const mo = () => STYLE.motion;
 
-/**
- * Idle drift. A globe that holds perfectly still reads as a photograph of one;
- * turning it slowly eastward — the direction the camera travels to bring Asia
- * round after the Americas — says the whole world is on the other side.
- *
- * The rate is set in *pixels of ground per second*, not degrees: a degree is
- * worth twice as much screen at the working view as it is at the whole globe,
- * and a fixed angular rate that reads as a slow turn from far off reads as a
- * pan you cannot read over the top of once you have come in. Converting
- * through pixels-per-degree holds the apparent speed steady at every zoom.
- */
-const SPIN_PX = 18;
-/** Cap, in degrees a second — what the pixel rate asks for at the whole globe. */
-const SPIN_MAX = 3.2;
-/** Quiet time after a deliberate move before the drift picks up again. */
-const SPIN_RESUME = 3.4;
 /**
  * Where the quiet clock is set when a flight hands straight over to the drift.
  * The full resume wait is for *deliberate* moves — you put the camera
@@ -62,39 +49,20 @@ const SPIN_RESUME = 3.4;
  * underneath it (see the blend in update). Ramping here would subtract from a
  * turn that is already at rate, which is what the stall was.
  */
-const SPIN_HANDOVER = SPIN_RESUME + 1;
-/** Drift is a world gesture; by the time the view is a region it is off. */
-const SPIN_FADE = [0.44, 0.72];
-/**
- * Time constant of the rotation smoothing in update(). Named because the
- * entrance has to undo it: a target that starts advancing from rest takes
- * about this long to show its full speed at the camera.
- */
-const ROT_TAU = 0.075;
-/**
- * And of the zoom smoothing. It sat at 0.13 — three quarters again as slow as
- * the rotation beside it, so a wheel gesture visibly lagged the drag gesture
- * on the same surface. Brought in close to the rotation, with a shade more
- * softness left on it than a turn gets: a distance that snaps reads as the
- * ground jumping at you, where a turn that snaps just reads as quick.
- */
-const ZOOM_TAU = 0.085;
-/**
- * Distance multiplier per unit of wheel delta, applied in the exponent so a
- * notch is worth the same *proportion* of the remaining approach at every
- * zoom. About six notches now cross the whole range, where it used to be
- * nearly nine.
- */
-const WHEEL_GAIN = 0.002;
+const spinHandover = () => mo().spinResume + 1;
+/** The view's roll, in radians. */
+const camRoll = () => (cam().roll || 0) * DEG;
 
 /** 0 at the whole-globe view, 1 at the closest zoom. */
 export function zoomLevel(dist) {
-  const t = Math.log(dist / DIST_FAR) / Math.log(DIST_NEAR / DIST_FAR);
+  const { minDist, maxDist } = cam();
+  const t = Math.log(dist / maxDist) / Math.log(minDist / maxDist);
   return clamp(t, 0, 1);
 }
 
 export function distForZoom(z) {
-  return DIST_FAR * Math.pow(DIST_NEAR / DIST_FAR, clamp(z, 0, 1));
+  const { minDist, maxDist } = cam();
+  return maxDist * Math.pow(minDist / maxDist, clamp(z, 0, 1));
 }
 
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -116,6 +84,7 @@ const EASINGS = { cubic: easeInOut, quad: easeInOutQuad };
 export class GlobeControls {
   #angleA;
   #angleB;
+  #probe;
   #rect = null;
 
   constructor(dom, camera, { onFirstGesture } = {}) {
@@ -123,19 +92,18 @@ export class GlobeControls {
     this.camera = camera;
     this.onFirstGesture = onFirstGesture;
 
-    this.lat = 14;
-    this.lon = -52;
-    this.dist = DIST_FAR;
+    this.lat = cam().home.lat;
+    this.lon = cam().home.lon;
+    this.dist = cam().maxDist;
     this.target = { lat: this.lat, lon: this.lon, dist: this.dist };
 
     this.vel = { lat: 0, lon: 0 };
     this.dragging = false;
     this.reduced = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     this.spinWanted = true;
-    this.spin = !this.reduced;
     this.spinHeld = false;
     this.spinning = false;
-    this.quiet = SPIN_RESUME;
+    this.quiet = mo().spinResume;
     this.pointers = new Map();
     this.pinch = 0;
     this.flight = null;
@@ -151,6 +119,13 @@ export class GlobeControls {
     this.#angleB = new Vector3();
     this.ndc = new Vector2();
     this.hit = new Vector3();
+    this.#probe = new Vector3();
+    /**
+     * The ground point a zoom is holding under the cursor, and the screen
+     * position (NDC) it is held at. Set by the wheel and the pinch, cleared by
+     * anything else that takes the camera; see #holdAnchor.
+     */
+    this.anchor = null;
 
     this.#bind();
   }
@@ -161,6 +136,11 @@ export class GlobeControls {
 
   get zoom() {
     return zoomLevel(this.dist);
+  }
+
+  /** Whether the drift may run at all: wanted, allowed, and switched on in STYLE. */
+  get spin() {
+    return this.spinWanted && !this.reduced && mo().autoRotate;
   }
 
   setViewport(w, h) {
@@ -177,7 +157,7 @@ export class GlobeControls {
     // falls short of square. Distance rather than a wider lens, because the
     // lens would have to open to ninety-odd degrees to cover it and the globe
     // would bulge like a fisheye. This is the framing only — `dist` remains
-    // the semantic zoom, DIST_NEAR..DIST_FAR is untouched, and every threshold
+    // the semantic zoom, minDist..maxDist is untouched, and every threshold
     // keyed off zoom() keeps meaning what it meant.
     const portrait = Math.min(Math.max(1, 1.2 / Math.max(w / Math.max(h, 1), 0.01)), 3.4);
     // A short viewport is not a narrow one, and the aspect ratio cannot tell
@@ -221,7 +201,6 @@ export class GlobeControls {
    */
   setSpin(on) {
     this.spinWanted = !!on;
-    this.spin = this.spinWanted && !this.reduced;
   }
 
   /**
@@ -263,6 +242,7 @@ export class GlobeControls {
    */
   #takeOver() {
     this.flight = null;
+    this.anchor = null;
     this.target.lat = this.lat;
     this.target.lon = this.lon;
     this.target.dist = this.dist;
@@ -296,33 +276,42 @@ export class GlobeControls {
   #move = (e) => {
     const prev = this.pointers.get(e.pointerId);
     if (!prev) return;
-    const dx = e.clientX - prev.x;
-    const dy = e.clientY - prev.y;
+    let dx = e.clientX - prev.x;
+    let dy = e.clientY - prev.y;
     prev.x = e.clientX;
     prev.y = e.clientY;
 
     if (this.pointers.size >= 2) {
       const spread = this.#spread();
       if (this.pinch > 0 && spread > 0) {
-        this.#zoomTo(this.target.dist * (this.pinch / spread));
+        const [a, b] = [...this.pointers.values()];
+        this.#zoomTo(this.target.dist * (this.pinch / spread), { clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 });
         this.pinch = spread;
       }
       return;
     }
 
     if (!this.dragging) return;
+    // With the view rolled, a screen drag is rotated back into the unrolled
+    // frame, so the ground still follows the cursor.
+    const roll = camRoll();
+    if (roll) {
+      const c = Math.cos(roll);
+      const s = Math.sin(roll);
+      [dx, dy] = [dx * c + dy * s, -dx * s + dy * c];
+    }
     if (Math.abs(dx) + Math.abs(dy) > 2) {
       this.moved = true;
       this.#note();
     }
 
-    const ppd = Math.max(this.pxPerDeg, 0.4);
+    const ppd = Math.max(this.pxPerDeg, 0.4) / mo().rotateSpeed;
     const cosLat = Math.max(Math.cos(this.target.lat * DEG), 0.35);
     const dLon = -dx / (ppd * cosLat);
     const dLat = dy / ppd;
 
     this.target.lon += dLon;
-    this.target.lat = clamp(this.target.lat + dLat, -LAT_LIMIT, LAT_LIMIT);
+    this.target.lat = clamp(this.target.lat + dLat, -cam().latLimit, cam().latLimit);
     // velocity in degrees per second, for the throw
     this.vel.lon = dLon * 58;
     this.vel.lat = dLat * 58;
@@ -345,19 +334,29 @@ export class GlobeControls {
   #wheel = (e) => {
     e.preventDefault();
     this.#note();
-    this.#takeOver();
+    // Not #takeOver: that would drop the anchor a scroll is still holding,
+    // and each notch of one gesture has to keep the same ground point.
+    this.flight = null;
+    this.vel.lat = 0;
+    this.vel.lon = 0;
     const step = e.deltaMode === 1 ? e.deltaY * 18 : e.deltaY;
-    const next = this.target.dist * Math.exp(clamp(step, -260, 260) * WHEEL_GAIN);
+    const next = this.target.dist * Math.exp(clamp(step, -260, 260) * mo().zoomSpeed);
     this.#zoomTo(next, e);
   };
 
+  /** The wheel handler, for layers stacked over the canvas to forward to. */
+  wheel(e) {
+    this.#wheel(e);
+  }
+
+  /** All the way in, onto the point that was double-clicked. */
   #dbl = (e) => {
     const at = this.pointAt(e);
     this.flyTo({
       lat: at?.lat ?? this.target.lat,
       lon: at?.lon ?? this.target.lon,
-      dist: Math.max(this.target.dist * 0.42, DIST_NEAR),
-      ms: 900,
+      dist: cam().minDist,
+      ms: 1100,
     });
   };
 
@@ -374,20 +373,74 @@ export class GlobeControls {
   }
 
   /**
-   * Zooming holds the ground under the cursor: the view centre is pulled
-   * toward that point by the fraction of the span the zoom removed.
+   * Zooming holds the ground under the cursor, exactly: the point the cursor
+   * is over is pinned to that pixel, and every frame of the zoom solves for
+   * the view centre that keeps it there (#holdAnchor).
+   *
+   * It used to pull the centre toward the point by the fraction of the
+   * height the zoom removed. That is right only at the middle of the screen
+   * and at small steps; off-centre, and on a sphere that foreshortens toward
+   * the limb, the ground slid out from under the cursor — you aimed at a city
+   * and arrived beside it.
+   *
+   * The point is taken from the camera as it is drawn, not from the target,
+   * because what is under the cursor on screen is what was aimed at.
    */
   #zoomTo(next, event) {
     const from = this.target.dist;
-    const to = clamp(next, DIST_NEAR, DIST_FAR);
+    const to = clamp(next, cam().minDist, cam().maxDist);
     this.target.dist = to;
     if (!event || to === from) return;
 
-    const at = this.pointAt(event);
-    if (!at) return;
-    const shrink = clamp(1 - (to - 1) / (from - 1), -0.6, 0.6);
-    this.target.lat = clamp(this.target.lat + (at.lat - this.target.lat) * shrink, -LAT_LIMIT, LAT_LIMIT);
-    this.target.lon += wrapDelta(this.target.lon, at.lon) * shrink;
+    const rect = this.rect;
+    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    // Same cursor, same gesture: keep the ground point already held, or it
+    // would be re-picked every notch from a camera still easing and creep.
+    const a = this.anchor;
+    if (a && Math.abs(a.x - x) < 1e-3 && Math.abs(a.y - y) < 1e-3) return;
+
+    this.ndc.set(x, y);
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    const hit = this.raycaster.ray.intersectSphere(this.sphere, this.hit);
+    this.anchor = hit ? { p: hit.clone(), x, y } : null;
+  }
+
+  /**
+   * Moves lat/lon so the anchor projects to its pixel with the camera at
+   * `dist`. A few rounds of: project, measure the miss in pixels, and turn
+   * the globe by that many pixels the way a drag would. The drag's scale is
+   * exact at the centre and too generous toward the limb, so it converges
+   * from one side and never overshoots.
+   */
+  #holdAnchor(dist) {
+    const a = this.anchor;
+    const cam = this.camera;
+    const { w, h } = this.viewport;
+    const ppd = Math.max(pixelsPerDegree(dist * this.fit, h, cam.fov), 0.4);
+    for (let i = 0; i < 6; i++) {
+      latLonToVec3(this.lat, this.lon, dist * this.fit, cam.position);
+      cam.up.set(0, 1, 0);
+      cam.lookAt(0, 0, 0);
+      if (camRoll()) cam.rotateZ(camRoll());
+      cam.updateMatrixWorld();
+      // Round the back of the globe from here: head straight for it instead.
+      // (Visible means p·camera > 1: the cap shrinks to ~10° at the closest zoom.)
+      if (a.p.dot(cam.position) < 1.001) {
+        const at = vec3ToLatLon(a.p);
+        this.lat = clamp(this.lat + (at.lat - this.lat) * 0.5, -cam().latLimit, cam().latLimit);
+        this.lon += wrapDelta(this.lon, at.lon) * 0.5;
+        continue;
+      }
+      const q = this.#probe.copy(a.p).project(cam);
+      const ex = ((a.x - q.x) * w) / 2;
+      const ey = (-(a.y - q.y) * h) / 2;
+      if (Math.abs(ex) + Math.abs(ey) < 0.05) break;
+      this.lon -= ex / (ppd * Math.max(Math.cos(this.lat * DEG), 0.35));
+      this.lat = clamp(this.lat + ey / ppd, -cam().latLimit, cam().latLimit);
+    }
+    this.target.lat = this.lat;
+    this.target.lon = this.lon;
   }
 
   /* ---------------------------------------------------------------- moves */
@@ -396,7 +449,7 @@ export class GlobeControls {
     this.#note();
     const from = this.target.dist;
     this.#takeOver();
-    this.target.dist = clamp(from * factor, DIST_NEAR, DIST_FAR);
+    this.target.dist = clamp(from * factor, cam().minDist, cam().maxDist);
   }
 
   /**
@@ -408,9 +461,9 @@ export class GlobeControls {
     if (!silent) this.#note();
     else this.quiet = 0;
     const to = {
-      lat: clamp(lat ?? this.target.lat, -LAT_LIMIT, LAT_LIMIT),
+      lat: clamp(lat ?? this.target.lat, -cam().latLimit, cam().latLimit),
       lon: this.lon + wrapDelta(this.lon, lon ?? this.target.lon),
-      dist: clamp(dist ?? this.target.dist, DIST_NEAR, DIST_FAR),
+      dist: clamp(dist ?? this.target.dist, cam().minDist, cam().maxDist),
     };
     this.vel.lat = 0;
     this.vel.lon = 0;
@@ -428,7 +481,8 @@ export class GlobeControls {
   }
 
   reset(ms = 1400) {
-    this.flyTo({ lat: 14, lon: -52, dist: DIST_FAR, ms });
+    const { home, maxDist } = cam();
+    this.flyTo({ lat: home.lat, lon: home.lon, dist: maxDist, ms });
   }
 
   /**
@@ -446,12 +500,13 @@ export class GlobeControls {
     }
     this.quiet += dt;
     if (!this.spin || this.dragging || this.flight) return 0;
-    if (this.quiet < SPIN_RESUME) return 0;
+    const resume = mo().spinResume;
+    if (this.quiet < resume) return 0;
     // Not while a throw is still running out: the two would compound, and the
     // throw would never appear to settle.
     if (this.vel.lon || this.vel.lat) return 0;
     // Eased in over the first second so the drift starts rather than snaps.
-    return this.#driftRate() * smoothstep(SPIN_RESUME, SPIN_RESUME + 1, this.quiet) * dt;
+    return this.#driftRate() * smoothstep(resume, resume + 1, this.quiet) * dt;
   }
 
   /**
@@ -460,9 +515,10 @@ export class GlobeControls {
    * gates are all still shut against it.
    */
   #driftRate() {
-    const fade = 1 - smoothstep(SPIN_FADE[0], SPIN_FADE[1], this.zoom);
+    const m = mo();
+    const fade = 1 - smoothstep(m.spinFadeStart, m.spinFadeEnd, this.zoom);
     if (fade <= 0) return 0;
-    return Math.min(SPIN_PX / Math.max(this.pxPerDeg, 1e-3), SPIN_MAX) * fade;
+    return Math.min(m.spinPx / Math.max(this.pxPerDeg, 1e-3), m.spinMax) * fade * (m.direction < 0 ? -1 : 1);
   }
 
   /** Advances the easing; returns true when the camera actually moved. */
@@ -490,7 +546,7 @@ export class GlobeControls {
       if (f.spinInto && this.spin) f.drift += this.#driftRate() * k * dt;
       this.lat = f.from.lat + (f.to.lat - f.from.lat) * k;
       this.lon = f.from.lon + (f.to.lon - f.from.lon) * k + f.drift;
-      this.dist = clamp(f.from.dist + (f.to.dist - f.from.dist) * k + arc, DIST_NEAR, DIST_FAR + 1.4);
+      this.dist = clamp(f.from.dist + (f.to.dist - f.from.dist) * k + arc, cam().minDist, cam().maxDist + 1.4);
       if (f.t >= f.ms) {
         this.flight = null;
         this.lat = f.to.lat;
@@ -501,11 +557,11 @@ export class GlobeControls {
         // target and the filter at rest; the drift then advances the target
         // and lon follows a time constant behind, which costs the first fifth
         // of a second of the turn. For a target moving at rate r the filter
-        // settles exactly r * ROT_TAU behind it, so starting it there means
+        // settles exactly r * rotateDamping behind it, so starting it there means
         // the very first frame after the flight already turns at full rate.
         if (f.spinInto && this.spin) {
-          this.target.lon = this.lon + this.#driftRate() * ROT_TAU;
-          this.quiet = SPIN_HANDOVER;
+          this.target.lon = this.lon + this.#driftRate() * mo().rotateDamping;
+          this.quiet = spinHandover();
         } else {
           this.target.lon = this.lon;
         }
@@ -513,24 +569,35 @@ export class GlobeControls {
     } else {
       this.target.lon += drift;
       if (!this.dragging) {
-        const decay = Math.pow(0.0022, dt);
+        const decay = Math.pow(mo().throwDecay, dt);
         this.target.lon += this.vel.lon * dt;
-        this.target.lat = clamp(this.target.lat + this.vel.lat * dt, -LAT_LIMIT, LAT_LIMIT);
+        this.target.lat = clamp(this.target.lat + this.vel.lat * dt, -cam().latLimit, cam().latLimit);
         this.vel.lon *= decay;
         this.vel.lat *= decay;
         if (Math.abs(this.vel.lon) < 0.02) this.vel.lon = 0;
         if (Math.abs(this.vel.lat) < 0.02) this.vel.lat = 0;
       }
-      const kRot = 1 - Math.exp(-dt / ROT_TAU);
-      const kZoom = 1 - Math.exp(-dt / ZOOM_TAU);
-      this.lat += (this.target.lat - this.lat) * kRot;
-      this.lon += wrapDelta(this.lon, this.target.lon) * kRot;
+      const kRot = 1 - Math.exp(-dt / mo().rotateDamping);
+      const kZoom = 1 - Math.exp(-dt / mo().zoomDamping);
       this.dist += (this.target.dist - this.dist) * kZoom;
+      if (this.anchor && !this.dragging) {
+        // While a zoom holds a point, the centre is not eased toward a target
+        // but solved from the distance, so the point stays on its pixel on
+        // every frame of the zoom rather than only once it settles.
+        this.#holdAnchor(this.dist);
+        if (Math.abs(this.target.dist - this.dist) < 1e-6) this.anchor = null;
+      } else {
+        this.lat += (this.target.lat - this.lat) * kRot;
+        this.lon += wrapDelta(this.lon, this.target.lon) * kRot;
+      }
     }
 
     latLonToVec3(this.lat, this.lon, this.camDist, this.camera.position);
     this.camera.up.set(0, 1, 0);
     this.camera.lookAt(0, 0, 0);
+    // Roll about the view axis, after north-up is established, so every
+    // projection built from the camera — picking, labels, the halo — agrees.
+    if (camRoll()) this.camera.rotateZ(camRoll());
     // The renderer would do this at draw time, which is after the labels have
     // already projected against it. One frame of stale view matrix is nothing
     // at a nudge and about ten degrees of longitude at the end of a throw:
@@ -550,7 +617,7 @@ export class GlobeControls {
     return (
       f.arc *
       clamp((span / 180) * 2.6, 0, 1.5) *
-      clamp((DIST_FAR - closest) / DIST_FAR, 0, 1)
+      clamp((cam().maxDist - closest) / cam().maxDist, 0, 1)
     );
   }
 

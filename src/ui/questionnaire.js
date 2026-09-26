@@ -18,11 +18,13 @@ import { FOCUS_AREAS } from "../data/taxonomy.js";
 import { chipGroup } from "./chips.js";
 import { loadQuestionnaire, saveQuestionnaire, clearRecommendationCache } from "../lib/api.js";
 
+// Everything on Terra is done online, so these are skills that travel over a
+// video call or a shared document.
 const SKILLS = [
-  "Nursing", "Medicine", "Teaching", "Childcare", "Counselling", "Trauma care",
-  "Translation", "Theology", "Construction", "Engineering", "Plumbing", "Electrics",
-  "Logistics", "Driving", "Accounting", "Fundraising", "Legal", "Social work",
-  "Software", "Design", "Photography", "Agriculture", "Water & sanitation", "Cooking",
+  "Graphic design", "Web design", "Writing & editing", "Translation", "Human resources", "Accounting & bookkeeping",
+  "Fundraising & grants", "Marketing & social media", "Video & photo editing", "Teaching & tutoring", "Counselling", "Legal advice",
+  "Project management", "Data & spreadsheets", "IT support", "Software development", "Nursing & medical advice", "Theology",
+  "Architecture & engineering", "Mentoring & coaching", "Research", "Music", "Administration", "Business & finance",
 ].map((label) => ({ id: label, label }));
 
 const SKILL_IDS = new Set(SKILLS.map((s) => s.id));
@@ -34,10 +36,12 @@ const GLOBE = '<circle cx="12" cy="12" r="8.4"/><ellipse cx="12" cy="12" rx="3.6
 const PLANE = '<path d="M10.4 20.5l1.6-5.2 4.6-1.4-.6 5.4 1.7.5.9-6.4 3.3-1a1.7 1.7 0 0 0-.9-3.3l-2.9.9-3.1-5.6-1.7.5 1.7 5.9-4.6 1.4-2.3-2.7-1.3.4 1.6 3.3-1.6 3.3 1.3.4 2.3-2.7"/>';
 const HOME = '<path d="M4 10.4 12 4l8 6.4V19a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 19z"/><path d="M9.6 20.6v-6h4.8v6"/>';
 
+// What shape of help someone wants to give. Stored in serve_mode, which the
+// matcher reads as a list of preferences.
 const SERVE_MODES = [
-  { id: "remote", label: "Remotely", note: "From wherever I am", icon: GLOBE },
-  { id: "on-site", label: "On site", note: "I can travel and stay", icon: PLANE },
-  { id: "local", label: "Near me", note: "In my own city or region", icon: HOME },
+  { id: "ongoing", label: "An ongoing role", note: "A few hours a week, for months", icon: HOME },
+  { id: "project", label: "A one-off project", note: "A logo, a website, a report", icon: PLANE },
+  { id: "advice", label: "Advice & mentoring", note: "Calls with a ministry's team", icon: GLOBE },
 ];
 
 const AVAILABILITY = [
@@ -50,7 +54,7 @@ const AVAILABILITY = [
 
 export function questionnaireModal(layer, { onSaved } = {}) {
   let step = 0;
-  let answers = { skills: [], serve_mode: [], availability: "", causes: [], experience: "" };
+  let answers = { skills: [], serve_mode: [], availability: "", causes: [], experience: "", languages: [], portfolio: "" };
   let loading = true;
 
   const modal = layer.show(() => shell(h("p", { class: "modal__note", text: "Loading…" })), { width: 580 });
@@ -64,6 +68,8 @@ export function questionnaireModal(layer, { onSaved } = {}) {
           availability: existing.availability ?? "",
           causes: existing.causes ?? [],
           experience: existing.experience ?? "",
+          languages: existing.languages ?? [],
+          portfolio: existing.portfolio ?? "",
         };
       }
       loading = false;
@@ -96,8 +102,8 @@ export function questionnaireModal(layer, { onSaved } = {}) {
         }),
     },
     {
-      title: "How would you like to serve?",
-      sub: "Be honest here — a need you cannot physically reach is not a match, however well your skills fit.",
+      title: "How would you like to help?",
+      sub: "Pick any that suit you. Everything on Terra happens online.",
       body: () =>
         h("div", { class: "quiz__cards" },
           SERVE_MODES.map((m) =>
@@ -150,14 +156,26 @@ export function questionnaireModal(layer, { onSaved } = {}) {
       // then count for nothing, which is worse than not offering the box.
     },
     {
-      title: "Have you done anything like this before?",
-      sub: "A sentence or two is plenty. Leave it blank if not — everyone starts somewhere.",
+      title: "Tell ministries about yourself",
+      sub: "Past experience, the languages you work in, and a link to your work if you have one. Ministries see this when you offer to help.",
       body: () =>
-        h("textarea", {
-          class: "area", rows: 5, value: answers.experience,
-          placeholder: "Two summers running a youth camp; a year on a hospital ward in Nairobi.",
-          oninput: (e) => { answers.experience = e.target.value; },
-        }),
+        h("div", { class: "form" },
+          h("textarea", {
+            class: "area", rows: 4, value: answers.experience,
+            placeholder: "Ten years as an HR manager; designed logos for two local churches.",
+            oninput: (e) => { answers.experience = e.target.value; },
+          }),
+          h("input", {
+            class: "input", value: answers.languages.join(", "),
+            placeholder: "Languages — English, Spanish",
+            oninput: (e) => { answers.languages = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); },
+          }),
+          h("input", {
+            class: "input", type: "url", value: answers.portfolio,
+            placeholder: "LinkedIn or portfolio link (optional)",
+            oninput: (e) => { answers.portfolio = e.target.value.trim(); },
+          }),
+        ),
     },
   ];
 

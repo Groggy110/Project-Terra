@@ -1,4 +1,8 @@
-/* The canvas and the projected label layer that rides on top of it. */
+/* The canvas and the projected label layer that rides on top of it.
+
+   Pin and label colours, sizes and fonts are STYLE.markers / STYLE.labels
+   (and their per-theme halves), written as custom properties by
+   src/style/css.js. */
 
 #globe {
   position: fixed;
@@ -69,93 +73,35 @@ body.is-live .overlay {
   border-radius: 999px;
 }
 
-/* Small. A pin is a mark on a map, not a button sitting on one — the ring and
-   the shadow are what make it read at 8px, not diameter. The highlight is a
-   single off-centre stop, which is enough to give it a surface without
-   turning it into a glossy bauble. */
+/* Minimal: a flat dot with a thin rim and a whisper of shadow, and nothing
+   round it. Urgency is carried by the colour alone — full red for a ministry
+   with urgent needs, a softer red for the rest — so a busy region reads as a
+   scatter of marks rather than a field of halos. */
 .pin__dot {
   position: relative;
-  width: 8px;
-  height: 8px;
+  width: var(--pin-size);
+  height: var(--pin-size);
   flex: none;
-  border-radius: 999px;
-  background:
-    radial-gradient(
-      circle at 34% 28%,
-      color-mix(in srgb, var(--urgent) 76%, #fff) 0%,
-      var(--urgent) 62%
-    ),
-    var(--urgent);
-  box-shadow:
-    0 0 0 1.6px rgba(255, 255, 255, 0.96),
-    0 0.5px 1px rgba(16, 42, 74, 0.3),
-    0 1.5px 4px rgba(16, 42, 74, 0.28);
-  transition: scale 0.18s var(--ease-out), background 0.2s;
+  border-radius: var(--pin-radius);
+  rotate: var(--pin-rotate);
+  background: var(--pin-normal);
+  box-shadow: var(--pin-shadow);
+  transition: scale 0.18s var(--ease-out), box-shadow 0.2s;
 }
 
-:root[data-theme="dark"] .pin__dot {
-  box-shadow:
-    0 0 0 1.6px rgba(9, 15, 25, 0.86),
-    0 0.5px 1px rgba(0, 0, 0, 0.5),
-    0 1.5px 5px rgba(0, 0, 0, 0.55);
+.pin.is-urgent .pin__dot {
+  background: var(--pin-urgent);
 }
 
-/* A ministry with urgent needs carries a standing ring, so the pressure on
-   the map reads before anything has been opened. The hover ring below is a
-   separate ::after, which is why this one can simply sit there. */
-.pin.is-urgent .pin__dot::before {
-  content: "";
-  position: absolute;
-  inset: -6.5px;
-  border-radius: 999px;
-  border: 1.4px solid color-mix(in srgb, var(--urgent) 32%, transparent);
-  background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--urgent) 13%, transparent) 38%,
-    transparent 72%
-  );
-  pointer-events: none;
+/* Hover and selection are the dot itself getting larger, with the rim
+   thickening on the selected one — no rings, no pulse. */
+.pin:hover .pin__dot {
+  scale: var(--pin-hover-scale);
 }
 
-.pin__dot::after {
-  content: "";
-  position: absolute;
-  inset: -6px;
-  border-radius: 999px;
-  border: 1.5px solid var(--urgent);
-  opacity: 0;
-  scale: 0.6;
-  transition: opacity 0.24s, scale 0.28s var(--ease-out);
-}
-
-.pin:hover .pin__dot,
 .pin.is-active .pin__dot {
-  scale: 1.18;
-}
-
-.pin:hover .pin__dot::after,
-.pin.is-active .pin__dot::after {
-  opacity: 0.55;
-  scale: 1;
-}
-
-.pin.is-active .pin__dot::after {
-  animation: pin-pulse 2.4s var(--ease) infinite;
-}
-
-@keyframes pin-pulse {
-  0% {
-    opacity: 0.55;
-    scale: 1;
-  }
-  70% {
-    opacity: 0;
-    scale: 1.75;
-  }
-  100% {
-    opacity: 0;
-    scale: 1.75;
-  }
+  scale: var(--pin-active-scale);
+  box-shadow: var(--pin-active-shadow);
 }
 
 /* Taken out of the flow: in it, a chip that is merely transparent still gave
@@ -176,17 +122,18 @@ body.is-live .overlay {
   white-space: nowrap;
   padding: 4px 9px 5px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--chip-bg);
   /* No backdrop-filter. The plate is 95% opaque, so a blur behind it changes
      almost nothing you can see — but there are up to thirty of these, every
      one of them moves every frame, and the ground they move over is a canvas
      that redraws every frame, so the compositor was re-sampling and blurring
      thirty backdrops per frame for the last five percent. */
   box-shadow: 0 1px 2px rgba(16, 42, 74, 0.16), 0 6px 16px -8px rgba(16, 42, 74, 0.32);
-  font-size: 14.5px;
+  font-family: var(--label-font);
+  font-size: var(--chip-size);
   font-weight: 520;
   letter-spacing: -0.008em;
-  color: var(--ink);
+  color: var(--chip-color);
   white-space: nowrap;
   opacity: 0;
   visibility: hidden;
@@ -208,12 +155,8 @@ body.is-live .overlay {
   translate: 0 -50%;
 }
 
-:root[data-theme="dark"] .pin__chip {
-  background: var(--surface-veil);
-}
-
 .pin:hover .pin__chip {
-  background: var(--surface);
+  background: var(--chip-hover-bg);
 }
 
 .pin__chip em {
@@ -226,47 +169,56 @@ body.is-live .overlay {
 
 /* ---------- city / country labels ---------- */
 
+/* Plain place names: set like a printed atlas rather than lit like signage.
+   The halo is a hairline — eight hard 1px offsets and no blur — which is
+   enough to hold the letters off busy imagery without the soft bloom that
+   read as glow. */
 .place {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   translate: 0 -50%;
-  font-size: 13.5px;
-  letter-spacing: -0.004em;
-  color: var(--ink-2);
+  font-family: var(--label-font);
+  font-size: var(--place-size);
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  /* Light type on a dark hairline in both themes: the ground under a name is
+     satellite imagery either way, and that is the convention every hybrid
+     map uses for it. */
+  color: var(--place-color);
   white-space: nowrap;
   opacity: 0;
   transition: opacity 0.35s var(--ease);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55), 0 0 7px rgba(255, 255, 255, 0.85),
-    0 0 14px rgba(255, 255, 255, 0.6);
-}
-
-:root[data-theme="dark"] .place {
-  color: #cfdcec;
-  text-shadow: 0 0 8px rgba(4, 8, 16, 0.95), 0 0 16px rgba(4, 8, 16, 0.7);
+  --halo: var(--place-halo);
+  text-shadow:
+    1px 0 0 var(--halo), -1px 0 0 var(--halo), 0 1px 0 var(--halo), 0 -1px 0 var(--halo),
+    0.7px 0.7px 0 var(--halo), -0.7px 0.7px 0 var(--halo), 0.7px -0.7px 0 var(--halo), -0.7px -0.7px 0 var(--halo);
 }
 
 .place.is-in {
   opacity: 1;
 }
 
-/* the little cartographic tick that anchors a plain city name */
+/* The city's own mark: a small white dot with a fine dark ring, centred on
+   the point (it used to be a 1px tick standing beside it). */
 .place__tick {
-  width: 1px;
-  height: 13px;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
   flex: none;
-  background: color-mix(in srgb, var(--ink) 42%, transparent);
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
-}
-
-:root[data-theme="dark"] .place__tick {
-  background: color-mix(in srgb, #cfdcec 55%, transparent);
-  box-shadow: 0 0 6px rgba(4, 8, 16, 0.9);
+  border-radius: 999px;
+  background: var(--place-color);
+  box-shadow: 0 0 0 1px rgba(8, 16, 28, 0.7), 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 .place--capital .place__tick {
-  height: 15px;
-  width: 1.5px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+}
+
+.place--capital {
+  font-weight: 600;
 }
 
 /* countries get the same chip as a pin, minus the dot */
@@ -274,17 +226,13 @@ body.is-live .overlay {
   translate: -50% -50%;
   padding: 4px 10px 5px;
   border-radius: 8px;
-  background: var(--surface-veil);
+  background: var(--country-bg);
   /* Same bargain as the pin plate, and the veil is 91% opaque. */
   box-shadow: 0 1px 2px rgba(16, 42, 74, 0.12), 0 6px 16px -8px rgba(16, 42, 74, 0.26);
-  font-size: 14px;
+  font-size: var(--country-size);
   font-weight: 500;
-  color: var(--ink);
+  color: var(--country-color);
   text-shadow: none;
-}
-
-:root[data-theme="dark"] .place--country {
-  color: var(--ink);
 }
 
 /* ---------- loading veil ---------- */
@@ -330,18 +278,12 @@ body.is-live .overlay {
   }
 }
 
-/* The mark itself, breathing rather than spinning.
-   The line drawing this replaces could turn on its axis because it had no up:
-   a wireframe globe looks the same at every angle. The painted one carries a
-   map and a pin, and rotating that in the image plane is not a globe turning,
-   it is a picture being spun. So the wait is carried by a slow swell instead,
-   and by the bar underneath, which is the honest progress indicator anyway. */
+/* The wordmark, breathing while the world loads; the bar underneath is the
+   honest progress indicator. */
 .boot__mark {
-  display: block;
-  width: 54px;
-  height: 54px;
-  margin: 0 auto 18px;
-  object-fit: contain;
+  display: inline-block;
+  margin: 0 auto 20px;
+  font-size: 30px;
   animation: boot-breathe 2.8s var(--ease) infinite;
 }
 

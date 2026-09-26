@@ -1,0 +1,155 @@
+/* Style Sandbox chrome. Everything is namespaced .tsbx so it cannot touch the app. */
+
+.tsbx.lil-gui.lil-root {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 10000;
+  max-height: calc(100vh - 24px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  border-radius: 8px;
+  overflow: hidden;
+  --font-size: 11.5px;
+  --input-font-size: 11.5px;
+  --widget-height: 21px;
+  --name-width: 46%;
+}
+
+.tsbx.lil-gui.lil-root > .lil-title {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.tsbx.lil-gui.lil-root > .lil-title:active {
+  cursor: grabbing;
+}
+
+.tsbx .lil-title {
+  position: relative;
+}
+
+/* The per-folder reset, tucked into the right end of the title bar. */
+.tsbx-reset {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  translate: 0 -50%;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 18px;
+  opacity: 0.45;
+  cursor: pointer;
+}
+
+.tsbx-reset:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.tsbx-toolbar > .lil-title {
+  background: #20344d;
+}
+
+.tsbx-hint {
+  padding: 6px 8px 8px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  opacity: 0.6;
+}
+
+.tsbx.is-ab > .lil-title::after {
+  content: "  ·  B: ORIGINAL";
+  color: #ffcf6e;
+}
+
+/* Clean view: the globe and its ground, no app chrome over them. */
+body.tsbx-clean .chrome,
+body.tsbx-clean .hero,
+body.tsbx-clean .toasts {
+  visibility: hidden !important;
+}
+
+.tsbx-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  z-index: 10002;
+  translate: -50% 12px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #1f1f1f;
+  color: #eee;
+  font: 12px/1.4 ui-sans-serif, system-ui, sans-serif;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, translate 0.2s;
+}
+
+.tsbx-toast.is-in {
+  opacity: 1;
+  translate: -50% 0;
+}
+
+.tsbx-toast.is-warn {
+  background: #4a3312;
+  color: #ffe2b0;
+}
+
+.tsbx-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.5);
+  font: 12px/1.4 ui-sans-serif, system-ui, sans-serif;
+}
+
+.tsbx-modal__box {
+  width: min(560px, calc(100vw - 32px));
+  padding: 14px;
+  border-radius: 10px;
+  background: #1f1f1f;
+  color: #eee;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.tsbx-modal__title {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.tsbx-modal textarea {
+  width: 100%;
+  height: 260px;
+  padding: 8px;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: #141414;
+  color: #ddd;
+  font: 11px/1.45 ui-monospace, Menlo, monospace;
+  resize: vertical;
+}
+
+.tsbx-modal__row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.tsbx-modal button {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: #333;
+  color: #eee;
+  cursor: pointer;
+}
+
+.tsbx-modal button.is-primary {
+  background: #2f6fd0;
+}

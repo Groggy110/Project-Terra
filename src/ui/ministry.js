@@ -36,6 +36,8 @@ export function ministryModal(layer, { onCreated } = {}) {
     const country = h("input", { class: "input", placeholder: "Kenya", autocomplete: "off" });
     const blurb = h("textarea", { class: "area", rows: 3, placeholder: "What you do, in a sentence or two." });
     const contact = h("input", { class: "input", type: "email", placeholder: "hello@your-ministry.org" });
+    const website = h("input", { class: "input", type: "url", placeholder: "https://your-ministry.org" });
+    const languages = h("input", { class: "input", placeholder: "English, Swahili" });
 
     const chosen = [];
     const focusWrap = chipGroup({
@@ -111,8 +113,8 @@ export function ministryModal(layer, { onCreated } = {}) {
     const go = h("button", { class: "btn btn--accent" }, "Put us on the map");
 
     go.addEventListener("click", async () => {
-      if (!name.value.trim() || !city.value.trim() || !country.value.trim()) {
-        err.textContent = "Name, city and country are needed.";
+      if (!name.value.trim() || !city.value.trim() || !country.value.trim() || !blurb.value.trim() || !contact.value.trim()) {
+        err.textContent = "Name, city, country, what you do and a contact email are needed.";
         return;
       }
       await resolve();
@@ -134,6 +136,8 @@ export function ministryModal(layer, { onCreated } = {}) {
           focus: chosen,
           blurb: blurb.value.trim(),
           contact: contact.value.trim(),
+          website: website.value.trim() || null,
+          languages: languages.value.split(",").map((x) => x.trim()).filter(Boolean),
         });
         close();
         onCreated?.(m);
@@ -146,15 +150,16 @@ export function ministryModal(layer, { onCreated } = {}) {
 
     return shell(
       [
-        h("div", { class: "modal__eyebrow", text: "Your ministry" }),
-        h("h2", { class: "modal__title", text: "Put your ministry on the map" }),
-        h("p", { class: "modal__lede", text: "This is the pin people will see. Tell us the city and we will find the spot on the globe." }),
+        h("div", { class: "modal__eyebrow", text: "Set up your ministry" }),
+        h("h2", { class: "modal__title", text: "Tell us about your ministry" }),
+        h("p", { class: "modal__lede", text: "This becomes your pin on the globe, and it fills in every need you post. You can change it later." }),
         h("div", { class: "form" },
           field("Ministry name", name),
           h("div", { class: "row2" }, field("City", city.wrap), field("Country", country)),
           pinNote,
           field("What you do", blurb),
-          field("Contact email", contact),
+          h("div", { class: "row2" }, field("Contact email", contact), field("Website", website)),
+          field("Languages you work in", languages),
           field("Focus areas", focusWrap, "Pick as many as fit — it is how people find you."),
         ),
       ],
@@ -252,14 +257,16 @@ function cityField({ onPick, onType, onBlur, countryOf }) {
 
 export function postNeedModal(layer, { ministry, onPosted } = {}) {
   return layer.show((close) => {
-    const title = h("input", { class: "input", placeholder: "Clinic nurse (6 months)", "data-autofocus": true });
-    const type = h("select", { class: "select" }, NEED_TYPES.map((t) => h("option", { value: t.id }, t.label)));
+    const title = h("input", { class: "input", placeholder: "Part-time HR adviser", "data-autofocus": true });
+    // Terra is for help given online, so the types are the two a person can be.
+    const type = h("select", { class: "select" },
+      NEED_TYPES.filter((t) => t.id === "expertise" || t.id === "volunteers").map((t) => h("option", { value: t.id }, `${t.label} — ${t.note.toLowerCase()}`)));
     const urgency = h("select", { class: "select" }, URGENCIES.map((u) => h("option", { value: u.id, selected: u.id === "soon" }, u.label)));
-    const focus = h("select", { class: "select" }, FOCUS_AREAS.map((f) => h("option", { value: f.id }, f.label)));
+    const focus = h("select", { class: "select" },
+      FOCUS_AREAS.map((f) => h("option", { value: f.id, selected: f.id === ministry.focus?.[0] }, f.label)));
     const people = h("input", { class: "input", type: "number", min: "0", max: "500", value: "1" });
-    const commitment = h("input", { class: "input", placeholder: "full time · 6 months" });
+    const commitment = h("input", { class: "input", placeholder: "3 hrs/week · 3 months" });
     const detail = h("textarea", { class: "area", rows: 4, placeholder: "What the work involves and why it matters." });
-    const remote = h("input", { type: "checkbox" });
 
     const skills = [];
     const skillChips = chipGroup({
@@ -268,7 +275,7 @@ export function postNeedModal(layer, { ministry, onPosted } = {}) {
       isOn: () => false,
       onToggle: () => {},
       custom: {
-        placeholder: "Nursing, Registration — type and press enter",
+        placeholder: "HR, Employment law — type and press enter",
         values: () => skills,
         onAdd: (v) => { if (!skills.includes(v)) skills.push(v); },
         onRemove: (v) => { const i = skills.indexOf(v); if (i >= 0) skills.splice(i, 1); },
@@ -289,7 +296,7 @@ export function postNeedModal(layer, { ministry, onPosted } = {}) {
           urgency: urgency.value,
           focus: focus.value,
           people: Math.max(0, Number(people.value) || 0),
-          remote: remote.checked,
+          remote: true,
           commitment: commitment.value.trim(),
           skills: [...skills],
           detail: detail.value.trim(),
@@ -309,11 +316,10 @@ export function postNeedModal(layer, { ministry, onPosted } = {}) {
         h("div", { class: "form" },
           field("Title", title),
           h("div", { class: "row2" }, field("Type", type), field("Urgency", urgency)),
-          h("div", { class: "row2" }, field("Focus area", focus), field("People wanted", people, "0 for goods, funding or a partner")),
+          h("div", { class: "row2" }, field("Focus area", focus), field("People wanted", people)),
           field("Commitment", commitment),
           field("Skills wanted", skillChips),
           field("Detail", detail),
-          h("label", { class: "check" }, remote, h("span", { text: "This can be done remotely" })),
         ),
       ],
       h("div", { class: "modal__foot" }, err, h("span", { class: "spacer" }), go),

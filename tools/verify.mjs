@@ -24,7 +24,14 @@ await wait(1200);
 
 // ---- data ----
 const stats = await page.evaluate(() => window.terra.net.stats());
-check("network totals", stats.needs === 65 && stats.urgent === 19 && stats.people === 295 && stats.ministries === 32, JSON.stringify(stats));
+// The network comes from the live backend now, so it is checked for being
+// loaded and self-consistent rather than against a fixed set of numbers.
+const urgentCount = await page.evaluate(() => window.terra.net.needs.filter((n) => n.urgency === "urgent").length);
+check(
+  "network totals",
+  stats.needs > 0 && stats.ministries > 0 && stats.urgent === urgentCount && stats.people > 0,
+  JSON.stringify(stats),
+);
 
 // ---- drag rotates ----
 const before = await page.evaluate(() => ({ lat: window.terra.globe.controls.lat, lon: window.terra.globe.controls.lon }));
@@ -120,7 +127,7 @@ const filtered = await page.evaluate(() => ({
 }));
 check(
   "urgency filter narrows and dims",
-  filtered.count === 19 && filtered.dimmed > 0 && filtered.chip,
+  filtered.count === stats.urgent && filtered.dimmed > 0 && filtered.chip,
   JSON.stringify(filtered),
 );
 check("filter menu stays open for a second pick", filtered.stillOpen && filtered.ticked, JSON.stringify(filtered));
@@ -178,7 +185,7 @@ await page.click('[data-view="needs"]');
 await wait(1000);
 const board = await page.evaluate(() => ({
   up: document.querySelector(".sheet").classList.contains("is-up"),
-  cards: document.querySelectorAll(".board .need").length,
+  cards: document.querySelectorAll(".bd__row").length,
 }));
 check("needs board opens with every need", board.up && board.cards === 66, JSON.stringify(board));
 

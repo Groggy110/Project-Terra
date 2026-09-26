@@ -28,6 +28,7 @@ const shapeMinistry = (row) => ({
   languages: row.languages ?? [],
   contact: row.contact ?? "",
   blurb: row.blurb ?? "",
+  logo: row.logo_url ?? null,
   ownerId: row.owner_id,
 });
 
@@ -42,6 +43,8 @@ const shapeNeed = (row) => ({
   remote: !!row.remote,
   commitment: row.commitment ?? "",
   skills: row.skills ?? [],
+  // AI-written search tags, most specific first (moderate-need / tag-needs).
+  tags: row.tags ?? [],
   detail: row.detail ?? "",
   posted: row.posted ?? row.created_at?.slice(0, 10) ?? "",
   status: row.status,
@@ -130,6 +133,7 @@ export async function sendMagicLink({ email, fullName, role }) {
 }
 
 export async function signOut() {
+  forgetAccounts();
   if (supabase) await supabase.auth.signOut();
 }
 
@@ -147,6 +151,50 @@ export async function setRole(role) {
   if (!auth?.user) throw new Error("not signed in");
   const { error } = await sb.from("profiles").update({ role }).eq("id", auth.user.id);
   if (error) throw error;
+}
+
+/* ---------------------------------------------------------------- avatar */
+
+const AVATAR_BUCKET = "avatars";
+
+/**
+ * The picture on the account chip: the ministry's logo for a ministry
+ * account, the person's photo otherwise. Each upload gets a fresh name, so
+ * the public URL changes and no cache shows the old one; the previous file
+ * is removed after the row points at the new one.
+ */
+export async function setAvatar(file, { ministryId = null } = {}) {
+  const sb = requireSupabase();
+  const { data: auth } = await sb.auth.getUser();
+  if (!auth?.user) throw new Error("sign in first");
+  if (!/^image\//.test(file.type)) throw new Error("Choose an image — PNG, JPG, WebP, GIF or SVG.");
+  if (file.size > 2 * 1024 * 1024) throw new Error("Use an image under 2 MB.");
+
+  const ext = (file.name.match(/\.(\w+)$/)?.[1] ?? "png").toLowerCase();
+  const path = `${auth.user.id}/${ministryId ? "logo" : "photo"}-${Date.now().toString(36)}.${ext}`;
+  const { error: upErr } = await sb.storage.from(AVATAR_BUCKET).upload(path, file, { contentType: file.type });
+  if (upErr) throw upErr;
+  const url = sb.storage.from(AVATAR_BUCKET).getPublicUrl(path).data.publicUrl;
+  return writeAvatar(sb, auth.user.id, ministryId, url);
+}
+
+export async function removeAvatar({ ministryId = null } = {}) {
+  const sb = requireSupabase();
+  const { data: auth } = await sb.auth.getUser();
+  if (!auth?.user) throw new Error("sign in first");
+  return writeAvatar(sb, auth.user.id, ministryId, null);
+}
+
+async function writeAvatar(sb, userId, ministryId, url) {
+  const table = ministryId ? "ministries" : "profiles";
+  const column = ministryId ? "logo_url" : "avatar_url";
+  const id = ministryId ?? userId;
+  const { data: before } = await sb.from(table).select(column).eq("id", id).maybeSingle();
+  const { error } = await sb.from(table).update({ [column]: url }).eq("id", id);
+  if (error) throw error;
+  const old = before?.[column]?.split(`/${AVATAR_BUCKET}/`)[1];
+  if (old) await sb.storage.from(AVATAR_BUCKET).remove([decodeURIComponent(old)]);
+  return url;
 }
 
 /* -------------------------------------------------------------- ministry */
@@ -274,15 +322,236 @@ export async function myInterests() {
   return new Set((data ?? []).map((r) => r.need_id));
 }
 
-export async function toggleInterest(needId, on) {
+const WORK_BUCKET = "work-samples";
+
+/**
+ * Picks up a need with an application: why, qualifications, links and files.
+ * Files go to the private work-samples bucket under the volunteer's own id
+ * first, so the row never points at an upload that failed.
+ */
+export async function expressInterest(needId, { why = "", qualifications = "", links = [], files = [] } = {}) {
   const sb = requireSupabase();
   const { data: auth } = await sb.auth.getUser();
   if (!auth?.user) throw new Error("sign in to pick up a need");
-  if (on) {
-    const { error } = await sb.from("interests").insert({ user_id: auth.user.id, need_id: needId });
-    if (error && error.code !== "23505") throw error; // 23505 = already there
-  } else {
-    const { error } = await sb.from("interests").delete().eq("user_id", auth.user.id).eq("need_id", needId);
-    if (error) throw error;
+
+  const uploaded = [];
+  for (const file of files) {
+    const safe = file.name.replace(/[^\w.-]+/g, "_").slice(-80);
+    const path = `${auth.user.id}/${needId}/${Date.now().toString(36)}-${safe}`;
+    const { error } = await sb.storage.from(WORK_BUCKET).upload(path, file, { contentType: file.type || undefined });
+    if (error) {
+      if (uploaded.length) await sb.storage.from(WORK_BUCKET).remove(uploaded.map((f) => f.path));
+      throw new Error(`Could not upload ${file.name}: ${error.message}`);
+    }
+    uploaded.push({ name: file.name, path, size: file.size, type: file.type });
   }
+
+  const { error } = await sb.from("interests").upsert({
+    user_id: auth.user.id,
+    need_id: needId,
+    why,
+    qualifications,
+    links,
+    files: uploaded,
+  });
+  if (error) throw error;
+}
+
+/** Withdraws from a need, taking any uploaded work with it. */
+export async function withdrawInterest(needId) {
+  const sb = requireSupabase();
+  const { data: auth } = await sb.auth.getUser();
+  if (!auth?.user) throw new Error("sign in first");
+  const { data: row } = await sb
+    .from("interests")
+    .select("files")
+    .eq("user_id", auth.user.id)
+    .eq("need_id", needId)
+    .maybeSingle();
+  const paths = (row?.files ?? []).map((f) => f.path).filter(Boolean);
+  if (paths.length) await sb.storage.from(WORK_BUCKET).remove(paths);
+  const { error } = await sb.from("interests").delete().eq("user_id", auth.user.id).eq("need_id", needId);
+  if (error) throw error;
+}
+
+/* -------------------------------------------------------------- meetings */
+
+/**
+ * Books a first call about a need. The server creates the Google Calendar
+ * event with its Meet link and emails both sides the invitation.
+ */
+export async function scheduleMeeting({ needId, startsAt, durationMin, note }) {
+  const sb = requireSupabase();
+  const { data, error } = await sb.functions.invoke("schedule-meeting", {
+    body: { need_id: needId, starts_at: startsAt, duration_min: durationMin, note },
+  });
+  if (error) {
+    const detail = await error.context?.json?.().catch(() => null);
+    throw new Error(detail?.error ?? error.message);
+  }
+  return data;
+}
+
+/** Upcoming calls the signed-in person is part of, soonest first. */
+export async function myMeetings() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("meetings")
+    .select("id, starts_at, duration_min, meet_url, status, need_id, needs(title), ministries(name)")
+    .eq("status", "scheduled")
+    .gte("starts_at", new Date(Date.now() - 60 * 60_000).toISOString())
+    .order("starts_at");
+  if (error) throw error;
+  return (data ?? []).map((m) => ({
+    id: m.id,
+    startsAt: m.starts_at,
+    minutes: m.duration_min,
+    meetUrl: m.meet_url,
+    needId: m.need_id,
+    needTitle: m.needs?.title ?? "A need",
+    ministryName: m.ministries?.name ?? "",
+  }));
+}
+
+/* -------------------------------------------------------- linked accounts */
+
+/**
+ * A ministry leader can also serve personally, from a second account, and
+ * switch between the two in one click. The link itself lives in
+ * account_links; what makes the switch instant is that each account's
+ * sign-in is remembered here, in this browser, so switching is setSession
+ * rather than a password. On another device the link still shows, and a
+ * single sign-in there makes it instant again.
+ */
+const ACCOUNTS_KEY = "terra.accounts";
+const PENDING_KEY = "terra.pendingLink";
+
+const readJson = (key, fallback) => {
+  try {
+    return JSON.parse(localStorage.getItem(key)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+const writeJson = (key, value) => {
+  try {
+    if (value == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* private mode: switching simply asks for a sign-in */
+  }
+};
+
+/** Keeps the current account's sign-in, so it can be switched back to. */
+export function rememberAccount(session, profile) {
+  if (!session?.user) return;
+  const all = readJson(ACCOUNTS_KEY, {});
+  all[session.user.id] = {
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    email: session.user.email,
+    name: profile?.full_name ?? all[session.user.id]?.name ?? "",
+    role: profile?.role ?? all[session.user.id]?.role ?? "volunteer",
+  };
+  writeJson(ACCOUNTS_KEY, all);
+}
+
+export function forgetAccounts() {
+  writeJson(ACCOUNTS_KEY, null);
+  writeJson(PENDING_KEY, null);
+}
+
+/** The accounts linked to the signed-in one, with what this browser knows. */
+export async function linkedAccounts() {
+  if (!supabase) return [];
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth?.user) return [];
+  const { data } = await supabase.from("account_links").select("linked_id").eq("user_id", auth.user.id);
+  const known = readJson(ACCOUNTS_KEY, {});
+  return (data ?? []).map((r) => ({ id: r.linked_id, ...(known[r.linked_id] ?? {}), ready: !!known[r.linked_id]?.refresh_token }));
+}
+
+/** Switches to a linked account; throws { needsSignIn } if this browser cannot. */
+export async function switchAccount(id) {
+  const sb = requireSupabase();
+  const acc = readJson(ACCOUNTS_KEY, {})[id];
+  if (!acc?.refresh_token) throw Object.assign(new Error("sign in to that account once on this device"), { needsSignIn: true, email: acc?.email });
+  const { error } = await sb.auth.setSession({ access_token: acc.access_token, refresh_token: acc.refresh_token });
+  if (error) {
+    const all = readJson(ACCOUNTS_KEY, {});
+    delete all[id];
+    writeJson(ACCOUNTS_KEY, all);
+    throw Object.assign(new Error("that sign-in has expired; sign in again"), { needsSignIn: true, email: acc.email });
+  }
+}
+
+/** Marks that the next account to sign in should be linked to this one. */
+export function beginLink(fromUserId, role) {
+  writeJson(PENDING_KEY, { from: fromUserId, role, at: Date.now() });
+}
+
+export function pendingLink() {
+  const p = readJson(PENDING_KEY, null);
+  // A day is plenty to click a confirmation email; after that it is stale.
+  return p && Date.now() - p.at < 86_400_000 ? p : null;
+}
+
+export function cancelLink() {
+  writeJson(PENDING_KEY, null);
+}
+
+/**
+ * Links the signed-in account with the remembered one it was started from.
+ * The other account's sign-in is refreshed directly against the auth API (its
+ * access token has usually expired by the time an email is confirmed), and the
+ * rotated refresh token is kept.
+ */
+export async function completeLink() {
+  const sb = requireSupabase();
+  const pending = pendingLink();
+  if (!pending) return false;
+  const { data: auth } = await sb.auth.getSession();
+  const me = auth?.session;
+  if (!me || me.user.id === pending.from) return false;
+  const all = readJson(ACCOUNTS_KEY, {});
+  const other = all[pending.from];
+  if (!other?.refresh_token) throw new Error("sign in to your other account again to link them");
+
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: other.refresh_token }),
+  });
+  const fresh = await res.json();
+  if (!res.ok || !fresh.access_token) throw new Error("your other account's sign-in has expired; sign in to it again");
+  all[pending.from] = { ...other, access_token: fresh.access_token, refresh_token: fresh.refresh_token };
+  writeJson(ACCOUNTS_KEY, all);
+
+  const { error } = await sb.functions.invoke("link-account", { body: { other_token: fresh.access_token } });
+  if (error) {
+    const detail = await error.context?.json?.().catch(() => null);
+    throw new Error(detail?.error ?? error.message);
+  }
+  writeJson(PENDING_KEY, null);
+  return true;
+}
+
+/* -------------------------------------------------------------- dashboard */
+
+/** The signed-in ministry's needs, applicants and booked calls. */
+export async function ministryDashboard() {
+  const sb = requireSupabase();
+  const { data, error } = await sb.functions.invoke("ministry-dashboard", { body: {} });
+  if (error) {
+    const detail = await error.context?.json?.().catch(() => null);
+    throw new Error(detail?.error ?? error.message);
+  }
+  return data;
+}
+
+/** Marks one of the ministry's own needs filled, or reopens it. */
+export async function setNeedStatus(needId, status) {
+  const sb = requireSupabase();
+  const { error } = await sb.from("needs").update({ status }).eq("id", needId);
+  if (error) throw error;
 }

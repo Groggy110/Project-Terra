@@ -4,7 +4,7 @@
  */
 const KEY = "terra.v1";
 
-const EMPTY = { posted: [], interests: {}, theme: null, seen: false };
+const EMPTY = { posted: [], interests: {}, seen: false };
 
 function read() {
   try {
@@ -51,24 +51,16 @@ export const store = {
     return !!this.state.interests[id];
   },
 
-  toggleInterest(id, note = "") {
+  /** `application` is the answers only — file names, never the files. */
+  toggleInterest(id, application = {}) {
     if (this.state.interests[id]) delete this.state.interests[id];
-    else this.state.interests[id] = { at: new Date().toISOString(), note };
+    else this.state.interests[id] = { at: new Date().toISOString(), ...application };
     this.save();
     return this.interestIn(id);
   },
 
   get interestCount() {
     return Object.keys(this.state.interests).length;
-  },
-
-  get theme() {
-    return this.state.theme;
-  },
-
-  setTheme(name) {
-    this.state.theme = name;
-    this.save();
   },
 
   get seen() {

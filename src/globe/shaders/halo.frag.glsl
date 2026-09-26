@@ -19,6 +19,8 @@ uniform float uTopBias;    // how much of the rim survives away from the light
 uniform float uFalloff;    // how fast it dies away from the light: 1 gentle
 uniform float uBloom;      // strength of the wide spill
 uniform float uBloomSpread;// how far that spill reaches
+uniform float uRimPow;     // how hard the rim is edged: higher is thinner
+uniform float uSpillPow;   // and the spill
 
 void main() {
   vec2 p = gl_FragCoord.xy;
@@ -48,8 +50,8 @@ void main() {
   // planet; one tight enough to be a rim has nothing left to spill. So: a
   // narrow bright rim that runs all the way round, and a broad soft spill
   // that only exists on the lit side.
-  float rim = pow(1.0 - smoothstep(1.0, 1.0 + uSpread, d), 3.2);
-  float spill = pow(1.0 - smoothstep(1.0, 1.0 + uBloomSpread, d), 1.7);
+  float rim = pow(1.0 - smoothstep(1.0, 1.0 + uSpread, d), uRimPow);
+  float spill = pow(1.0 - smoothstep(1.0, 1.0 + uBloomSpread, d), uSpillPow);
 
   float a = gate * (rim * uStrength * mix(uTopBias, 1.0, lit) + spill * uBloom * lit * lit);
   if (a < 0.0025) discard;
@@ -61,4 +63,6 @@ void main() {
   vec3 col = mix(uOuter, uInner, pow(rim, 0.8) * mix(0.12, 1.0, lit));
   col = mix(col, uInner, lit * lit * rim * 0.8);
   gl_FragColor = vec4(col, min(a, 1.0));
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }

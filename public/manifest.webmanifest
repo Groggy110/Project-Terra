@@ -1,7 +1,7 @@
 {
-  "name": "Terra — Ministry Needs Network",
+  "name": "Terra — Serve ministries from anywhere",
   "short_name": "Terra",
-  "description": "A globe of what ministries need. Every pin is a ministry in the city where the work happens.",
+  "description": "Ministries post what they need help with online. Offer your skills and meet on a video call.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

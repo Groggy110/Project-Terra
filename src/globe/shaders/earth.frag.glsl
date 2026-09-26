@@ -45,6 +45,11 @@ uniform float uAmbient;     // floor under the terminator: 0 dramatic, 1 flat
 uniform float uTermWidth;   // half-width of the terminator, in cos(angle)
 uniform float uTermGamma;   // >1 drags the shadow further up the lit side
 uniform float uSpec;
+uniform float uSpecPower;
+uniform vec3 uSpecColor;
+uniform vec3 uHillLight;    // the embossing light, in east/north/up
+uniform float uShadeMin;
+uniform float uShadeMax;
 uniform float uFresnel;
 uniform float uFresnelPow;
 uniform float uRimBase;     // rim brightness away from the light
@@ -59,6 +64,18 @@ uniform float uFacetTilt;   // how far a cell's normal may lean
 uniform float uFacetFlat;   // how much of a cell takes one flat colour
 uniform float uFacetEdge;   // width of the seam between cells
 uniform float uFacetEdgeInk;// how dark that seam goes; negative draws it pale
+
+// Surface extras, all neutral at their defaults.
+uniform vec3 uLandTint;
+uniform float uLandTintAmt;
+uniform vec3 uEmissive;         // colour x intensity
+uniform float uEmissiveNight;   // 1: only where the sun is not
+uniform float uGrid;            // graticule opacity, 0 off
+uniform vec3 uGridColor;
+uniform float uGridSpacing;     // degrees
+uniform float uGridWidth;       // pixels
+uniform sampler2D uNightTex;    // city lights, equirectangular
+uniform vec3 uNightLights;      // colour x intensity, 0 off
 
 uniform float uDebug;   // 0 off; see globe.debug()
 
@@ -219,9 +236,9 @@ void main() {
   float cosLat = max(cos(latRad), 0.18);
   vec2 slope = vec2((hR - hL) / cosLat, -(hS - hN)) * uRelief;
   vec3 tN = normalize(vec3(-slope.x, -slope.y, 1.0));
-  vec3 tL = normalize(vec3(-0.60, 0.60, 0.75));       // north-west, 40 degrees
+  vec3 tL = normalize(uHillLight);
   float shade = 1.0 + (dot(tN, tL) / tL.z - 1.0) * mask;
-  shade = clamp(shade, 0.42, 1.44);
+  shade = clamp(shade, uShadeMin, uShadeMax);
   // The relief is modelled from a 4096-wide elevation raster - eleven
   // kilometres a texel. Over a city it is not detail, it is a slow stain
   // across ground whose own light and shadow the imagery already carries, so
@@ -270,6 +287,7 @@ void main() {
   vec3 land = pow(max(base, vec3(0.0)), vec3(uLandGamma));
   land = mix(vec3(dot(land, LUMA)), land, uLandSat);
   land = land * uLandGain + uLandLift;
+  land = mix(land, land * uLandTint * 1.6, uLandTintAmt);
   land *= shade;
 
   // Snow reads as brightness with almost no colour in it, which is what
@@ -311,6 +329,19 @@ void main() {
     : mix(col, min(col * 1.55 + 0.055, vec3(1.0)), seam * -uFacetEdgeInk);
   col = mix(col, ink.rgb, ink.a * inWin * uLineMix);
 
+  // ---- graticule ----------------------------------------------------------
+  if (uGrid > 0.001) {
+    vec2 deg = vec2(lonRad, latRad) * (57.29578 / uGridSpacing);
+    vec2 w = max(fwidth(deg), vec2(1e-5));
+    vec2 g = abs(fract(deg - 0.5) - 0.5) / w;
+    float line = 1.0 - clamp(min(g.x, g.y) / max(uGridWidth, 0.1), 0.0, 1.0);
+    // Past the antimeridian seam fwidth spikes; fade the grid there rather
+    // than draw a smear.
+    line *= step(w.x, 0.5);
+    col = mix(col, uGridColor, line * uGrid);
+  }
+  vec3 albedo = col;
+
   // ---- light ------------------------------------------------------------
   //
   // uSun arrives in world space but is rebuilt every frame from a *view*
@@ -330,12 +361,18 @@ void main() {
   day = pow(day, uTermGamma);
   float lit = mix(1.0, uAmbient + (1.0 - uAmbient) * day, uSunMix);
   col = mix(col * uNight, col, lit);
+  col += albedo * terraLights(sN, V);
+  col += uEmissive * mix(1.0, 1.0 - day, uEmissiveNight);
+  if (dot(uNightLights, vec3(1.0)) > 0.001) {
+    float city = texture2DGradEXT(uNightTex, uv, ddx, ddy).r;
+    col += uNightLights * city * (1.0 - day) * mask * (1.0 - inDetail * 0.5);
+  }
 
   vec3 H = normalize(L + V);
   // Gated by the day term: a specular glint on the unlit half is the single
   // most obvious way to give away that the light is not where it looks.
-  float spec = pow(clamp(dot(sN, H), 0.0, 1.0), 46.0) * (1.0 - mask) * uSpec * day;
-  col += spec * vec3(1.0, 0.985, 0.95);
+  float spec = pow(clamp(dot(sN, H), 0.0, 1.0), uSpecPower) * (1.0 - mask) * uSpec * day;
+  col += spec * uSpecColor;
 
   // Aerial perspective, weighted toward the light. The limb glows brightest
   // where it faces the lamp and falls away round the sides, which is what
@@ -370,5 +407,7 @@ void main() {
 
   // 8-bit dither, or the wide ocean gradients band visibly.
   float d = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
-  gl_FragColor = vec4(col + (d - 0.5) / 255.0, 1.0);
+  gl_FragColor = vec4(terraGrade(terraFog(col, vWorld)) + (d - 0.5) / 255.0, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }

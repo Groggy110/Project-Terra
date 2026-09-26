@@ -546,21 +546,21 @@
 
 .acct:hover { border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 
-.acct__dot {
-  display: grid;
-  place-items: center;
+.acct__pic {
+  display: block;
   width: 25px; height: 25px;
   border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 11.5px;
-  font-weight: 600;
+  object-fit: cover;
+  background: var(--surface);
 }
+
+/* No picture: the name alone, padded evenly. */
+.acct--bare { padding-left: 13px; padding-right: 13px; }
 
 @media (max-width: 760px) {
   .row2 { grid-template-columns: 1fr; }
   .quiz__rail { padding: 12px 22px 0; }
-  .acct__name { display: none; }
+  .acct:not(.acct--bare) .acct__name { display: none; }
 }
 
 /* The dialog owns the title, so this row only carries the refresh control. */
@@ -572,3 +572,33 @@
 /* The last line needs room of its own; without it the card edge cuts it. */
 .recs { padding-bottom: 2px; }
 .recs__foot { padding-bottom: 2px; }
+
+/* Ministry accounts show the ministry's name and a square mark, so it is
+   always clear which of two linked accounts is in use. */
+/* A logo is usually not a face: square it off and show all of it. */
+.acct--ministry .acct__pic {
+  border-radius: 7px;
+  object-fit: contain;
+}
+
+.acct__name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acct__role {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--surface-sunk);
+}
+
+@media (max-width: 760px) {
+  .acct__role { display: none; }
+}
