@@ -401,6 +401,19 @@ export class App {
           icon: menuIcons.panel,
           run: () => this.panel.setOpen(!this.panel.open),
         },
+        // SANDBOX START — the temporary Style Sandbox's menu entry; present only
+        // while src/sandbox/style/ exists (see main.js and REMOVAL.md there).
+        ...(window.terraStyleEditor
+          ? [
+              {
+                label: window.terraStyleEditor.open ? "Hide the style editor" : "Style editor",
+                note: "Tune the globe and background live",
+                icon: menuIcons.theme,
+                run: () => window.terraStyleEditor.toggle(),
+              },
+            ]
+          : []),
+        // SANDBOX END
         null,
         {
           label: `Switch to ${dark ? "dark" : "light"} mode`,

@@ -207,7 +207,9 @@ export async function screenshot(globe, theme, scale = 2) {
   const { w, h } = globe.size;
   const before = r.getPixelRatio();
   const max = r.capabilities.maxTextureSize || 8192;
-  const ratio = Math.min(before * scale, max / Math.max(w, h));
+  // Relative to the display's full resolution, not to whatever the adaptive
+  // scaler has the canvas drawing at this moment.
+  const ratio = Math.min(globe.dpr * scale, max / Math.max(w, h));
   const k = ratio / before;
 
   // The halo and the post pass are sized in drawing-buffer pixels.

@@ -1,8 +1,8 @@
 # Removing the Style Sandbox
 
-The Style Sandbox is temporary. It is a lil-gui panel over `STYLE`, opened with
-`?sandbox=1`. Removing it takes about two minutes and changes nothing for
-visitors: the panel is never loaded without the flag.
+The Style Sandbox is temporary. It is a lil-gui panel over `STYLE`, opened from the
+••• menu ("Style editor") or with `?sandbox=1`. Removing it takes about two
+minutes. Until someone opens it, visitors download none of its code.
 
 ## What to keep
 
@@ -23,10 +23,10 @@ system, and the app needs them:
 | What | Where |
 | --- | --- |
 | Sandbox code | `src/sandbox/style/` (`index.js`, `panel.js`, `tools.js`, `sandbox.css`, this file) |
-| Entry point | one block in `src/main.js`, between `// SANDBOX START` and `// SANDBOX END` |
+| Entry points | two marked blocks, each between `// SANDBOX START` and `// SANDBOX END`: one in `src/main.js` (loads the panel on demand, exposes `window.terraStyleEditor`), one in `src/ui/app.js` `#menu()` (the "Style editor" item in the ••• menu) |
 | Dependency | `lil-gui` in `devDependencies` (package.json and package-lock.json) |
 | Browser storage | localStorage key `terraSandbox` (presets, the export note, panel position) |
-| Global | `window.terraSandbox` (the panel instance, set only when the panel is open) |
+| Globals | `window.terraStyleEditor` (open/toggle handle, set by main.js), `window.terraSandbox` (the panel, once opened) |
 
 No other file references the sandbox. `src/sandbox/` also holds the older
 design & capture sandbox (`sandbox.html`), which is separate. Leave it alone
@@ -41,9 +41,10 @@ unless you mean to remove that one too.
    ```sh
    rm -rf src/sandbox/style
    ```
-3. Delete the block in `src/main.js` from `// SANDBOX START` to
-   `// SANDBOX END`, inclusive. (The block uses `import.meta.glob`, so the build
-   still succeeds if you forget this step. It just matches nothing.)
+3. Delete both marked blocks, from `// SANDBOX START` to `// SANDBOX END`
+   inclusive: one in `src/main.js`, one in `src/ui/app.js` (inside `#menu`).
+   (If you forget, nothing breaks: the glob matches nothing, the handle is
+   never set, and the menu item does not appear.)
 4. Remove the dependency:
    ```sh
    npm uninstall lil-gui
@@ -55,7 +56,7 @@ unless you mean to remove that one too.
 6. Check it:
    ```sh
    npm run build
-   grep -rn "sandbox/style\|lil-gui\|terraSandbox" src package.json
+   grep -rn "sandbox/style\|lil-gui\|terraSandbox\|terraStyleEditor" src package.json
    ```
    The grep should print nothing. The site should look and behave exactly as
    it did with the panel closed.
