@@ -13,7 +13,6 @@
 import { h, add, clear, svg } from "./dom.js";
 import { signIn, signUp, sendMagicLink } from "../lib/api.js";
 
-const MARK = '<circle cx="12" cy="12" r="9.4"/><ellipse cx="12" cy="12" rx="4" ry="9.4"/><path d="M2.9 8.7h18.2M2.9 15.3h18.2"/>';
 const ENVELOPE = '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="m3.8 7 7.1 5.3a2 2 0 0 0 2.2 0L20.2 7"/>';
 const HAND = '<path d="M7.5 12.8V6.3a1.8 1.8 0 0 1 3.6 0v4.8m0 0V4.5a1.8 1.8 0 0 1 3.6 0v6.9m0 0V6.9a1.8 1.8 0 0 1 3.6 0v7.8c0 3.6-2.6 6.3-6.3 6.3s-6.3-2.7-6.3-6.3l-2.1-2.1"/>';
 const BUILDING = '<path d="M4 20.5V6.2a1.7 1.7 0 0 1 1.7-1.7h7.1a1.7 1.7 0 0 1 1.7 1.7v14.3M14.5 20.5V11h3.8a1.7 1.7 0 0 1 1.7 1.7v7.8M2.5 20.5h19M7.4 8.3h3.7M7.4 11.9h3.7M7.4 15.5h3.7"/>';
@@ -41,6 +40,13 @@ export class AuthGate {
       "div",
       { class: "gate", hidden: true },
       h("div", { class: "gate__scrim", onclick: () => this.skip() }),
+      // The real lockup, where it sits on every other screen: top left.
+      h(
+        "div",
+        { class: "brand gate__brand", "aria-hidden": "true" },
+        h("img", { class: "brand__mark", src: "/logo-mark.png", alt: "", width: 256, height: 256, decoding: "async" }),
+        h("span", { class: "brand__name", text: "Terra" }),
+      ),
       this.card,
     );
     document.body.appendChild(this.el);
@@ -113,7 +119,7 @@ export class AuthGate {
 
     if (isSignup) {
       add(form, [
-        field("Your name", { id: "gate-name", name: "name", autocomplete: "name", placeholder: "Stefan Jungmichel", required: true }),
+        field("Your name", { id: "gate-name", name: "name", autocomplete: "name", placeholder: "Your full name", required: true }),
       ]);
     }
 
@@ -145,7 +151,6 @@ export class AuthGate {
     ]);
 
     add(this.body, [
-      svg("0 0 24 24", MARK, "gate__mark"),
       h("h2", { class: "gate__title", text: isSignup ? "Join Terra" : isMagic ? "Sign in without a password" : "Welcome back" }),
       h("p", { class: "gate__sub", text: isSignup
         ? "A map of what ministries need, and the people who can meet it."

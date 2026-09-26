@@ -5,6 +5,8 @@ import { add, h, icons, joinDot, nf, plural, since } from "./dom.js";
 import { FOCUS_BY_ID, NEED_TYPES, TYPE_BY_ID, URGENCIES, URGENCY_BY_ID } from "../data/taxonomy.js";
 import { MINISTRIES, MINISTRY_BY_ID } from "../data/ministries.js";
 
+const SIDE_ROOM = window.matchMedia("(min-width: 1000px)");
+
 export class ModalLayer {
   constructor(root, { onToggle } = {}) {
     this.root = root;
@@ -22,6 +24,11 @@ export class ModalLayer {
     return !!this.current;
   }
 
+  /** Open, and covering the globe — a side card leaves it in view. */
+  get covers() {
+    return !!this.current && !this.current.side;
+  }
+
   close() {
     if (!this.current) return;
     const { scrim, modal } = this.current;
@@ -36,21 +43,25 @@ export class ModalLayer {
   }
 
   /** Mounts a dialog; `build(close)` returns the body of the card. */
-  show(build, { width } = {}) {
+  show(build, { width, side = false } = {}) {
     this.close();
-    const scrim = h("div", { class: "scrim", onclick: () => this.close() });
+    // A side card stands beside a pin the globe has just flown to, so the
+    // world stays in view and in play: no blur, and the scrim lets the
+    // pointer through to the canvas. Only where there is room beside it.
+    side = side && SIDE_ROOM.matches;
+    const scrim = h("div", { class: side ? "scrim scrim--clear" : "scrim", onclick: () => this.close() });
     const modal = h("div", {
-      class: "modal",
+      class: side ? "modal modal--side" : "modal",
       role: "dialog",
       "aria-modal": "true",
-      style: width ? { width: `min(${width}px, calc(100vw - 32px))` } : null,
+      style: width && !side ? { width: `min(${width}px, calc(100vw - 32px))` } : null,
     });
     modal.appendChild(
       h("button", { class: "modal__x", "aria-label": "Close", onclick: () => this.close() }, icons.close()),
     );
     add(modal, [build(() => this.close())]);
     this.root.append(scrim, modal);
-    this.current = { scrim, modal };
+    this.current = { scrim, modal, side };
     this.onToggle?.(true);
     const focusTarget =
       modal.querySelector("[data-autofocus]") ??
@@ -245,7 +256,7 @@ export function postNeedModal(layer, { ministryId, onPublish }) {
 
 /* ----------------------------------------------------------- need detail */
 
-export function needModal(layer, need, { onPickUp, onMinistry, onDrop }) {
+export function needModal(layer, need, { onPickUp, onMinistry, onDrop }, { side = false } = {}) {
   return layer.show((close) => {
     const cell = (label, value) =>
       h("div", { class: "detail__cell" }, h("div", { class: "ml", text: label }), h("strong", { text: value }));
@@ -308,6 +319,6 @@ export function needModal(layer, need, { onPickUp, onMinistry, onDrop }) {
         h("span", { class: "modal__note spacer", text: "Saved in this browser only." }),
       ),
     );
-  }, { width: 600 });
+  }, { width: 600, side });
 }
 

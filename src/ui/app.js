@@ -693,7 +693,7 @@ export class App {
       this.applyQuery();
       this.openMinistry(row.ministry, { fly: true });
     } else if (row.kind === "need") {
-      this.openNeed(row.need);
+      this.openNeed(row.need, { fly: true });
     } else if (row.kind === "skill") {
       this.el.search.value = row.skill;
       this.query.text = row.skill;
@@ -726,7 +726,7 @@ export class App {
     return {
       postNeed: (ministryId) => this.postNeed(ministryId),
       openBoard: () => this.setView("needs"),
-      openNeed: (need) => this.openNeed(need),
+      openNeed: (need) => this.openNeed(need, { fly: true }),
       clearFilters: () => this.clearFilters(),
       focusMinistry: (m) => this.globe?.focus(m, { zoom: 0.68 }),
       layoutChanged: () => setTimeout(() => this.syncReserved(), 480),
@@ -758,8 +758,18 @@ export class App {
     this.#renderCrumbs();
   }
 
-  openNeed(need) {
+  /**
+   * `fly` takes the globe to the ministry first and stands the need beside
+   * its pin, rather than over a blurred world — for picks made from the
+   * panel and the search, where the map is the context.
+   */
+  openNeed(need, { fly = false } = {}) {
     const fresh = this.net.needById(need.id) ?? need;
+    const m = fly ? this.net.ministryById.get(fresh.ministry) : null;
+    if (m) {
+      this.#leaveHero();
+      this.openMinistry(m, { fly: true });
+    }
     needModal(this.modals, fresh, {
       onPickUp: (n) => {
         // Written to the browser either way, and to the database as well when
@@ -784,7 +794,7 @@ export class App {
         const m = this.net.ministryById.get(n.ministry);
         if (m) this.openMinistry(m, { fly: true });
       },
-    });
+    }, { side: !!m });
   }
 
   /**
@@ -903,7 +913,7 @@ export class App {
   #syncCovered() {
     const phone = window.matchMedia("(max-width: 720px)").matches;
     const covered =
-      !!this.modals?.isOpen ||
+      !!this.modals?.covers ||
       (phone && (!!this.board?.open || document.body.classList.contains("sheet-full")));
     this.globe?.setCovered(covered);
   }

@@ -42,6 +42,8 @@ const shapeNeed = (row) => ({
   remote: !!row.remote,
   commitment: row.commitment ?? "",
   skills: row.skills ?? [],
+  // AI-written search tags, most specific first (moderate-need / tag-needs).
+  tags: row.tags ?? [],
   detail: row.detail ?? "",
   posted: row.posted ?? row.created_at?.slice(0, 10) ?? "",
   status: row.status,

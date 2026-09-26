@@ -36,6 +36,22 @@
   }
 }
 
+/* Beside a pin: the globe has flown the ministry to the centre of the frame,
+   so the card stands just left of it, clear of the panel on the right. */
+.scrim--clear {
+  background: none;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
+.modal.modal--side {
+  left: auto;
+  right: calc(50% + 34px);
+  width: min(440px, calc(50vw - 72px));
+  max-height: min(78vh, 720px);
+  translate: 0 -50%;
+}
+
 .modal {
   position: absolute;
   left: 50%;
@@ -119,6 +135,28 @@
     opacity: 0;
     translate: -50% calc(-50% + 8px);
     scale: 0.99;
+  }
+}
+
+.modal.modal--side {
+  animation: modal-side-in 0.42s var(--ease-out) 0.25s both;
+}
+
+.modal.modal--side.is-out {
+  animation: modal-side-out 0.22s var(--ease) forwards;
+}
+
+@keyframes modal-side-in {
+  from {
+    opacity: 0;
+    translate: -14px -50%;
+  }
+}
+
+@keyframes modal-side-out {
+  to {
+    opacity: 0;
+    translate: -8px -50%;
   }
 }
 
@@ -485,4 +523,8 @@
   .modal__title {
     font-size: 26px;
   }
+}
+
+.modal--side .modal__note {
+  display: none;
 }
