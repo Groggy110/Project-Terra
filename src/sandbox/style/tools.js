@@ -252,6 +252,16 @@ export async function screenshot(globe, theme, scale = 2) {
     pu.uResolution.value.copy(saved.post);
     pu.uGrainSize.value = saved.grain;
     globe.dirty = true;
+    // The capture is one long frame the resolution scaler must not see, or it
+    // would take the live globe down a step for a picture it never drew.
+    globe.skipSample = true;
+    globe.last = performance.now();
   }
-  return new Promise((resolve) => out.toBlob(resolve, "image/png"));
+  const blob = await new Promise((resolve) => out.toBlob(resolve, "image/png"));
+  // Encoding a large PNG keeps the main thread busy for a while too; start the
+  // scaler's measurements over from here.
+  globe.frames.length = 0;
+  globe.resAt = performance.now();
+  globe.skipSample = true;
+  return blob;
 }
