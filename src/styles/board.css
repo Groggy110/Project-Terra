@@ -88,37 +88,248 @@
   gap: 9px;
 }
 
-.sort {
-  flex: none;
-}
+/* ---------- two columns: categories, then needs ---------- */
 
-.sheet__body {
+.bd {
   flex: 1;
   min-height: 0;
-  padding: 18px 26px 26px;
-}
-
-.board {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
-  gap: 11px;
-  align-content: start;
+  grid-template-columns: 232px minmax(0, 1fr);
 }
 
-.board .need {
-  margin: 0;
-  padding: 14px 15px 15px;
-  /* footers line up across a row even when titles wrap differently */
+.bd__side {
+  min-height: 0;
+  padding: 16px 12px 24px 16px;
+  border-right: 1px solid var(--line);
+}
+
+.bd__group + .bd__group {
+  margin-top: 18px;
+}
+
+.bd__group-label {
+  padding: 0 10px 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.bd__cat {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  color: var(--body);
+  text-align: left;
+  transition: background 0.14s, color 0.14s;
 }
 
-.board .need__foot {
-  margin-top: auto;
+.bd__cat:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink);
 }
 
-.board .need__meta {
-  white-space: normal;
+.bd__cat.is-on {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--ink);
+  font-weight: 560;
+}
+
+.bd__cat-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bd__cat-n {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+
+.bd__cat.is-on .bd__cat-n {
+  color: var(--accent);
+}
+
+.bd__main {
+  min-height: 0;
+  padding: 16px 26px 28px;
+}
+
+.bd__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.bd__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.bd__heading b {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bd__heading span {
+  flex: none;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.bd__active {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.bd__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 11px;
+  border-radius: 999px;
+  background: var(--surface-sunk);
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.bd__pill-x {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.bd__pill:hover .bd__pill-x {
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  color: var(--ink);
+}
+
+/* One quiet row per need. The list is the card; rows are divided, not boxed. */
+.bd__list {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  overflow: hidden;
+}
+
+.bd__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 13px 14px 13px 18px;
+  text-align: left;
+  transition: background 0.14s;
+}
+
+.bd__row + .bd__row {
+  border-top: 1px solid var(--line);
+}
+
+.bd__row:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.bd__row-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.bd__row-title {
+  font-size: 14.5px;
+  font-weight: 560;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bd__row-meta {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bd__row-side {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.bd__kind {
+  min-width: 64px;
+  color: var(--body);
+}
+
+.bd__people {
+  min-width: 66px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.bd__tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 560;
+}
+
+.bd__tag.is-urgent {
+  color: var(--urgent);
+  background: color-mix(in srgb, var(--urgent) 12%, transparent);
+}
+
+.bd__tag.is-taken {
+  color: var(--ongoing);
+  background: color-mix(in srgb, var(--ongoing) 12%, transparent);
+}
+
+.bd__chev {
+  flex: none;
+  display: grid;
+  color: var(--faint);
+  transition: transform 0.16s var(--ease-out), color 0.16s;
+}
+
+.bd__row:hover .bd__chev {
+  color: var(--ink-2);
+  transform: translateX(2px);
+}
+
+.bd__list .board__empty {
+  padding: 48px 20px;
 }
 
 .board__empty {
@@ -144,6 +355,7 @@
 }
 
 .sort {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -166,41 +378,21 @@
   box-shadow: 0 1px 2px rgba(16, 42, 74, 0.1);
 }
 
-.need__foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 11px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
-  color: var(--muted);
+/* The sidebar is the filter while the board is up; the chips would only
+   repeat it, hovering over the board's top edge. */
+body.board-open .filters,
+body.board-open .grabber {
+  opacity: 0;
+  pointer-events: none;
 }
 
-.need__foot .badge--remote {
-  margin-left: auto;
+.filters {
+  transition: opacity 0.25s var(--ease);
 }
 
-.need__urg {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.need__urg.urgent {
-  color: var(--urgent);
-}
-
-.need__urg.soon {
-  color: var(--soon);
-}
-
-.need__urg.ongoing {
-  color: var(--ongoing);
+@media (max-width: 1000px) {
+  .bd__kind,
+  .bd__people { display: none; }
 }
 
 /* ---------- phone ---------- */
@@ -283,7 +475,45 @@
     display: none;
   }
 
-  .sheet__body {
-    padding: 14px 16px 22px;
+  /* Categories become one scrolling row of pills above the list. */
+  .bd {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
+
+  .bd__side {
+    display: flex;
+    gap: 6px;
+    padding: 10px 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .bd__side::-webkit-scrollbar { display: none; }
+
+  .bd__group { display: contents; }
+  .bd__group-label { display: none; }
+
+  .bd__cat {
+    flex: none;
+    width: auto;
+    padding: 6px 11px;
+    border-radius: 999px;
+    background: var(--surface-sunk);
+    white-space: nowrap;
+  }
+
+  .bd__main {
+    padding: 12px 16px 22px;
+  }
+
+  .bd__bar {
+    flex-wrap: wrap;
+  }
+
+  .bd__row-side .bd__tag { display: none; }
+  .bd__row { padding: 12px 12px 12px 14px; gap: 11px; }
 }

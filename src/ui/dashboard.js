@@ -20,6 +20,26 @@ export function dashboardModal(layer, { load, onSetStatus, onPost, onShowNeed })
     const list = h("div", { class: "dash" }, h("p", { class: "modal__lede", text: "Loading your needs…" }));
     const summary = h("p", { class: "modal__lede" });
 
+    // What they wrote when they picked the need up, and the work they shared.
+    const answers = (a) => {
+      const work = [
+        ...a.links.map((url) => h("a", { class: "work__item", href: url, target: "_blank", rel: "noopener" },
+          h("span", { class: "work__kind", text: "Link" }),
+          h("span", { class: "work__name", text: url.replace(/^https?:\/\//, "") }),
+        )),
+        ...a.files.map((f) => h(f.url ? "a" : "div", { class: "work__item", href: f.url, target: "_blank", rel: "noopener" },
+          h("span", { class: "work__kind", text: "File" }),
+          h("span", { class: "work__name", text: f.name }),
+        )),
+      ];
+      if (!a.why && !a.qualifications && !work.length) return null;
+      return h("div", { class: "applicant__answers" },
+        a.why ? h("div", {}, h("span", { class: "ml", text: "Why" }), h("p", { text: a.why })) : null,
+        a.qualifications ? h("div", {}, h("span", { class: "ml", text: "Qualifications" }), h("p", { text: a.qualifications })) : null,
+        work.length ? h("div", {}, h("span", { class: "ml", text: "Previous work" }), h("div", { class: "work__items" }, work)) : null,
+      );
+    };
+
     const person = (p, extra) =>
       h("div", { class: "applicant" },
         h("div", { class: "applicant__head" },
@@ -30,6 +50,7 @@ export function dashboardModal(layer, { load, onSetStatus, onPost, onShowNeed })
           ),
           p.email ? h("a", { class: "btn btn--soft btn--sm", href: `mailto:${p.email}` }, "Email") : null,
         ),
+        p.application ? answers(p.application) : null,
         p.skills?.length ? h("div", { class: "tags" }, p.skills.slice(0, 6).map((s) => h("span", { class: "tag", text: s }))) : null,
         p.experience ? h("p", { class: "applicant__about", text: p.experience }) : null,
         p.availability || p.languages?.length || p.portfolio

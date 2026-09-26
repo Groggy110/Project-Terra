@@ -7,11 +7,11 @@ import { clamp, smoothstep } from "../globe/geo.js";
 import { Network, emptyQuery, queryIsEmpty } from "../data/network.js";
 import { Board } from "./board.js";
 import { Filters } from "./filters.js";
-import { ModalLayer, aboutModal, meetingsModal, needModal, scheduleModal } from "./modals.js";
+import { ModalLayer, aboutModal, meetingsModal, needModal, pickUpModal, scheduleModal } from "./modals.js";
 import { dashboardModal } from "./dashboard.js";
 import { Panel } from "./panel.js";
 import { PanelSheet } from "./sheet.js";
-import { add, clear, h, icons, nf } from "./dom.js";
+import { add, clear, h, icons, plural } from "./dom.js";
 import { openPop, menuIcons } from "./pop.js";
 import { store } from "./store.js";
 import { REVISION } from "three";
@@ -21,17 +21,42 @@ import { ministryModal, postNeedModal as postNeedForm } from "./ministry.js";
 import { Recommendations } from "./recommend.js";
 import * as api from "../lib/api.js";
 
-const THEME_LABELS = { light: "Soft light", dark: "Deep night" };
 
 /** How long after the loading screen lifts the headline lands. */
 const HERO_IN_MS = 520;
 
 /** The side-by-side entrance: wide enough for two columns, and landscape. */
 const HERO_SPLIT = window.matchMedia("(min-width: 1000px) and (min-aspect-ratio: 4/3)");
-/** How far left of centre the planet sits in it, as a fraction of the width. */
-const HERO_SHIFT = 0.21;
-/** A little nearer than the whole-globe stop, so the planet fills the column. */
-const HERO_DIST = 4.05;
+/**
+ * The split entrance is tuned in one reference frame, 1951 x 820, and every
+ * other window gets that same picture scaled — see --u in base.css, which
+ * this must match. In the reference the planet's centre sits 409.5px left of
+ * the window's middle (0.21 of the width), at a camera distance of 4.05.
+ */
+const HERO_REF = { w: 1951, h: 820, offset: 409.5, dist: 4.05 };
+
+/** One reference pixel, in real pixels, clamped as --u is. */
+function heroUnit() {
+  const u = Math.min(window.innerHeight / HERO_REF.h, window.innerWidth / HERO_REF.w);
+  return Math.min(Math.max(u, 0.72), 1.25);
+}
+
+/**
+ * The camera for the split entrance at this window size. The globe's size on
+ * screen is set by the height, so where the unit is held back by the width,
+ * the camera withdraws until the disc is `u` reference pixels per pixel too:
+ * the silhouette's radius goes as tan(asin(1/d)), so scaling that tangent by
+ * the ratio scales the disc exactly.
+ */
+function heroFrame() {
+  const u = heroUnit();
+  const k = (u * HERO_REF.h) / window.innerHeight;
+  const tan = Math.tan(Math.asin(1 / HERO_REF.dist)) * k;
+  return {
+    shift: (HERO_REF.offset * u) / window.innerWidth,
+    dist: 1 / Math.sin(Math.atan(tan)),
+  };
+}
 
 export class App {
   constructor() {
@@ -64,7 +89,7 @@ export class App {
       search: document.getElementById("searchInput"),
       clearSearch: document.getElementById("searchClear"),
       suggest: document.getElementById("suggest"),
-      themeName: document.getElementById("themeName"),
+      themeBtn: document.getElementById("themeBtn"),
       chrome: document.querySelector(".chrome"),
     };
 
@@ -103,9 +128,6 @@ export class App {
         this.applyQuery();
       },
     });
-
-    this.rail = h("div", { class: "rail" });
-    this.el.chrome.appendChild(this.rail);
   }
 
   /* ----------------------------------------------------------------- boot */
@@ -122,13 +144,13 @@ export class App {
     const split = HERO_SPLIT.matches;
     document.body.classList.toggle("hero-split", split);
     this.panel.setOpen(false);
-    this.#theme(store.theme || "dark", { quiet: true });
+    this.#theme(store.theme || "dark");
     this.#bindChrome();
     this.#bindKeys();
 
     this.globe = new Globe(this.el.canvas, {
       overlay: this.el.overlay,
-      hero: split ? { shift: HERO_SHIFT, dist: HERO_DIST } : undefined,
+      hero: split ? heroFrame() : undefined,
       onProgress: (p, label) => boot.progress(p, label),
       onPinClick: (m) => {
         this.#leaveHero();
@@ -150,7 +172,7 @@ export class App {
       await this.globe.start();
       this.globe.setTheme(this.theme);
       this.globe.setMinistries(this.net.ministries);
-      this.globe.setLettering(true);
+      this.#renderHeroCount();
       this.#initCredit();
     } catch (err) {
       boot.fail(err);
@@ -184,7 +206,6 @@ export class App {
 
     this.panel.render(this.query);
     this.#renderCrumbs();
-    this.#renderRail();
     this.#renderAccount();
     this.syncReserved();
     // Coalesced: a window drag-resize delivers a stream of these, and each one
@@ -223,10 +244,8 @@ export class App {
     clearTimeout(this.heroTimer);
     clearTimeout(this.heroInTimer);
     document.body.classList.remove("is-hero", "hero-in", "hero-split");
-    // The split framing glides back to centre whichever way the hero ends,
-    // and pins go back to earning their names by zoom.
+    // The split framing glides back to centre whichever way the hero ends.
     this.globe?.setShift(0);
-    this.globe?.setLettering(false);
     // Whichever way the hero went, the opening frame is over and the globe is
     // free to turn again. On the timed exit the settle starts the turn itself;
     // on a gesture the drift picks it up once the hand comes off.
@@ -251,10 +270,7 @@ export class App {
       h(
         "div",
         { class: "boot__inner" },
-        h("span", {
-          class: "boot__mark",
-          html: '<img class="boot__mark" src="/logo-mark.png" alt="" width="256" height="256" />',
-        }),
+        h("span", { class: "boot__mark brand__name", text: "Terra" }),
         label,
         h("div", { class: "boot__bar" }, fill),
       ),
@@ -382,7 +398,7 @@ export class App {
         },
         null,
         {
-          label: `Switch to ${dark ? "deep night" : "soft light"}`,
+          label: `Switch to ${dark ? "dark" : "light"} mode`,
           icon: menuIcons.theme,
           kbd: "T",
           run: () => this.#theme(dark ? "dark" : "light"),
@@ -403,13 +419,16 @@ export class App {
     });
   }
 
-  #theme(name, { quiet = false } = {}) {
+  #theme(name) {
     this.theme = name;
     document.documentElement.dataset.theme = name;
-    this.el.themeName.textContent = THEME_LABELS[name] ?? name;
+    // The icon is the whole control (the sun or moon swaps in CSS), so the
+    // words live in its label, and a toast would only repeat what just changed.
+    const next = name === "light" ? "Switch to dark mode" : "Switch to light mode";
+    this.el.themeBtn?.setAttribute("aria-label", next);
+    this.el.themeBtn?.setAttribute("title", next);
     store.setTheme(name);
     this.globe?.setTheme(name);
-    if (!quiet) this.toast(`${THEME_LABELS[name]}`);
   }
 
   /* ---------------------------------------------------------------- views */
@@ -471,33 +490,13 @@ export class App {
     return "Open needs";
   }
 
-  /**
-   * Whole-network figures, not the filtered ones: it is captioned NETWORK and
-   * stands where the panel would be, which is where the filtered count already
-   * lives when the panel is up.
-   */
-  #renderRail() {
+  /** The landing headline's pill: whole-network figures, in a sentence. */
+  #renderHeroCount() {
+    const el = document.getElementById("heroCount");
     const stats = this.net.stats();
-    const countries = new Set(this.net.ministries.map((m) => m.country)).size;
-    clear(this.rail);
-    const key = (kind, label) =>
-      h("span", {}, h("i", { class: `rail__dot rail__dot--${kind}` }), label);
-    const row = (label, value) =>
-      h(
-        "div",
-        { class: "rail__row" },
-        h("span", { class: "rail__k", text: label }),
-        h("span", { class: "rail__v", text: nf.format(value) }),
-      );
-    add(this.rail, [
-      h("div", { class: "rail__legend" }, key("urgent", "Urgent"), key("open", "Open"), key("city", "City")),
-      h("div", { class: "rail__head", text: "Network" }),
-      row("Ministries", this.net.ministries.length),
-      row("Open needs", stats.needs),
-      row("People needed", stats.people),
-      row("Countries", countries),
-      h("div", { class: "rail__foot", text: "Fictional sample data" }),
-    ]);
+    if (el && stats.needs) {
+      el.textContent = `${plural(stats.needs, "open need", "open needs")} · ${plural(this.net.ministries.length, "ministry", "ministries")}`;
+    }
   }
 
   /* ------------------------------------------------------------- backend */
@@ -509,7 +508,6 @@ export class App {
       this.net.setData(data);
       this.globe?.setMinistries(this.net.ministries);
       this.applyQuery();
-      this.#renderRail();
     } catch (err) {
       console.error("[terra] could not load the network", err);
       this.toast("Could not reach the network just now.");
@@ -616,12 +614,11 @@ export class App {
     }
     const isMinistry = this.profile?.role === "ministry";
     const name = isMinistry && this.ministry ? this.ministry.name : this.profile?.full_name || this.session.user.email || "You";
-    if (isMinistry && this.ministry) {
-      slot.appendChild(h("button", { class: "btn btn--ghost acct__needs", onclick: () => this.openDashboard() }, "Your needs"));
-    }
+    // Their own logo or photo if they have added one; otherwise just the name.
+    const picture = isMinistry ? this.ministry?.logo : this.profile?.avatar_url;
     slot.appendChild(
-      h("button", { class: `acct${isMinistry ? " acct--ministry" : ""}`, "data-action": "account", title: this.session.user.email },
-        h("span", { class: "acct__dot", text: name.trim().charAt(0).toUpperCase() }),
+      h("button", { class: `acct${isMinistry ? " acct--ministry" : ""}${picture ? "" : " acct--bare"}`, "data-action": "account", title: this.session.user.email },
+        picture ? h("img", { class: "acct__pic", src: picture, alt: "" }) : null,
         h("span", { class: "acct__name", text: isMinistry ? name : name.split(" ")[0] }),
         this.linked?.length ? h("span", { class: "acct__role", text: isMinistry ? "Ministry" : "Personal" }) : null,
       ),
@@ -651,9 +648,42 @@ export class App {
         isMinistry && !this.ministry && { label: "Put your ministry on the map", icon: menuIcons.panel, run: () => this.openMinistrySetup() },
         isMinistry && this.ministry && { label: "Post a need", icon: menuIcons.board, run: () => this.postNeed() },
         null,
+        (!isMinistry || this.ministry) && {
+          label: isMinistry ? (this.ministry.logo ? "Change logo" : "Upload a logo") : this.profile?.avatar_url ? "Change photo" : "Upload a photo",
+          note: "Shown beside your name",
+          icon: menuIcons.panel,
+          run: () => this.pickAvatar(),
+        },
+        (isMinistry ? this.ministry?.logo : this.profile?.avatar_url) && {
+          label: isMinistry ? "Remove logo" : "Remove photo",
+          icon: menuIcons.trash,
+          run: () => this.saveAvatar(null),
+        },
+        null,
         { label: "Sign out", icon: menuIcons.trash, run: async () => { await api.signOut(); this.session = null; this.profile = null; this.ministry = null; this.#renderAccount(); this.toast("Signed out."); } },
       ].filter((x) => x !== false),
     });
+  }
+
+  /** Chooses an image for the account chip; see api.setAvatar. */
+  pickAvatar() {
+    const input = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/svg+xml" });
+    input.addEventListener("change", () => input.files[0] && this.saveAvatar(input.files[0]));
+    input.click();
+  }
+
+  async saveAvatar(file) {
+    const isMinistry = this.profile?.role === "ministry";
+    const opts = { ministryId: isMinistry ? this.ministry?.id : null };
+    try {
+      const url = file ? await api.setAvatar(file, opts) : await api.removeAvatar(opts);
+      if (isMinistry) this.ministry = { ...this.ministry, logo: url };
+      else this.profile = { ...this.profile, avatar_url: url };
+      this.#renderAccount();
+      this.toast(file ? (isMinistry ? "Logo updated." : "Photo updated.") : isMinistry ? "Logo removed." : "Photo removed.");
+    } catch (e) {
+      this.toast(e.message || "Could not update the picture.");
+    }
   }
 
   openQuestionnaire() {
@@ -695,10 +725,10 @@ export class App {
   /* --------------------------------------------------------------- query */
 
   applyQuery() {
+    this.#renderHeroCount();
     this.panel.render(this.query);
     if (this.board.open) this.board.render(this.query);
     this.globe?.setDimmed(this.net.excluded(this.query));
-    this.#renderRail();
     this.#renderCrumbs();
   }
 
@@ -856,7 +886,7 @@ export class App {
       openBoard: () => this.setView("needs"),
       openNeed: (need) => this.openNeed(need, { fly: true }),
       clearFilters: () => this.clearFilters(),
-      focusMinistry: (m) => this.globe?.focus(m, { zoom: 0.68 }),
+      focusMinistry: (m) => this.globe?.focus(m, { zoom: 1 }),
       layoutChanged: () => setTimeout(() => this.syncReserved(), 480),
     };
   }
@@ -866,6 +896,15 @@ export class App {
       postNeed: (ministryId) => this.postNeed(ministryId),
       openNeed: (need) => this.openNeed(need),
       clearFilters: () => this.clearFilters(),
+      query: () => this.query,
+      // The board's categories edit the shared query in place; the chips, the
+      // search field and the globe are brought into line with it here.
+      queryChanged: () => {
+        this.el.search.value = this.query.text;
+        this.el.clearSearch.hidden = !this.query.text;
+        this.filtersUi.render();
+        this.applyQuery();
+      },
       boardToggled: (open) => {
         document.body.classList.toggle("board-open", open);
         this.#syncCovered();
@@ -882,7 +921,8 @@ export class App {
     this.globe?.select(full.id);
     this.globe?.setSpin(false);
     this.panel.showMinistry(full);
-    if (fly) this.globe?.focus(full, { zoom: Math.max(this.globe.zoom, 0.55) });
+    // All the way in: choosing a ministry is choosing a city, not a region.
+    if (fly) this.globe?.focus(full, { zoom: 1 });
     this.#renderCrumbs();
   }
 
@@ -899,23 +939,11 @@ export class App {
       this.openMinistry(m, { fly: true });
     }
     needModal(this.modals, fresh, {
-      onPickUp: (n) => {
-        // Written to the browser either way, and to the database as well when
-        // there is somebody to attribute it to. A signed-out visitor still gets
-        // to mark a need rather than being stopped to sign in first.
-        this.net.toggleInterest(n.id);
-        this.#afterDataChange();
-        if (this.session) api.toggleInterest(n.id, true).catch(() => {});
-        this.toast(
-          this.session
-            ? `Interest noted — ${n.ministryName} can see it.`
-            : `Noted in this browser. Sign in so ${n.ministryName} can see it.`,
-        );
-      },
+      onPickUp: (n) => this.openPickUp(n),
       onDrop: (n) => {
         this.net.toggleInterest(n.id);
         this.#afterDataChange();
-        if (this.session) api.toggleInterest(n.id, false).catch(() => {});
+        if (this.session) api.withdrawInterest(n.id).catch(() => {});
         this.toast("Interest withdrawn.");
       },
       onMinistry: (n) => {
@@ -924,6 +952,29 @@ export class App {
       },
       onSchedule: api.isConfigured ? (n) => this.openSchedule(n) : null,
     }, { side: !!m });
+  }
+
+  /**
+   * The application behind "Pick this up". Written to the browser either way,
+   * and to the database as well when there is somebody to attribute it to: a
+   * signed-out visitor can still answer and share links, just not upload.
+   */
+  openPickUp(need) {
+    const live = api.isConfigured && !this.demo;
+    pickUpModal(this.modals, this.net.needById(need.id) ?? need, {
+      canUpload: live && !!this.session,
+      onSignIn: live ? () => this.gate.open("signin") : null,
+      onSubmit: async (answers) => {
+        if (this.session) await api.expressInterest(need.id, answers);
+        this.net.toggleInterest(need.id, { ...answers, files: answers.files.map((f) => f.name) });
+        this.#afterDataChange();
+        this.toast(
+          this.session
+            ? `Sent — ${need.ministryName} can see your answers.`
+            : `Saved in this browser. Sign in so ${need.ministryName} can see it.`,
+        );
+      },
+    });
   }
 
   /** Book a first video call about a need; signing in comes first. */
@@ -995,7 +1046,6 @@ export class App {
       this.panel.render(this.query);
     }
     if (this.board.open) this.board.render(this.query);
-    this.#renderRail();
   }
 
   /**
@@ -1030,7 +1080,7 @@ export class App {
     for (const chip of document.querySelectorAll(".filters .chip")) push(chip, 3);
     push(document.querySelector(".dial"));
     push(document.querySelector(".hint"), 3);
-    if (!this.panel.open) push(this.rail, 4);
+    push(this.el.grabber, 4);
     if (this.panel.open) push(this.el.panel);
     if (this.board.open) push(this.el.sheet);
     this.globe?.setReserved(rects);

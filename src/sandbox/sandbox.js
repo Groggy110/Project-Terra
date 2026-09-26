@@ -297,8 +297,6 @@ export class Sandbox {
     document.documentElement.dataset.theme = theme;
     this.app.theme = theme;
     this.app.globe?.setTheme(theme);
-    const label = document.getElementById("themeName");
-    if (label) label.textContent = theme === "dark" ? "Deep night" : "Soft light";
   }
 
   /** Keeps the scope picker honest when the page's own theme button is used. */

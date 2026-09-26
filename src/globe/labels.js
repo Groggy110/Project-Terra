@@ -13,13 +13,6 @@ const CITY_Z = 0.28;
 const COUNTRY_Z = 0.12;
 const COUNTRY_MAX = 3;
 
-/**
- * Zoom at which pins start carrying their city plate. At the whole-globe view
- * thirty plates cover the disc they are meant to annotate, and every one of
- * them lands on the headline; a field of bare dots reads as pressure on the
- * map, which is what that view is for. Hovering one still names it.
- */
-const PIN_CHIP_Z = 0.07;
 
 /**
  * Rank ceiling for city labels as the camera comes in. Deliberately steep at
@@ -53,7 +46,6 @@ export class LabelLayer {
     this.root = root;
     this.onPinClick = onPinClick;
     this.onPinHover = onPinHover;
-    this.forceLettering = false;
 
     this.ministries = [];
     this.places = [];
@@ -170,9 +162,13 @@ export class LabelLayer {
       queue[i] = queue[cursor];
       queue[cursor++] = q;
     }
-    // The entrance letters its pins too, though it sits just below the zoom
-    // that would: the names are what make the opening globe read as a map.
-    const lettering = z > PIN_CHIP_Z || this.forceLettering;
+    // Pins carry their city at every zoom. They used to go bare at the
+    // whole-globe view so thirty plates would not land on the centred
+    // headline, but the headline has its own column now and is gone once you
+    // engage, and a globe of unnamed dots after scrolling off the landing
+    // page just looked broken. The budget and the collision pass below still
+    // decide how many fit.
+    const lettering = true;
 
     // How many pins may carry their city at once.
     //

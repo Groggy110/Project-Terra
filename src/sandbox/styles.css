@@ -745,6 +745,7 @@ body.sbx-capture .overlay {
    the one the player wrote, or a recording will not match the config. */
 body.sbx-capture .hero__title,
 body.sbx-capture .hero__sub,
+body.sbx-capture .hero__eyebrow,
 body.sbx-capture .topbar,
 body.sbx-capture .crumbs,
 body.sbx-capture .findbar,
@@ -753,7 +754,6 @@ body.sbx-capture .dial,
 body.sbx-capture .hint,
 body.sbx-capture .panel,
 body.sbx-capture .sheet,
-body.sbx-capture .rail,
 body.sbx-capture #globe,
 body.sbx-capture .overlay,
 body.sbx-capture .paper {

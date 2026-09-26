@@ -116,6 +116,7 @@ const EASINGS = { cubic: easeInOut, quad: easeInOutQuad };
 export class GlobeControls {
   #angleA;
   #angleB;
+  #probe;
   #rect = null;
 
   constructor(dom, camera, { onFirstGesture } = {}) {
@@ -151,6 +152,13 @@ export class GlobeControls {
     this.#angleB = new Vector3();
     this.ndc = new Vector2();
     this.hit = new Vector3();
+    this.#probe = new Vector3();
+    /**
+     * The ground point a zoom is holding under the cursor, and the screen
+     * position (NDC) it is held at. Set by the wheel and the pinch, cleared by
+     * anything else that takes the camera; see #holdAnchor.
+     */
+    this.anchor = null;
 
     this.#bind();
   }
@@ -263,6 +271,7 @@ export class GlobeControls {
    */
   #takeOver() {
     this.flight = null;
+    this.anchor = null;
     this.target.lat = this.lat;
     this.target.lon = this.lon;
     this.target.dist = this.dist;
@@ -304,7 +313,8 @@ export class GlobeControls {
     if (this.pointers.size >= 2) {
       const spread = this.#spread();
       if (this.pinch > 0 && spread > 0) {
-        this.#zoomTo(this.target.dist * (this.pinch / spread));
+        const [a, b] = [...this.pointers.values()];
+        this.#zoomTo(this.target.dist * (this.pinch / spread), { clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 });
         this.pinch = spread;
       }
       return;
@@ -345,7 +355,11 @@ export class GlobeControls {
   #wheel = (e) => {
     e.preventDefault();
     this.#note();
-    this.#takeOver();
+    // Not #takeOver: that would drop the anchor a scroll is still holding,
+    // and each notch of one gesture has to keep the same ground point.
+    this.flight = null;
+    this.vel.lat = 0;
+    this.vel.lon = 0;
     const step = e.deltaMode === 1 ? e.deltaY * 18 : e.deltaY;
     const next = this.target.dist * Math.exp(clamp(step, -260, 260) * WHEEL_GAIN);
     this.#zoomTo(next, e);
@@ -356,13 +370,14 @@ export class GlobeControls {
     this.#wheel(e);
   }
 
+  /** All the way in, onto the point that was double-clicked. */
   #dbl = (e) => {
     const at = this.pointAt(e);
     this.flyTo({
       lat: at?.lat ?? this.target.lat,
       lon: at?.lon ?? this.target.lon,
-      dist: Math.max(this.target.dist * 0.42, DIST_NEAR),
-      ms: 900,
+      dist: DIST_NEAR,
+      ms: 1100,
     });
   };
 
@@ -379,8 +394,18 @@ export class GlobeControls {
   }
 
   /**
-   * Zooming holds the ground under the cursor: the view centre is pulled
-   * toward that point by the fraction of the span the zoom removed.
+   * Zooming holds the ground under the cursor, exactly: the point the cursor
+   * is over is pinned to that pixel, and every frame of the zoom solves for
+   * the view centre that keeps it there (#holdAnchor).
+   *
+   * It used to pull the centre toward the point by the fraction of the
+   * height the zoom removed. That is right only at the middle of the screen
+   * and at small steps; off-centre, and on a sphere that foreshortens toward
+   * the limb, the ground slid out from under the cursor — you aimed at a city
+   * and arrived beside it.
+   *
+   * The point is taken from the camera as it is drawn, not from the target,
+   * because what is under the cursor on screen is what was aimed at.
    */
   #zoomTo(next, event) {
     const from = this.target.dist;
@@ -388,11 +413,54 @@ export class GlobeControls {
     this.target.dist = to;
     if (!event || to === from) return;
 
-    const at = this.pointAt(event);
-    if (!at) return;
-    const shrink = clamp(1 - (to - 1) / (from - 1), -0.6, 0.6);
-    this.target.lat = clamp(this.target.lat + (at.lat - this.target.lat) * shrink, -LAT_LIMIT, LAT_LIMIT);
-    this.target.lon += wrapDelta(this.target.lon, at.lon) * shrink;
+    const rect = this.rect;
+    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    // Same cursor, same gesture: keep the ground point already held, or it
+    // would be re-picked every notch from a camera still easing and creep.
+    const a = this.anchor;
+    if (a && Math.abs(a.x - x) < 1e-3 && Math.abs(a.y - y) < 1e-3) return;
+
+    this.ndc.set(x, y);
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    const hit = this.raycaster.ray.intersectSphere(this.sphere, this.hit);
+    this.anchor = hit ? { p: hit.clone(), x, y } : null;
+  }
+
+  /**
+   * Moves lat/lon so the anchor projects to its pixel with the camera at
+   * `dist`. A few rounds of: project, measure the miss in pixels, and turn
+   * the globe by that many pixels the way a drag would. The drag's scale is
+   * exact at the centre and too generous toward the limb, so it converges
+   * from one side and never overshoots.
+   */
+  #holdAnchor(dist) {
+    const a = this.anchor;
+    const cam = this.camera;
+    const { w, h } = this.viewport;
+    const ppd = Math.max(pixelsPerDegree(dist * this.fit, h, cam.fov), 0.4);
+    for (let i = 0; i < 6; i++) {
+      latLonToVec3(this.lat, this.lon, dist * this.fit, cam.position);
+      cam.up.set(0, 1, 0);
+      cam.lookAt(0, 0, 0);
+      cam.updateMatrixWorld();
+      // Round the back of the globe from here: head straight for it instead.
+      // (Visible means p·camera > 1: the cap shrinks to ~10° at the closest zoom.)
+      if (a.p.dot(cam.position) < 1.001) {
+        const at = vec3ToLatLon(a.p);
+        this.lat = clamp(this.lat + (at.lat - this.lat) * 0.5, -LAT_LIMIT, LAT_LIMIT);
+        this.lon += wrapDelta(this.lon, at.lon) * 0.5;
+        continue;
+      }
+      const q = this.#probe.copy(a.p).project(cam);
+      const ex = ((a.x - q.x) * w) / 2;
+      const ey = (-(a.y - q.y) * h) / 2;
+      if (Math.abs(ex) + Math.abs(ey) < 0.05) break;
+      this.lon -= ex / (ppd * Math.max(Math.cos(this.lat * DEG), 0.35));
+      this.lat = clamp(this.lat + ey / ppd, -LAT_LIMIT, LAT_LIMIT);
+    }
+    this.target.lat = this.lat;
+    this.target.lon = this.lon;
   }
 
   /* ---------------------------------------------------------------- moves */
@@ -528,9 +596,17 @@ export class GlobeControls {
       }
       const kRot = 1 - Math.exp(-dt / ROT_TAU);
       const kZoom = 1 - Math.exp(-dt / ZOOM_TAU);
-      this.lat += (this.target.lat - this.lat) * kRot;
-      this.lon += wrapDelta(this.lon, this.target.lon) * kRot;
       this.dist += (this.target.dist - this.dist) * kZoom;
+      if (this.anchor && !this.dragging) {
+        // While a zoom holds a point, the centre is not eased toward a target
+        // but solved from the distance, so the point stays on its pixel on
+        // every frame of the zoom rather than only once it settles.
+        this.#holdAnchor(this.dist);
+        if (Math.abs(this.target.dist - this.dist) < 1e-6) this.anchor = null;
+      } else {
+        this.lat += (this.target.lat - this.lat) * kRot;
+        this.lon += wrapDelta(this.lon, this.target.lon) * kRot;
+      }
     }
 
     latLonToVec3(this.lat, this.lon, this.camDist, this.camera.position);

@@ -245,9 +245,10 @@ export function needModal(layer, need, { onPickUp, onMinistry, onDrop, onSchedul
       {
         class: need.taken ? "btn btn--soft" : "btn btn--accent",
         onclick: () => {
+          // Close first: picking up opens the application in this same layer.
+          close();
           if (need.taken) onDrop(need);
           else onPickUp(need);
-          close();
         },
       },
       need.taken ? "Withdraw interest" : "Pick this up",
@@ -303,6 +304,246 @@ export function needModal(layer, need, { onPickUp, onMinistry, onDrop, onSchedul
       ),
     );
   }, { width: 600, side });
+}
+
+/* ------------------------------------------------------------- pick it up */
+
+/** What to ask, by the kind of need — a designer and a donor show different work. */
+const ASK = {
+  volunteers: {
+    why: "Why do you want to pick this up?",
+    quals: "What experience do you have with this kind of work?",
+    qualsHint: "Similar roles, how long you've done it, anything you've led.",
+    work: "Anything that shows you've done this before — a lesson plan, a recording, photos, a reference.",
+  },
+  expertise: {
+    why: "Why do you want to take this on?",
+    quals: "What qualifies you for it?",
+    qualsHint: "Training, certifications, years in the field, similar projects.",
+    work: "Samples of similar work: a portfolio, a case study, a finished piece.",
+  },
+  supplies: {
+    why: "Why do you want to provide this?",
+    quals: "What can you supply, and how would it reach them?",
+    qualsHint: "Quantities, where it ships from, how you've supplied before.",
+    work: "Photos, a spec sheet or a quote for what you can send.",
+  },
+  funding: {
+    why: "Why do you want to support this?",
+    quals: "How would you fund or raise it?",
+    qualsHint: "Giving directly, a church or foundation, a campaign you'd run.",
+    work: "A past campaign, grant or giving page you've been part of.",
+  },
+  partners: {
+    why: "Why does your organisation want to partner on this?",
+    quals: "What does your organisation bring?",
+    qualsHint: "Who you are, what you do, and the people you'd involve.",
+    work: "Your website, an annual report or a past partnership.",
+  },
+};
+
+const MAX_FILES = 5;
+const MAX_BYTES = 20 * 1024 * 1024;
+const ACCEPT = ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp,.svg,.mp3,.m4a,.mp4,.mov,.zip";
+
+const fileSize = (n) =>
+  n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+
+/**
+ * The application behind "Pick this up": why, what qualifies you, and
+ * previous work as links or files. Files need somewhere to go, so without a
+ * sign-in (`canUpload` false) only links are offered.
+ */
+export function pickUpModal(layer, need, { canUpload, onSignIn, onSubmit }) {
+  return layer.show((close) => {
+    const ask = ASK[need.type] ?? ASK.volunteers;
+    const field = (label, control, note) =>
+      h("div", { class: "field" }, h("span", { class: "ml", text: label }), control, note ? h("span", { class: "field__note", text: note }) : null);
+
+    const why = h("textarea", {
+      class: "area",
+      "data-autofocus": true,
+      placeholder: `What draws you to "${need.title}"?`,
+    });
+    const quals = h("textarea", {
+      class: "area",
+      placeholder: need.skills?.length ? `They're looking for ${need.skills.join(", ")}.` : ask.qualsHint,
+    });
+
+    /* previous work: one list, fed by either a link or files */
+    const links = [];
+    const files = [];
+    const items = h("div", { class: "work__items" });
+    const renderItems = () => {
+      items.replaceChildren(
+        ...links.map((url, i) =>
+          h("div", { class: "work__item" },
+            h("span", { class: "work__kind", text: "Link" }),
+            h("a", { class: "work__name", href: url, target: "_blank", rel: "noopener", text: url.replace(/^https?:\/\//, "") }),
+            h("button", { class: "work__x", type: "button", "aria-label": "Remove link", onclick: () => { links.splice(i, 1); renderItems(); } }, icons.close()),
+          ),
+        ),
+        ...files.map((f, i) =>
+          h("div", { class: "work__item" },
+            h("span", { class: "work__kind", text: "File" }),
+            h("span", { class: "work__name", text: f.name }),
+            h("span", { class: "work__size", text: fileSize(f.size) }),
+            h("button", { class: "work__x", type: "button", "aria-label": `Remove ${f.name}`, onclick: () => { files.splice(i, 1); renderItems(); } }, icons.close()),
+          ),
+        ),
+      );
+    };
+
+    const workError = h("span", { class: "field__note work__err" });
+    const linkInput = h("input", { class: "input", type: "url", placeholder: "https://…", autocomplete: "off" });
+    const addLink = () => {
+      let url = linkInput.value.trim();
+      if (!url) return;
+      if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+      try {
+        new URL(url);
+      } catch {
+        workError.textContent = "That doesn't look like a link.";
+        return;
+      }
+      if (!links.includes(url)) links.push(url);
+      linkInput.value = "";
+      workError.textContent = "";
+      renderItems();
+    };
+    linkInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addLink();
+      }
+    });
+    const linkPane = h("div", { class: "work__link" },
+      linkInput,
+      h("button", { class: "btn btn--soft", type: "button", onclick: addLink }, "Add link"),
+    );
+
+    const picker = h("input", { type: "file", multiple: true, accept: ACCEPT, hidden: true });
+    const takeFiles = (list) => {
+      workError.textContent = "";
+      for (const f of list) {
+        if (files.length >= MAX_FILES) {
+          workError.textContent = `Up to ${MAX_FILES} files.`;
+          break;
+        }
+        if (f.size > MAX_BYTES) {
+          workError.textContent = `${f.name} is over 20 MB — share it as a link instead.`;
+          continue;
+        }
+        if (!files.some((x) => x.name === f.name && x.size === f.size)) files.push(f);
+      }
+      picker.value = "";
+      renderItems();
+    };
+    picker.addEventListener("change", () => takeFiles(picker.files));
+    const drop = h("button", { class: "work__drop", type: "button", onclick: () => picker.click() },
+      icons.plus(),
+      h("b", { text: "Choose files" }),
+      h("span", { text: "or drop them here · PDF, images, documents, audio or video · up to 20 MB each" }),
+    );
+    for (const ev of ["dragenter", "dragover"]) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("is-over"); });
+    for (const ev of ["dragleave", "drop"]) drop.addEventListener(ev, () => drop.classList.remove("is-over"));
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      takeFiles(e.dataTransfer.files);
+    });
+    const filePane = canUpload
+      ? h("div", {}, drop, picker)
+      : h("div", { class: "work__locked" },
+          h("span", { text: "Sign in to upload files. Links work either way." }),
+          onSignIn ? h("button", { class: "btn btn--soft btn--sm", type: "button", onclick: () => { close(); onSignIn(); } }, "Sign in") : null,
+        );
+
+    let mode = "link";
+    const panes = h("div", { class: "work__pane" }, linkPane);
+    const seg = h("div", { class: "gate__seg seg-inline work__seg" },
+      [["link", "Add a link"], ["file", "Upload files"]].map(([id, label]) =>
+        h("button", {
+          type: "button",
+          class: id === mode ? "is-on" : "",
+          onclick: (e) => {
+            mode = id;
+            for (const b of seg.children) b.classList.toggle("is-on", b === e.currentTarget);
+            panes.replaceChildren(id === "link" ? linkPane : filePane);
+            workError.textContent = "";
+            (id === "link" ? linkInput : drop).focus?.();
+          },
+        }, label),
+      ),
+    );
+    const workBox = h("div", { class: "work__box", hidden: true }, seg, panes, workError);
+    const open = h("button", {
+      class: "btn btn--soft work__open",
+      type: "button",
+      onclick: () => {
+        workBox.hidden = false;
+        open.hidden = true;
+        linkInput.focus();
+      },
+    }, icons.plus(), "Upload previous work");
+
+    /* submit */
+    const error = h("span", { class: "modal__note", style: { color: "var(--urgent)" } });
+    const send = h("button", { class: "btn btn--accent" }, "Send to " + need.ministryName);
+    for (const el of [why, quals]) {
+      el.addEventListener("input", () => {
+        el.removeAttribute("aria-invalid");
+        error.textContent = "";
+      });
+    }
+
+    send.addEventListener("click", async () => {
+      // A link typed but not added is almost always meant to be sent.
+      if (linkInput.value.trim()) addLink();
+      for (const [el, msg] of [[why, "Say a little about why you want to pick this up."], [quals, "Tell them what qualifies you."]]) {
+        if (el.value.trim().length < 10) {
+          el.setAttribute("aria-invalid", "true");
+          el.focus();
+          error.textContent = msg;
+          return;
+        }
+      }
+      error.textContent = "";
+      send.disabled = true;
+      send.textContent = files.length ? "Uploading…" : "Sending…";
+      try {
+        await onSubmit({ why: why.value.trim(), qualifications: quals.value.trim(), links: [...links], files: [...files] });
+        close();
+      } catch (e) {
+        error.textContent = e.message || "Something went wrong. Please try again.";
+        send.disabled = false;
+        send.textContent = "Send to " + need.ministryName;
+      }
+    });
+
+    return h("div", { class: "modal__inner" },
+      h("div", { class: "modal__body scroll" },
+        h("div", { class: "modal__eyebrow", text: "Pick this up" }),
+        h("h2", { class: "modal__title", text: need.title }),
+        h("p", { class: "modal__lede", text: `A few questions so ${need.ministryName} knows who you are. They'll see your answers alongside your profile.` }),
+        h("div", { class: "form" },
+          field(ask.why, why),
+          field(ask.quals, quals, need.skills?.length ? ask.qualsHint : null),
+          h("div", { class: "field" },
+            h("span", { class: "ml", text: "Previous work (optional)" }),
+            h("span", { class: "field__note", text: ask.work }),
+            open,
+            workBox,
+            items,
+          ),
+        ),
+      ),
+      h("div", { class: "modal__foot" },
+        send,
+        h("button", { class: "btn btn--soft", onclick: close }, "Cancel"),
+        error,
+      ),
+    );
+  }, { width: 600 });
 }
 
 

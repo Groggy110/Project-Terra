@@ -1,7 +1,8 @@
 /**
  * Everything a ministry needs to follow up on its posts: each need (in any
  * status), the people who put their hand up for it with their questionnaire
- * answers and email, and the calls booked about it.
+ * answers, what they wrote when they picked it up (and the work they shared),
+ * their email, and the calls booked about it.
  *
  * Server-side because volunteers' emails live in auth.users, which the browser
  * cannot read, and because a ministry should see only the people who chose to
@@ -33,7 +34,7 @@ Deno.serve(async (req) => {
   if (!ids.length) return json({ ministry, needs: [] });
 
   const [{ data: interests }, { data: meetings }] = await Promise.all([
-    service.from("interests").select("user_id, need_id, created_at").in("need_id", ids),
+    service.from("interests").select("user_id, need_id, created_at, why, qualifications, links, files").in("need_id", ids),
     service.from("meetings").select("id, need_id, requester_id, starts_at, duration_min, meet_url, note, status").in("need_id", ids).eq("status", "scheduled"),
   ]);
 
@@ -47,6 +48,22 @@ Deno.serve(async (req) => {
     const { data } = await service.auth.admin.getUserById(id);
     if (data?.user?.email) emails.set(id, data.user.email);
   }));
+  // Uploaded work is private; the ministry gets links that last an hour,
+  // which is longer than anyone keeps the dashboard open.
+  type Upload = { name: string; path: string; size?: number; type?: string };
+  const paths = (interests ?? []).flatMap((i) => ((i.files ?? []) as Upload[]).map((f) => f.path)).filter(Boolean);
+  const signed = new Map<string, string>();
+  if (paths.length) {
+    const { data } = await service.storage.from("work-samples").createSignedUrls(paths, 3600);
+    for (const s of data ?? []) if (s.path && s.signedUrl) signed.set(s.path, s.signedUrl);
+  }
+  const application = (i: { why?: string | null; qualifications?: string | null; links?: string[] | null; files?: unknown }) => ({
+    why: i.why ?? null,
+    qualifications: i.qualifications ?? null,
+    links: i.links ?? [],
+    files: ((i.files ?? []) as Upload[]).map((f) => ({ name: f.name, size: f.size ?? null, url: signed.get(f.path) ?? null })),
+  });
+
   const person = (id: string) => {
     const p = (profiles ?? []).find((x) => x.id === id);
     const a = (answers ?? []).find((x) => x.user_id === id);
@@ -68,7 +85,7 @@ Deno.serve(async (req) => {
       ...n,
       reason: n.status === "pending_review" ? (n.moderation as { verdict?: { reason?: string } })?.verdict?.reason ?? null : null,
       moderation: undefined,
-      applicants: (interests ?? []).filter((i) => i.need_id === n.id).map((i) => ({ ...person(i.user_id), at: i.created_at })),
+      applicants: (interests ?? []).filter((i) => i.need_id === n.id).map((i) => ({ ...person(i.user_id), at: i.created_at, application: application(i) })),
       calls: (meetings ?? []).filter((m) => m.need_id === n.id).map((m) => ({
         id: m.id, startsAt: m.starts_at, minutes: m.duration_min, meetUrl: m.meet_url, note: m.note, person: person(m.requester_id),
       })),

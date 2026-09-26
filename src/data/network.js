@@ -367,8 +367,8 @@ export class Network {
     return id;
   }
 
-  toggleInterest(id) {
-    const on = store.toggleInterest(id);
+  toggleInterest(id, application) {
+    const on = store.toggleInterest(id, application);
     this.refresh();
     return on;
   }

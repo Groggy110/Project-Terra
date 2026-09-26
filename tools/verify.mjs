@@ -185,7 +185,7 @@ await page.click('[data-view="needs"]');
 await wait(1000);
 const board = await page.evaluate(() => ({
   up: document.querySelector(".sheet").classList.contains("is-up"),
-  cards: document.querySelectorAll(".board .need").length,
+  cards: document.querySelectorAll(".bd__row").length,
 }));
 check("needs board opens with every need", board.up && board.cards === 66, JSON.stringify(board));
 

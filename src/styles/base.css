@@ -26,6 +26,8 @@
   --accent-ink: #ffffff;
   --accent-soft: rgba(47, 111, 208, 0.1);
   --accent-ring: rgba(47, 111, 208, 0.18);
+  /* "anywhere." in the headline, and the line under the wordmark. */
+  --brand-blue: var(--accent);
 
   --urgent: #c0362b;
   --soon: #cf7a25;
@@ -68,6 +70,18 @@
      easing, so the chrome and the globe look like one movement rather than
      two things that happen to start together. */
   --ease-move: cubic-bezier(0.4, 0.02, 0.2, 1);
+
+  /*
+   * The landing composition's unit: one pixel of the reference frame, a
+   * 1951 x 820 window, where the split entrance was tuned. Whichever of the
+   * two dimensions is shorter than the reference's proportions decides it,
+   * so the globe, the headline and the find bar keep the same sizes and gaps
+   * *relative to each other* on every screen — a narrower laptop gets the
+   * same picture smaller, with room above and below, rather than the same
+   * type crowding a planet that the height alone had sized. heroUnit() in
+   * app.js computes the same number for the camera; keep the two in step.
+   */
+  --u: clamp(0.72px, min(0.12195vh, 0.051256vw), 1.25px);
 }
 
 :root[data-theme="dark"] {
@@ -95,6 +109,7 @@
   --accent-hover: #639bf0;
   --accent-soft: rgba(76, 139, 234, 0.16);
   --accent-ring: rgba(76, 139, 234, 0.26);
+  --brand-blue: color-mix(in srgb, var(--accent) 70%, #fff);
 
   --urgent: #e2685a;
   --soon: #e0a153;
@@ -267,11 +282,13 @@ body.is-hero.hero-in .hero {
 /* The split entrance: a column to the right of the planet, set left-aligned,
    with the find bar standing under it (chrome.css). No disc behind the words
    here, so the paper veil and the glyph halos have nothing to do. */
+/* Positions are offsets from the middle of the window in --u, so the column
+   stays where it sits in the reference frame relative to the planet. */
 body.hero-split .hero {
-  left: 58%;
-  right: max(6vw, 48px);
-  width: auto;
-  top: 25%;
+  left: calc(50% + 138 * var(--u));
+  right: auto;
+  width: calc(692 * var(--u));
+  top: calc(50% - 205 * var(--u));
   translate: 0 -14px;
   text-align: left;
 }
@@ -294,15 +311,22 @@ body.hero-split .hero::before {
 
 body.hero-split .hero__title {
   margin: 0;
-  font-size: clamp(40px, 4.1vw, 66px);
+  font-size: calc(66 * var(--u));
   text-shadow: none;
 }
 
 body.hero-split .hero__sub {
-  margin: 20px 0 0;
+  margin: calc(20 * var(--u)) 0 0;
   max-width: 34em;
-  font-size: 17px;
+  font-size: calc(17 * var(--u));
   text-shadow: none;
+}
+
+body.hero-split .hero__eyebrow {
+  margin-bottom: calc(22 * var(--u));
+  padding: calc(7 * var(--u)) calc(14 * var(--u)) calc(7 * var(--u)) calc(12 * var(--u));
+  gap: calc(9 * var(--u));
+  font-size: calc(13 * var(--u));
 }
 
 /* Legibility is carried by the halo on the glyphs themselves; this is only a
@@ -367,6 +391,42 @@ body.hero-split .hero__sub {
   text-shadow:
     0 0 8px color-mix(in srgb, var(--paper) 90%, transparent),
     0 0 24px color-mix(in srgb, var(--paper) 70%, transparent);
+}
+
+/* A small ink pill above the headline with the live count, so the first thing
+   the page says is that there is work waiting. */
+.hero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 22px;
+  padding: 7px 14px 7px 12px;
+  border-radius: 999px;
+  background: #0b0f17;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 540;
+  letter-spacing: -0.004em;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 10px 24px -12px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme="dark"] .hero__eyebrow {
+  background: #131c2a;
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+
+.hero__eyebrow i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #ff5a4b;
+  box-shadow: 0 0 0 3px rgba(255, 90, 75, 0.22);
+}
+
+/* The one word in colour. */
+.hero__mark {
+  color: var(--brand-blue);
 }
 
 /* ---------- primitives ---------- */
@@ -464,8 +524,36 @@ body.hero-split .hero__sub {
   stroke: none;
 }
 
-.ico--theme {
-  stroke-width: 1.4;
+/* Theme: an icon only. The sun shows in dark mode, the moon in light, and
+   they turn past each other as the theme changes. */
+.theme-toggle {
+  position: relative;
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 999px;
+}
+
+.theme-toggle .ico {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  transition: opacity 0.25s ease, transform 0.35s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+
+.theme-toggle__moon {
+  opacity: 0;
+  transform: rotate(-70deg) scale(0.6);
+}
+
+:root[data-theme="light"] .theme-toggle__sun {
+  opacity: 0;
+  transform: rotate(70deg) scale(0.6);
+}
+
+:root[data-theme="light"] .theme-toggle__moon {
+  opacity: 1;
+  transform: none;
 }
 
 .badge {
@@ -599,7 +687,7 @@ body.hero-split .hero__sub {
 
   /* A card is a target, not a hover surface. */
   .need:active,
-  .board .need:active {
+  .bd__row:active {
     scale: 0.985;
   }
 

@@ -260,7 +260,7 @@ export function postNeedModal(layer, { ministry, onPosted } = {}) {
     const title = h("input", { class: "input", placeholder: "Part-time HR adviser", "data-autofocus": true });
     // Terra is for help given online, so the types are the two a person can be.
     const type = h("select", { class: "select" },
-      NEED_TYPES.filter((t) => t.id === "expertise" || t.id === "volunteers").map((t) => h("option", { value: t.id }, t.label)));
+      NEED_TYPES.filter((t) => t.id === "expertise" || t.id === "volunteers").map((t) => h("option", { value: t.id }, `${t.label} — ${t.note.toLowerCase()}`)));
     const urgency = h("select", { class: "select" }, URGENCIES.map((u) => h("option", { value: u.id, selected: u.id === "soon" }, u.label)));
     const focus = h("select", { class: "select" },
       FOCUS_AREAS.map((f) => h("option", { value: f.id, selected: f.id === ministry.focus?.[0] }, f.label)));

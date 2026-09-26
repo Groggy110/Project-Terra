@@ -476,12 +476,6 @@ export class Globe {
     this.controls.holdSpin(false);
   }
 
-  /** Letters every pin that fits, whatever the zoom — for the entrance. */
-  setLettering(on) {
-    this.labels.forceLettering = on;
-    this.dirty = true;
-  }
-
   /** Where the entrance frames the globe; see `shift` in the constructor. */
   setShift(fraction, { instant = false } = {}) {
     this.shiftTarget = fraction;

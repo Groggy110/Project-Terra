@@ -289,18 +289,12 @@ body.is-live .overlay {
   }
 }
 
-/* The mark itself, breathing rather than spinning.
-   The line drawing this replaces could turn on its axis because it had no up:
-   a wireframe globe looks the same at every angle. The painted one carries a
-   map and a pin, and rotating that in the image plane is not a globe turning,
-   it is a picture being spun. So the wait is carried by a slow swell instead,
-   and by the bar underneath, which is the honest progress indicator anyway. */
+/* The wordmark, breathing while the world loads; the bar underneath is the
+   honest progress indicator. */
 .boot__mark {
-  display: block;
-  width: 54px;
-  height: 54px;
-  margin: 0 auto 18px;
-  object-fit: contain;
+  display: inline-block;
+  margin: 0 auto 20px;
+  font-size: 30px;
   animation: boot-breathe 2.8s var(--ease) infinite;
 }
 

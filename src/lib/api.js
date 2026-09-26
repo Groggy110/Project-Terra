@@ -28,6 +28,7 @@ const shapeMinistry = (row) => ({
   languages: row.languages ?? [],
   contact: row.contact ?? "",
   blurb: row.blurb ?? "",
+  logo: row.logo_url ?? null,
   ownerId: row.owner_id,
 });
 
@@ -150,6 +151,50 @@ export async function setRole(role) {
   if (!auth?.user) throw new Error("not signed in");
   const { error } = await sb.from("profiles").update({ role }).eq("id", auth.user.id);
   if (error) throw error;
+}
+
+/* ---------------------------------------------------------------- avatar */
+
+const AVATAR_BUCKET = "avatars";
+
+/**
+ * The picture on the account chip: the ministry's logo for a ministry
+ * account, the person's photo otherwise. Each upload gets a fresh name, so
+ * the public URL changes and no cache shows the old one; the previous file
+ * is removed after the row points at the new one.
+ */
+export async function setAvatar(file, { ministryId = null } = {}) {
+  const sb = requireSupabase();
+  const { data: auth } = await sb.auth.getUser();
+  if (!auth?.user) throw new Error("sign in first");
+  if (!/^image\//.test(file.type)) throw new Error("Choose an image — PNG, JPG, WebP, GIF or SVG.");
+  if (file.size > 2 * 1024 * 1024) throw new Error("Use an image under 2 MB.");
+
+  const ext = (file.name.match(/\.(\w+)$/)?.[1] ?? "png").toLowerCase();
+  const path = `${auth.user.id}/${ministryId ? "logo" : "photo"}-${Date.now().toString(36)}.${ext}`;
+  const { error: upErr } = await sb.storage.from(AVATAR_BUCKET).upload(path, file, { contentType: file.type });
+  if (upErr) throw upErr;
+  const url = sb.storage.from(AVATAR_BUCKET).getPublicUrl(path).data.publicUrl;
+  return writeAvatar(sb, auth.user.id, ministryId, url);
+}
+
+export async function removeAvatar({ ministryId = null } = {}) {
+  const sb = requireSupabase();
+  const { data: auth } = await sb.auth.getUser();
+  if (!auth?.user) throw new Error("sign in first");
+  return writeAvatar(sb, auth.user.id, ministryId, null);
+}
+
+async function writeAvatar(sb, userId, ministryId, url) {
+  const table = ministryId ? "ministries" : "profiles";
+  const column = ministryId ? "logo_url" : "avatar_url";
+  const id = ministryId ?? userId;
+  const { data: before } = await sb.from(table).select(column).eq("id", id).maybeSingle();
+  const { error } = await sb.from(table).update({ [column]: url }).eq("id", id);
+  if (error) throw error;
+  const old = before?.[column]?.split(`/${AVATAR_BUCKET}/`)[1];
+  if (old) await sb.storage.from(AVATAR_BUCKET).remove([decodeURIComponent(old)]);
+  return url;
 }
 
 /* -------------------------------------------------------------- ministry */
@@ -277,17 +322,56 @@ export async function myInterests() {
   return new Set((data ?? []).map((r) => r.need_id));
 }
 
-export async function toggleInterest(needId, on) {
+const WORK_BUCKET = "work-samples";
+
+/**
+ * Picks up a need with an application: why, qualifications, links and files.
+ * Files go to the private work-samples bucket under the volunteer's own id
+ * first, so the row never points at an upload that failed.
+ */
+export async function expressInterest(needId, { why = "", qualifications = "", links = [], files = [] } = {}) {
   const sb = requireSupabase();
   const { data: auth } = await sb.auth.getUser();
   if (!auth?.user) throw new Error("sign in to pick up a need");
-  if (on) {
-    const { error } = await sb.from("interests").insert({ user_id: auth.user.id, need_id: needId });
-    if (error && error.code !== "23505") throw error; // 23505 = already there
-  } else {
-    const { error } = await sb.from("interests").delete().eq("user_id", auth.user.id).eq("need_id", needId);
-    if (error) throw error;
+
+  const uploaded = [];
+  for (const file of files) {
+    const safe = file.name.replace(/[^\w.-]+/g, "_").slice(-80);
+    const path = `${auth.user.id}/${needId}/${Date.now().toString(36)}-${safe}`;
+    const { error } = await sb.storage.from(WORK_BUCKET).upload(path, file, { contentType: file.type || undefined });
+    if (error) {
+      if (uploaded.length) await sb.storage.from(WORK_BUCKET).remove(uploaded.map((f) => f.path));
+      throw new Error(`Could not upload ${file.name}: ${error.message}`);
+    }
+    uploaded.push({ name: file.name, path, size: file.size, type: file.type });
   }
+
+  const { error } = await sb.from("interests").upsert({
+    user_id: auth.user.id,
+    need_id: needId,
+    why,
+    qualifications,
+    links,
+    files: uploaded,
+  });
+  if (error) throw error;
+}
+
+/** Withdraws from a need, taking any uploaded work with it. */
+export async function withdrawInterest(needId) {
+  const sb = requireSupabase();
+  const { data: auth } = await sb.auth.getUser();
+  if (!auth?.user) throw new Error("sign in first");
+  const { data: row } = await sb
+    .from("interests")
+    .select("files")
+    .eq("user_id", auth.user.id)
+    .eq("need_id", needId)
+    .maybeSingle();
+  const paths = (row?.files ?? []).map((f) => f.path).filter(Boolean);
+  if (paths.length) await sb.storage.from(WORK_BUCKET).remove(paths);
+  const { error } = await sb.from("interests").delete().eq("user_id", auth.user.id).eq("need_id", needId);
+  if (error) throw error;
 }
 
 /* -------------------------------------------------------------- meetings */

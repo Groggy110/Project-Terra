@@ -82,22 +82,6 @@ body.is-live .chrome {
   min-width: 0;
 }
 
-/* The watercolour mark, lifted out of the supplied lockup.
-   Bigger than the line drawing it replaces — a painted mark needs a few more
-   pixels than a 1.35px stroke before its continents read as continents — and
-   with a breath of shadow under it on the night sky, where a cut-out with no
-   ground under it floats. */
-.brand__mark {
-  width: 29px;
-  height: 29px;
-  flex: none;
-  object-fit: contain;
-}
-
-:root[data-theme="dark"] .brand__mark {
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.55));
-}
-
 /* Set in a serif to answer the wordmark under the globe in the supplied
    lockup, rather than reproducing that wordmark as a picture: it is navy, and
    navy is invisible against this theme's sky. As text it takes --ink and is
@@ -109,6 +93,21 @@ body.is-live .chrome {
   font-weight: 600;
   letter-spacing: -0.005em;
   color: var(--ink);
+  /* The wordmark stands alone, underlined in the blue of the headline's
+     "anywhere." — the one mark the brand carries. */
+  position: relative;
+  padding-bottom: 3px;
+}
+
+.brand__name::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--brand-blue);
 }
 
 .brand__sep {
@@ -240,11 +239,27 @@ body.is-hero .findbar {
 
 /* Split entrance: the bar joins the right-hand column under the copy. */
 body.is-hero.hero-split .findbar {
-  top: 62%;
-  left: 58%;
-  right: max(6vw, 48px);
+  top: calc(50% + 98 * var(--u));
+  left: calc(50% + 138 * var(--u));
+  right: calc(50% - 830 * var(--u));
   max-width: none;
   margin-inline: 0;
+}
+
+/* The bar is part of the composition while it stands in the column. */
+body.is-hero.hero-split .search {
+  height: calc(54 * var(--u));
+}
+
+body.is-hero.hero-split .search input {
+  font-size: calc(16.5 * var(--u));
+  padding-left: calc(52 * var(--u));
+}
+
+body.is-hero.hero-split .search__ico {
+  left: calc(20 * var(--u));
+  width: calc(19 * var(--u));
+  height: calc(19 * var(--u));
 }
 
 .search {
@@ -880,7 +895,7 @@ body.is-hero.hero-split .filters {
 .hint {
   position: absolute;
   left: 50%;
-  bottom: calc(34px + var(--safe-b));
+  bottom: calc(72px + var(--safe-b));
   translate: -50% 0;
   font-family: var(--mono);
   font-size: 10.5px;
@@ -892,21 +907,41 @@ body.is-hero.hero-split .filters {
   transition: opacity 0.4s var(--ease);
 }
 
+/* The way into the board: a real button, named, rather than a handle you
+   had to know was there. */
 .grabber {
   position: absolute;
   left: 50%;
-  bottom: calc(9px + var(--safe-b));
+  bottom: calc(20px + var(--safe-b));
   translate: -50% 0;
-  width: 38px;
-  height: 5px;
-  border-radius: 99px;
-  background: color-mix(in srgb, var(--ink) 30%, transparent);
-  transition: background 0.2s, height 0.2s, width 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 20px 0 17px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--surface-veil);
+  backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: var(--shadow-2);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 560;
+  letter-spacing: -0.008em;
+  color: var(--ink);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.2s, translate 0.2s var(--ease-out), box-shadow 0.2s;
+}
+
+.grabber .ico {
+  width: 16px;
+  height: 16px;
 }
 
 .grabber:hover {
-  background: color-mix(in srgb, var(--ink) 52%, transparent);
-  width: 54px;
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  translate: -50% -2px;
 }
 
 /* ---------- toasts ---------- */
@@ -1041,11 +1076,6 @@ body.is-hero.hero-split .filters {
 
   .brand__name {
     font-size: 17.5px;
-  }
-
-  .brand__mark {
-    width: 26px;
-    height: 26px;
   }
 
   .topbar {
@@ -1189,7 +1219,9 @@ body.is-hero.hero-split .filters {
   /* The dial is a mouse affordance. Fingers pinch and drag, and on a phone
      these four buttons only cover the globe. */
   .dial,
-  .hint {
+  .hint,
+  /* The panel sheet carries its own "Open needs board" on a phone. */
+  .grabber {
     display: none;
   }
 

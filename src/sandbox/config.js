@@ -25,7 +25,6 @@ export const TARGETS = [
   { key: "dial", label: "Zoom dial", sel: ".dial" },
   { key: "hint", label: "Drag hint", sel: ".hint" },
   { key: "panel", label: "Side panel", sel: ".panel" },
-  { key: "rail", label: "Rail", sel: ".rail" },
   { key: "sheet", label: "Needs board", sel: ".sheet" },
   { key: "grabber", label: "Board grabber", sel: ".grabber" },
   { key: "toasts", label: "Toasts", sel: ".toasts" },

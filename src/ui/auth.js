@@ -44,7 +44,6 @@ export class AuthGate {
       h(
         "div",
         { class: "brand gate__brand", "aria-hidden": "true" },
-        h("img", { class: "brand__mark", src: "/logo-mark.png", alt: "", width: 256, height: 256, decoding: "async" }),
         h("span", { class: "brand__name", text: "Terra" }),
       ),
       this.card,

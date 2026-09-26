@@ -24,7 +24,7 @@ interface Verdict {
   tags?: string[];
 }
 
-const INSTRUCTIONS = /* the tag rules are appended below */ `You screen submissions to Terra, a public map where Christian ministries post what they need — volunteers, expertise, supplies, funding or partner organisations.
+const INSTRUCTIONS = /* the tag rules are appended below */ `You screen submissions to Terra, a public map where Christian ministries post what they need — hands-on help (someone does the work), advisory help (someone guides their team), supplies, funding or partner organisations.
 
 Decide whether a submission is a genuine, plausible ministry need.
 

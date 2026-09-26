@@ -51,9 +51,10 @@ export const store = {
     return !!this.state.interests[id];
   },
 
-  toggleInterest(id, note = "") {
+  /** `application` is the answers only — file names, never the files. */
+  toggleInterest(id, application = {}) {
     if (this.state.interests[id]) delete this.state.interests[id];
-    else this.state.interests[id] = { at: new Date().toISOString(), note };
+    else this.state.interests[id] = { at: new Date().toISOString(), ...application };
     this.save();
     return this.interestIn(id);
   },
