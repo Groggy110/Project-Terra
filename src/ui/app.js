@@ -24,15 +24,6 @@ const THEME_LABELS = { light: "Soft light", dark: "Deep night" };
 
 /** How long after the loading screen lifts the headline lands. */
 const HERO_IN_MS = 520;
-/**
- * And how long it then holds before the page settles into the working view.
- * Measured from the headline's cue, not from its arrival: the words take
- * 1.1s to land, so this is about eight tenths of a second of stillness with
- * the sentence fully up. It is a headline over a globe, not a splash screen —
- * it has to be gone before anyone starts waiting for it. Lengthened to about
- * two seconds of stillness once the copy grew to a full sentence and a line.
- */
-const HERO_HOLD_MS = 3100;
 
 /** The side-by-side entrance: wide enough for two columns, and landscape. */
 const HERO_SPLIT = window.matchMedia("(min-width: 1000px) and (min-aspect-ratio: 4/3)");
@@ -138,8 +129,14 @@ export class App {
       overlay: this.el.overlay,
       hero: split ? { shift: HERO_SHIFT, dist: HERO_DIST } : undefined,
       onProgress: (p, label) => boot.progress(p, label),
-      onPinClick: (m) => this.openMinistry(m, { fly: true }),
-      onGlobeClick: () => this.#deselect(),
+      onPinClick: (m) => {
+        this.#leaveHero();
+        this.openMinistry(m, { fly: true });
+      },
+      onGlobeClick: () => {
+        if (document.body.classList.contains("is-hero")) return this.#leaveHero({ settle: true });
+        this.#deselect();
+      },
       onFirstGesture: () => {
         this.#leaveHero();
         this.#hideHint();
@@ -207,7 +204,8 @@ export class App {
     // globe has said where they want to be, and having it fly out from under
     // them is the rudest thing the page could do.
     this.heroInTimer = setTimeout(() => document.body.classList.add("hero-in"), HERO_IN_MS);
-    this.heroTimer = setTimeout(() => this.#leaveHero({ settle: true }), HERO_IN_MS + HERO_HOLD_MS);
+    // No timed exit: the landing screen holds until someone engages — a
+    // click or drag on the globe, or a search submitted with Enter.
 
     if (!store.seen) {
       store.markSeen();
@@ -325,10 +323,7 @@ export class App {
       this.#renderSuggest();
       this.applyQuery();
     });
-    search.addEventListener("focus", () => {
-      this.#leaveHero();
-      this.#renderSuggest();
-    });
+    search.addEventListener("focus", () => this.#renderSuggest());
     search.addEventListener("blur", () => setTimeout(() => this.#hideSuggest(), 140));
     search.addEventListener("keydown", (e) => this.#suggestKeys(e));
     this.el.clearSearch.addEventListener("click", () => {
@@ -636,28 +631,75 @@ export class App {
 
   /* ----------------------------------------------------------- suggestions */
 
+  /**
+   * The list under the search bar: the needs that match, best first, as you
+   * type — then a few other things the text could mean (a skill, a
+   * ministry, a filter). Enter with nothing highlighted submits the search:
+   * the page settles into the working view and the list stays open.
+   */
   #renderSuggest() {
-    const rows = this.net.suggest(this.el.search.value);
+    const text = this.el.search.value.trim();
     const box = this.el.suggest;
     clear(box);
-    this.suggestRows = rows;
+    this.suggestRows = [];
     this.suggestCursor = -1;
-    if (!rows.length) {
+    if (text.length < 2) {
       box.hidden = true;
       return;
     }
-    for (const row of rows) {
-      box.appendChild(
-        h(
+
+    const results = this.net.select(this.query);
+    const needRows = results.slice(0, 6).map((n) => ({ kind: "need", need: n }));
+    const others = this.net.suggest(text, 6).filter((r) => r.kind !== "need").slice(0, 4);
+    this.suggestRows = [...needRows, ...others];
+
+    const row = (r) => {
+      if (r.kind === "need") {
+        const n = r.need;
+        return h(
           "button",
-          { class: "suggest__row", onclick: () => this.#takeSuggestion(row) },
-          h("span", { class: "suggest__kind", text: row.kind }),
-          h("b", { text: row.label }),
-          h("span", { text: row.note }),
-        ),
+          { class: "suggest__row result", onclick: () => this.#takeSuggestion(r) },
+          h("span", { class: `dot dot--${n.urgency}` }),
+          h("span", { class: "result__text" },
+            h("b", { text: n.title }),
+            h("small", { text: `${n.ministryName} · ${n.city}` }),
+          ),
+          h("span", { class: "result__meta", text: n.commitment || "" }),
+        );
+      }
+      return h(
+        "button",
+        { class: "suggest__row", onclick: () => this.#takeSuggestion(r) },
+        h("span", { class: "suggest__kind", text: r.kind }),
+        h("b", { text: r.label }),
+        h("span", { text: r.note }),
+      );
+    };
+
+    box.appendChild(
+      h("div", { class: "suggest__group ml" },
+        results.length ? `${results.length} open need${results.length === 1 ? "" : "s"}` : "No open needs match",
+      ),
+    );
+    needRows.forEach((r) => box.appendChild(row(r)));
+    if (results.length > needRows.length) {
+      box.appendChild(
+        h("button", { class: "suggest__more", onclick: () => { this.#hideSuggest(); this.setView("needs"); } },
+          `See all ${results.length} on the needs board →`),
       );
     }
+    if (others.length) {
+      box.appendChild(h("div", { class: "suggest__group ml", text: "Also try" }));
+      others.forEach((r) => box.appendChild(row(r)));
+    }
     box.hidden = false;
+  }
+
+  /** Enter: take the search into the working view, results still showing. */
+  #submitSearch() {
+    this.#leaveHero({ settle: true });
+    this.applyQuery();
+    this.#renderSuggest();
   }
 
   #hideSuggest() {
@@ -670,17 +712,20 @@ export class App {
       this.#hideSuggest();
       return;
     }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (this.suggestCursor >= 0 && rows[this.suggestCursor]) this.#takeSuggestion(rows[this.suggestCursor]);
+      else if (this.el.search.value.trim()) this.#submitSearch();
+      return;
+    }
     if (!rows.length || this.el.suggest.hidden) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const dir = e.key === "ArrowDown" ? 1 : -1;
       this.suggestCursor = (this.suggestCursor + dir + rows.length) % rows.length;
-      const items = [...this.el.suggest.children];
+      const items = [...this.el.suggest.querySelectorAll(".suggest__row")];
       items.forEach((el, i) => el.classList.toggle("is-cursor", i === this.suggestCursor));
       items[this.suggestCursor]?.scrollIntoView({ block: "nearest" });
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      this.#takeSuggestion(rows[Math.max(this.suggestCursor, 0)]);
     }
   }
 
