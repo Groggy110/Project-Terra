@@ -154,27 +154,39 @@ button {
   transition: opacity 0.5s var(--ease);
 }
 
-/* The wash is the ground, at full strength: pale blue pools with granulation
-   in them, on near-white paper, and a clear middle for the globe to rest in.
-   Held back, it read as a flat grey field with a hint of something in it. */
+/* The light ground: the daylight counterpart of the night sky — clean,
+   quiet, and there only to frame the planet. Off-white, a touch brighter
+   behind the globe and cooling toward the edges, with a faint dot grid that
+   fades out before it reaches the disc. The same idiom most light-mode
+   globe and product heroes settle on. Pure CSS, so nothing to load. */
+.paper {
+  background:
+    radial-gradient(ellipse 70% 80% at 50% 48%, #fbfcfe 0%, #f3f6fa 45%, #e7edf4 100%);
+}
+
 .paper::before {
   content: "";
   position: absolute;
   inset: 0;
-  background-image: url("/textures/paper-light.jpg");
-  /* The whole sheet, not a crop of it. `cover` on a wide window frames two or
-     three of the largest pools and nothing else, and at that size a pool is a
-     grey cloud rather than a wash; fitting the sheet keeps its composition —
-     clear in the middle, gathered at the edges — which is the reason it was
-     painted that way. The squash from 16:9 to the window is invisible on a
-     field with no straight line in it. */
-  background-size: 100% 100%;
+  background-image: radial-gradient(circle, rgba(20, 38, 64, 0.13) 1px, transparent 1.4px);
+  background-size: 24px 24px;
+  background-position: center;
+  -webkit-mask-image: radial-gradient(ellipse 75% 85% at 50% 48%, transparent 32%, #000 78%);
+  mask-image: radial-gradient(ellipse 75% 85% at 50% 48%, transparent 32%, #000 78%);
+  opacity: 0.8;
+}
+
+:root[data-theme="dark"] .paper {
+  background: var(--paper);
 }
 
 /* Stars, not a wash. Tiled rather than stretched: the sheet is built to wrap
    (tools/make_stars.py), so the field stays the same density on a laptop and
    on a wall, where a stretched one would smear into streaks. */
 :root[data-theme="dark"] .paper::before {
+  -webkit-mask-image: none;
+  mask-image: none;
+  background-position: 0 0;
   background-image: url("/textures/stars.png");
   background-size: 1024px 1024px;
   background-repeat: repeat;
@@ -189,7 +201,7 @@ button {
   inset: 0;
   background-image: url("/textures/grain.png");
   background-size: 420px;
-  opacity: 0.05;
+  opacity: 0.035;
   mix-blend-mode: multiply;
 }
 

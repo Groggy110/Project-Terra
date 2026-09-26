@@ -367,16 +367,16 @@ body.board-open .rail {
   background: var(--urgent);
 }
 
-.rail__dot--urgent {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--urgent) 26%, transparent);
-}
-
+/* Matches the map: solid red, soft red, and the ringed white city dot. */
 .rail__dot--open {
-  background: color-mix(in srgb, var(--urgent) 62%, transparent);
+  background: color-mix(in srgb, var(--urgent) 72%, #fff);
 }
 
 .rail__dot--city {
-  background: color-mix(in srgb, var(--ink) 34%, transparent);
+  width: 5px;
+  height: 5px;
+  background: #f4f7fb;
+  box-shadow: 0 0 0 1px rgba(8, 16, 28, 0.6);
 }
 
 .rail__head,

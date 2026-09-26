@@ -51,119 +51,62 @@ body.is-live .overlay {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  /* The tip of the pin, not its middle, stands on the city. */
-  translate: -7px -19px;
+  translate: -4.5px -4.5px;
   cursor: pointer;
   background: none;
 }
 
-/* A 14px pin is not a target. The pad is a pseudo-element rather than
+/* A 10px dot is not a target. The pad is a pseudo-element rather than
    padding, so growing what you can hit never grows what the layout claims. */
 .pin::before {
   content: "";
   position: absolute;
-  left: -8px;
+  left: -9px;
   top: 50%;
   translate: 0 -50%;
-  width: 30px;
-  height: 32px;
+  width: 29px;
+  height: 29px;
   border-radius: 999px;
 }
 
-/* Small. A pin is a mark on a map, not a button sitting on one: a red head
-   with a white rim and a white eye, and a soft shadow under it so it stands
-   off the ground rather than being printed on it. */
+/* Minimal: a flat dot with a thin rim and a whisper of shadow, and nothing
+   round it. Urgency is carried by the colour alone — full red for a ministry
+   with urgent needs, a softer red for the rest — so a busy region reads as a
+   scatter of marks rather than a field of halos. */
 .pin__dot {
   position: relative;
-  display: block;
-  width: 14px;
-  height: 19px;
+  width: 8px;
+  height: 8px;
   flex: none;
-  color: var(--urgent);
-  transform-origin: 50% 100%;
-  transition: scale 0.18s var(--ease-out);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--urgent) 72%, #fff);
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.95),
+    0 1px 3px rgba(16, 42, 74, 0.3);
+  transition: scale 0.18s var(--ease-out), box-shadow 0.2s;
 }
 
-.pin__dot svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  filter: drop-shadow(0 1px 1px rgba(16, 42, 74, 0.35)) drop-shadow(0 2px 4px rgba(16, 42, 74, 0.25));
+.pin.is-urgent .pin__dot {
+  background: var(--urgent);
 }
 
-.pin__dot path {
-  fill: currentColor;
-  stroke: #fff;
-  stroke-width: 1.4;
-  stroke-linejoin: round;
+:root[data-theme="dark"] .pin__dot {
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.9),
+    0 1px 4px rgba(0, 0, 0, 0.55);
 }
 
-.pin__dot circle {
-  fill: #fff;
+/* Hover and selection are the dot itself getting larger, with the rim
+   thickening on the selected one — no rings, no pulse. */
+.pin:hover .pin__dot {
+  scale: 1.25;
 }
 
-:root[data-theme="dark"] .pin__dot svg {
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55)) drop-shadow(0 2px 5px rgba(0, 0, 0, 0.5));
-}
-
-/* A ministry with urgent needs carries a standing ring round the spot it
-   marks, so the pressure on the map reads before anything has been opened.
-   The hover ring below is a separate ::after, which is why this one can
-   simply sit there. Both are flattened onto the ground at the tip. */
-.pin.is-urgent .pin__dot::before,
-.pin__dot::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -3px;
-  width: 16px;
-  height: 7px;
-  translate: -50% 0;
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.pin.is-urgent .pin__dot::before {
-  border: 1.4px solid color-mix(in srgb, var(--urgent) 45%, transparent);
-  background: color-mix(in srgb, var(--urgent) 14%, transparent);
-}
-
-.pin__dot::after {
-  border: 1.5px solid var(--urgent);
-  opacity: 0;
-  scale: 0.6;
-  transition: opacity 0.24s, scale 0.28s var(--ease-out);
-}
-
-.pin:hover .pin__dot,
 .pin.is-active .pin__dot {
-  scale: 1.15;
-}
-
-.pin:hover .pin__dot::after,
-.pin.is-active .pin__dot::after {
-  opacity: 0.6;
-  scale: 1.3;
-}
-
-.pin.is-active .pin__dot::after {
-  animation: pin-pulse 2.4s var(--ease) infinite;
-}
-
-@keyframes pin-pulse {
-  0% {
-    opacity: 0.6;
-    scale: 1.3;
-  }
-  70% {
-    opacity: 0;
-    scale: 2.4;
-  }
-  100% {
-    opacity: 0;
-    scale: 2.4;
-  }
+  scale: 1.4;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 1px 5px rgba(16, 42, 74, 0.4);
 }
 
 /* Taken out of the flow: in it, a chip that is merely transparent still gave
