@@ -17,7 +17,7 @@
   /* The colour the ground is actually painted, which the hero scrim and the
      headline's halo both mix from: a scrim in --surface reads as a white
      card laid on the paper, one in --paper reads as the paper itself. */
-  --paper: #f4f8fc;
+  --paper: #f4f8fc; /* STYLE.themes.light.background.page takes over once applied */
   --surface-soft: #f3f6fa;
   --surface-sunk: #eaf0f6;
 
@@ -101,7 +101,7 @@
      black, so that the rim light is unarguably the brightest thing on the
      page. Everything that mixes from --paper — the top bar's wash, the
      hero's halo, the sign-in scrim — follows it there on its own. */
-  --paper: #000206;
+  --paper: #000206; /* STYLE.themes.dark.background.page */
   --surface-soft: #18222f;
   --surface-sunk: #1d2836;
 
@@ -161,78 +161,64 @@ button {
 
 /* ---------- ground ---------- */
 
+/* The ground behind the canvas. Every value is STYLE.themes.*.background
+   (src/style/styleConfig.js), written as custom properties by
+   src/style/css.js; the var() fallback is only what shows for the instant
+   before that sheet exists.
+
+   Dark: the sky the globe is photographed against, black, with a tiled star
+   sheet. Light: off-white, a touch brighter behind the globe and cooling
+   toward the edges, with a faint dot grid that fades out before it reaches
+   the disc, and a breath of paper grain. */
 .paper {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background-color: var(--paper);
+  background: var(--bg-fill, var(--paper));
   transition: opacity 0.5s var(--ease);
 }
 
-/* The light ground: the daylight counterpart of the night sky — clean,
-   quiet, and there only to frame the planet. Off-white, a touch brighter
-   behind the globe and cooling toward the edges, with a faint dot grid that
-   fades out before it reaches the disc. The same idiom most light-mode
-   globe and product heroes settle on. Pure CSS, so nothing to load. */
-.paper {
-  background:
-    radial-gradient(ellipse 70% 80% at 50% 48%, #fbfcfe 0%, #f3f6fa 45%, #e7edf4 100%);
-}
-
+/* The pattern layer: stars (tiled rather than stretched — the sheet is built
+   to wrap, so the field stays the same density on a laptop and on a wall),
+   the dot grid, or nothing. */
 .paper::before {
   content: "";
   position: absolute;
   inset: 0;
-  background-image: radial-gradient(circle, rgba(20, 38, 64, 0.13) 1px, transparent 1.4px);
-  background-size: 24px 24px;
-  background-position: center;
-  -webkit-mask-image: radial-gradient(ellipse 75% 85% at 50% 48%, transparent 32%, #000 78%);
-  mask-image: radial-gradient(ellipse 75% 85% at 50% 48%, transparent 32%, #000 78%);
-  opacity: 0.8;
-}
-
-:root[data-theme="dark"] .paper {
-  background: var(--paper);
-}
-
-/* Stars, not a wash. Tiled rather than stretched: the sheet is built to wrap
-   (tools/make_stars.py), so the field stays the same density on a laptop and
-   on a wall, where a stretched one would smear into streaks. */
-:root[data-theme="dark"] .paper::before {
-  -webkit-mask-image: none;
-  mask-image: none;
-  background-position: 0 0;
-  background-image: url("/textures/stars.png");
-  background-size: 1024px 1024px;
+  background-image: var(--bg-pattern-image, none);
+  background-size: var(--bg-pattern-size, auto);
+  background-position: var(--bg-pattern-position, 0 0);
   background-repeat: repeat;
-  opacity: 0.85;
+  -webkit-mask-image: var(--bg-pattern-mask, none);
+  mask-image: var(--bg-pattern-mask, none);
+  opacity: var(--bg-pattern-opacity, 0);
+  animation: var(--bg-pattern-anim, none);
 }
 
+@keyframes terra-paper-drift {
+  to {
+    background-position: var(--bg-pattern-travel) 0;
+  }
+}
 
-
-.paper::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: url("/textures/grain.png");
-  background-size: 420px;
-  opacity: 0.035;
-  mix-blend-mode: multiply;
+@keyframes terra-paper-twinkle {
+  to {
+    opacity: var(--bg-pattern-dim);
+  }
 }
 
 /* Grain is a property of paper, and over a night sky it is only noise — so
-   the dark theme drops it.
-
-   It used to be spent on a CSS gradient standing in for the rim light
-   bleeding off the top of the limb, because the halo shader's bloom stopped
-   at the edge of the globe. It no longer does: the spill now reaches 1.2
-   radii past the limb, which at the framed distance is most of the way to the
-   top of the window, and it is anchored to the *disc* rather than to the
-   viewport. Two glows, one following the globe and one bolted to the top of
-   the page, drifted apart the moment anybody dragged — and the CSS one gave
-   itself away as a soft ellipse sitting over the sky. */
-:root[data-theme="dark"] .paper::after {
-  content: none;
+   the dark theme leaves it out. (It once stood in for the rim light bleeding
+   off the top of the limb; the halo shader's spill does that now, anchored
+   to the disc rather than to the viewport.) */
+.paper::after {
+  content: var(--bg-grain-content, none);
+  position: absolute;
+  inset: 0;
+  background-image: url("/textures/grain.png");
+  background-size: var(--bg-grain-size);
+  opacity: var(--bg-grain-opacity);
+  mix-blend-mode: multiply;
 }
 
 /* ---------- hero ---------- */

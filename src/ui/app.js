@@ -20,6 +20,7 @@ import { questionnaireModal } from "./questionnaire.js";
 import { ministryModal, postNeedModal as postNeedForm } from "./ministry.js";
 import { Recommendations } from "./recommend.js";
 import * as api from "../lib/api.js";
+import { applyStyle } from "../style/applyStyle.js";
 
 
 /** How long after the loading screen lifts the headline lands. */
@@ -60,6 +61,9 @@ function heroFrame() {
 
 export class App {
   constructor() {
+    // The look — sky, pins, labels — is STYLE, written into the page before
+    // anything is drawn over it. The globe picks up its half when it starts.
+    applyStyle();
     // Empty until the backend answers. ?demo loads the fictional set instead,
     // which is the only way to see a populated globe before anyone has posted.
     this.demo = new URLSearchParams(location.search).has("demo");

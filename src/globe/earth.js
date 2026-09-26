@@ -1,14 +1,15 @@
 /**
- * The three drawn objects and the two grading presets they share.
+ * The drawn objects, and the one function that grades them from STYLE.
  *
  * Colour management is switched off on purpose: every material here is custom
  * and the whole grade is authored in gamma space, where a tone curve behaves
- * the way a cartographer expects. Nothing is auto-converted, so the values in
- * THEMES below are literally the values the shader multiplies.
+ * the way a cartographer expects. Nothing is auto-converted, so the colours in
+ * src/style/styleConfig.js are literally the values the shader multiplies.
  */
 import {
   Color,
   ColorManagement,
+  DataTexture,
   LinearFilter,
   LinearMipmapLinearFilter,
   Mesh,
@@ -26,118 +27,14 @@ import earthFrag from "./shaders/earth.frag.glsl?raw";
 import cloudsFrag from "./shaders/clouds.frag.glsl?raw";
 import haloVert from "./shaders/halo.vert.glsl?raw";
 import haloFrag from "./shaders/halo.frag.glsl?raw";
+import gradeGlsl from "./shaders/grade.glsl?raw";
+import effectsGlsl from "./shaders/effects.glsl?raw";
+import postFrag from "./shaders/post.frag.glsl?raw";
+import { DEG } from "./geo.js";
 
 ColorManagement.enabled = false;
 
-export const THEMES = {
-  /**
-   * Light: the same lamp, overhead, with enough fill under it that nothing
-   * goes black. A form sitting on watercolour paper cannot also have a globe
-   * with a brooding shadow gathering at the bottom of it — so the terminator
-   * is still there, still top-down, but it bottoms out at a dimmer version of
-   * the surface rather than at night.
-   */
-  light: {
-    ocean: { deep: "#224c76", mid: "#2c6597", shelf: "#4b92c0" },
-    snow: "#f6f9fd",
-    atmo: "#d6e7f8",
-    land: { gamma: 0.56, sat: 1.3, gain: 1.03, lift: 0.015 },
-    relief: 4.9,
-    sunMix: 0.7,
-    ambient: 0.56,
-    termWidth: 0.62,
-    termGamma: 1.15,
-    night: "#96afc9",
-    // The haze held to a bright rim at the limb rather than a veil over the
-    // disc, and a soft glint off the sea.
-    spec: 0.26,
-    fresnel: 0.68,
-    fresnelPow: 3.6,
-    rimBase: 0.58,
-    snowAmt: 0.88,
-    facet: { amount: 0.85, scale: 26, tilt: 0.34, flat: 0.5, edge: 0.07, edgeInk: 0.2 },
-    // Streamed tiles, brought back to Blue Marble's footing before the land
-    // grade above runs over both.
-    //
-    // Blue Marble is a flat, dark, low-contrast plate and `land.gamma` of 0.56
-    // exists to open it up. A true-colour tile arrives already opened up, and
-    // running the same curve over it a second time is what turned Bangkok
-    // milky — a city with no blacks in it, behind what looked like haze.
-    //
-    // So nearly all of the curve comes back out — a shade less than in the
-    // night preset, because this page is paper.
-    // Net of the land grade above: gamma ~0.9, saturation ~1.05, gain ~1.04 —
-    // Esri's imagery very nearly as Esri publishes it, opened up a shade for
-    // the paper.
-    detail: { gamma: 1.6, sat: 0.81, gain: 1.01, lift: 0.0, sea: 0.4 },
-    // `real` swaps the synthetic sheet for NASA's Blue Marble cloud composite
-    // once it has streamed in (globe.js) — a real day's weather, at
-    // `realOpacity`. realLo/Hi are where its grey floor ends and where it is
-    // solid cloud. The synthetic sheet, at `opacity`, stands in until then.
-    clouds: {
-      tint: "#ffffff", shadow: "#d0deec", opacity: 0.27, sunMix: 0.45, lo: 0.43, hi: 0.96, gamma: 1.0, fade: 0,
-      real: 1, realOpacity: 0.72, realLo: 0.22, realHi: 0.88,
-    },
-    // An even glow round the whole silhouette, a little brighter toward the lamp.
-    halo: { inner: "#e6f2fc", outer: "#c6def5", strength: 1.0, spread: 0.08, topBias: 0.7, falloff: 0.8, bloom: 0.3, bloomSpread: 0.38 },
-    // Straight up the screen. Not a world direction — see globe.js.
-    sunView: [0, 0.97, 0.24],
-  },
-
-  /**
-   * Dark: the reference frame — a planet photographed from orbit against
-   * black, with the sun not overhead but *behind and above* it.
-   *
-   * That last part is what the whole preset turns on. A lamp in front of the
-   * globe lights the disc you are looking at and leaves only a sliver of
-   * night at the bottom; a lamp behind its top edge throws the terminator up
-   * across the visible face, so the southern third falls away into nothing
-   * and the top limb goes white-hot where the light grazes the atmosphere.
-   * Hence the negative z in sunView, and hence a terminator that is wide
-   * (it has most of the disc to cross) rather than the tight one a
-   * front-lit globe wants.
-   */
-  dark: {
-    ocean: { deep: "#072238", mid: "#16608f", shelf: "#3fabdc" },
-    snow: "#e4eefa",
-    atmo: "#3f93e6",
-    land: { gamma: 0.5, sat: 1.62, gain: 1.14, lift: 0.005 },
-    // Strong. The reference reads as embossed relief — dune fields and
-    // ranges lit from the side — not as a photograph laid on a ball.
-    relief: 7.6,
-    sunMix: 1.0,
-    // Not zero: a globe whose underside is literally black loses its
-    // silhouette against a near-black sky, and the reference keeps a faint
-    // blue reading of the terrain all the way round.
-    ambient: 0.04,
-    termWidth: 0.74,
-    termGamma: 1.35,
-    night: "#04101d",
-    spec: 0.3,
-    fresnel: 0.78,
-    fresnelPow: 2.0,
-    // Nearly nothing away from the light: the reference's lower limb is
-    // black, with no outline drawn round the dark side of the disc.
-    rimBase: 0.0,
-    snowAmt: 0.22,
-    // A whisper. The land in the reference is painted relief with a fine
-    // crazing over the vegetation, not a mosaic of tiles — so the cells are
-    // small, barely tilted, and keep the imagery's own colour instead of
-    // flattening to one per cell.
-    facet: { amount: 0.7, scale: 74, tilt: 0.08, flat: 0.06, edge: 0.055, edgeInk: -0.5 },
-    // Same idea against a much harder grade: gamma 0.5, saturation 1.62 and a
-    // gain over one would turn a satellite tile into a poster. Net: gamma
-    // 1.0, saturation 1.05, gain 1.0 — the imagery as published, with the
-    // theme's colour laid over it rather than through it twice.
-    detail: { gamma: 2.0, sat: 0.65, gain: 0.88, lift: 0.0, sea: 0.5 },
-    clouds: { tint: "#ffffff", shadow: "#0a1524", opacity: 0.98, sunMix: 0.72, lo: 0.42, hi: 0.95, gamma: 2.2, fade: 1 },
-    halo: { inner: "#eaf5ff", outer: "#4180c6", strength: 1.9, spread: 0.058, topBias: 0.006, falloff: 4.0, bloom: 1.0, bloomSpread: 1.4 },
-    // Behind and above, a touch to the left — see the note above.
-    sunView: [-0.16, 0.982, -0.1],
-  },
-};
-
-function prepare(texture, { mips = true } = {}) {
+export function prepare(texture, { mips = true } = {}) {
   // The shader derives uv from latitude, so v = 0 is the north pole and must
   // land on the image's first row. three's flipY default puts v = 0 at the
   // last row instead - the convention geometry UVs want - which would sample
@@ -150,11 +47,72 @@ function prepare(texture, { mips = true } = {}) {
   return texture;
 }
 
-export function createEarth({ base, aux, lines, mask, baseInk, window, detail, detailWindow }) {
+/**
+ * The final grade's uniforms, shared by reference between the surface and the
+ * cloud sheet, so one write grades both.
+ */
+function createGradeUniforms() {
+  return {
+    uGrade: { value: 0 },
+    uGradeMix: { value: 1 },
+    uGradeBrightness: { value: 0 },
+    uGradeContrast: { value: 1 },
+    uGradeSaturation: { value: 1 },
+    uGradeVibrance: { value: 0 },
+    uGradeHue: { value: 0 },
+    uGradeTemperature: { value: 0 },
+    uGradeTint: { value: 0 },
+    uGradeLift: { value: new Vector3() },
+    uGradeGamma: { value: new Vector3() },
+    uGradeGain: { value: new Vector3() },
+  };
+}
+
+/** Extra lights and fog, shared by reference between the surface and the clouds. */
+function createEffectUniforms() {
+  return {
+    uAmbientLight: { value: new Vector3() },
+    uHemiOn: { value: 0 },
+    uHemiSky: { value: new Vector3() },
+    uHemiGround: { value: new Vector3() },
+    uFillLight: { value: new Vector3() },
+    uFillDir: { value: new Vector3(0, 0, 1) },
+    uRimLight: { value: new Vector3() },
+    uRimDir: { value: new Vector3(0, 0, -1) },
+    uRimPower: { value: 3 },
+    uFog: { value: 0 },
+    uFogMode: { value: 0 },
+    uFogColor: { value: new Color() },
+    uFogNear: { value: 2.6 },
+    uFogFar: { value: 5.5 },
+    uFogDensity: { value: 0.3 },
+  };
+}
+
+/** One black texel, so the night-lights sampler is never unbound. */
+const BLACK = new DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+BLACK.needsUpdate = true;
+
+export function createEarth(
+  { base, aux, lines, mask, baseInk, window, detail, detailWindow },
+  { segments = 256, grade = createGradeUniforms(), effects = createEffectUniforms() } = {},
+) {
   prepare(base);
   prepare(aux);
 
   const uniforms = {
+    ...grade,
+    ...effects,
+    uLandTint: { value: new Color(1, 1, 1) },
+    uLandTintAmt: { value: 0 },
+    uEmissive: { value: new Vector3() },
+    uEmissiveNight: { value: 1 },
+    uGrid: { value: 0 },
+    uGridColor: { value: new Color(1, 1, 1) },
+    uGridSpacing: { value: 15 },
+    uGridWidth: { value: 1 },
+    uNightTex: { value: BLACK },
+    uNightLights: { value: new Vector3() },
     uBase: { value: base },
     uAux: { value: aux },
     uLines: { value: lines },
@@ -186,6 +144,11 @@ export function createEarth({ base, aux, lines, mask, baseInk, window, detail, d
     uRelief: { value: 4 },
     uSunMix: { value: 0.34 },
     uSpec: { value: 0.26 },
+    uSpecPower: { value: 46 },
+    uSpecColor: { value: new Color() },
+    uHillLight: { value: new Vector3(-0.6, 0.6, 0.75) },
+    uShadeMin: { value: 0.42 },
+    uShadeMax: { value: 1.44 },
     uFresnel: { value: 0.56 },
     uLineMix: { value: 1 },
     uSnowAmt: { value: 0.86 },
@@ -214,7 +177,7 @@ export function createEarth({ base, aux, lines, mask, baseInk, window, detail, d
   const material = new ShaderMaterial({
     uniforms,
     vertexShader: earthVert,
-    fragmentShader: earthFrag,
+    fragmentShader: gradeGlsl + effectsGlsl + earthFrag,
   });
 
   // The surface detail comes from the per-pixel uv, not from tessellation, so
@@ -223,19 +186,30 @@ export function createEarth({ base, aux, lines, mask, baseInk, window, detail, d
   // three hundred kilometres of ground and sags two below the true sphere,
   // which is a visible error against a camera that close. 256 costs 65k
   // triangles — nothing — and puts it back under a quarter of that.
-  const mesh = new Mesh(new SphereGeometry(1, 256, 128), material);
+  const mesh = new Mesh(sphere(1, segments), material);
   mesh.name = "earth";
   mesh.renderOrder = 0;
-  return { mesh, material, uniforms };
+  return { mesh, material, uniforms, grade, effects, segments };
 }
 
-export function createClouds({ clouds }) {
+/** A unit-ish sphere at `segments` around and half that pole to pole. */
+export function sphere(radius, segments) {
+  const w = Math.max(8, Math.round(segments));
+  return new SphereGeometry(radius, w, Math.max(4, Math.round(w / 2)));
+}
+
+export function createClouds(
+  { clouds },
+  { segments = 128, grade = createGradeUniforms(), effects = createEffectUniforms() } = {},
+) {
   prepare(clouds);
   // The sheet drifts east (uDrift), so its u runs past 1 at the antimeridian.
   // Clamped, the texture's last column was smeared across that gap as a fan
   // of streaks along the parallels; it has to wrap.
   clouds.wrapS = RepeatWrapping;
   const uniforms = {
+    ...grade,
+    ...effects,
     uClouds: { value: clouds },
     uCloudsReal: { value: clouds },
     uRealMix: { value: 0 },
@@ -261,14 +235,16 @@ export function createClouds({ clouds }) {
   const material = new ShaderMaterial({
     uniforms,
     vertexShader: earthVert,
-    fragmentShader: cloudsFrag,
+    fragmentShader: gradeGlsl + effectsGlsl + cloudsFrag,
     transparent: true,
     depthWrite: false,
   });
-  const mesh = new Mesh(new SphereGeometry(1.0055, 128, 64), material);
+  // Built at radius 1 and lifted by scale, so the altitude can change without
+  // a new geometry; the shader only reads the normal.
+  const mesh = new Mesh(sphere(1, segments), material);
   mesh.name = "clouds";
   mesh.renderOrder = 1;
-  return { mesh, material, uniforms };
+  return { mesh, material, uniforms, segments };
 }
 
 export function createHalo() {
@@ -285,6 +261,8 @@ export function createHalo() {
     uFalloff: { value: 1.0 },
     uBloom: { value: 0.4 },
     uBloomSpread: { value: 0.55 },
+    uRimPow: { value: 3.2 },
+    uSpillPow: { value: 1.7 },
   };
   const material = new ShaderMaterial({
     uniforms,
@@ -301,69 +279,182 @@ export function createHalo() {
   return { mesh, material, uniforms };
 }
 
-/** Pushes a preset into the live uniforms; called on every theme change. */
-export function applyTheme(name, earth, clouds, halo) {
-  const t = THEMES[name] || THEMES.light;
+/** Vignette and grain, drawn last over the whole canvas. Hidden while both are off. */
+export function createPost() {
+  const uniforms = {
+    uResolution: { value: new Vector2(1, 1) },
+    uVignette: { value: 0 },
+    uVigRadius: { value: 0.75 },
+    uVigSoft: { value: 0.45 },
+    uVigColor: { value: new Color() },
+    uGrain: { value: 0 },
+    uGrainSize: { value: 1.5 },
+    uTime: { value: 0 },
+  };
+  const material = new ShaderMaterial({
+    uniforms,
+    vertexShader: haloVert,
+    fragmentShader: postFrag,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const mesh = new Mesh(new PlaneGeometry(2, 2), material);
+  mesh.name = "post";
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 3;
+  mesh.visible = false;
+  return { mesh, material, uniforms };
+}
+
+/**
+ * A direction from two angles, in degrees. View space for the sun (azimuth 0
+ * toward the viewer, 90 to screen right); east/north/up for the hillshade
+ * (azimuth clockwise from north), which is the same formula with the axes
+ * named differently.
+ */
+export function angleVector(azimuth, elevation, out = new Vector3()) {
+  const a = azimuth * DEG;
+  const e = elevation * DEG;
+  return out.set(Math.cos(e) * Math.sin(a), Math.sin(e), Math.cos(e) * Math.cos(a));
+}
+
+/** A colour scaled by an intensity, as the vec3 the shaders add. */
+const scaled = (hex, k, out) => {
+  const c = new Color(hex);
+  return out.set(c.r * k, c.g * k, c.b * k);
+};
+
+const lgg = (w, out) => {
+  const c = new Color(w.color);
+  return out.set(c.r * w.strength, c.g * w.strength, c.b * w.strength);
+};
+
+/**
+ * Pushes one theme of STYLE, plus the shared lighting and grade, into the
+ * live uniforms. Called on every theme change and every restyle.
+ */
+export function applyTheme(t, shared, earth, clouds, halo) {
+  const { light, surface: sf, atmosphere: at } = t;
   const u = earth.uniforms;
-  u.uDeep.value.set(t.ocean.deep);
-  u.uMid.value.set(t.ocean.mid);
-  u.uShelf.value.set(t.ocean.shelf);
-  u.uSnow.value.set(t.snow);
-  u.uAtmo.value.set(t.atmo);
-  u.uLandGamma.value = t.land.gamma;
-  u.uLandSat.value = t.land.sat;
-  u.uLandGain.value = t.land.gain;
-  u.uLandLift.value = t.land.lift;
-  u.uRelief.value = t.relief;
-  u.uSunMix.value = t.sunMix;
-  u.uSpec.value = t.spec;
-  u.uFresnel.value = t.fresnel;
-  u.uFresnelPow.value = t.fresnelPow;
-  u.uRimBase.value = t.rimBase;
-  u.uSnowAmt.value = t.snowAmt;
-  u.uNight.value.set(t.night);
-  u.uAmbient.value = t.ambient;
-  u.uTermWidth.value = t.termWidth;
-  u.uTermGamma.value = t.termGamma;
-  u.uFacet.value = t.facet.amount;
-  u.uFacetScale.value = t.facet.scale;
-  u.uFacetTilt.value = t.facet.tilt;
-  u.uFacetFlat.value = t.facet.flat;
-  u.uFacetEdge.value = t.facet.edge;
-  u.uFacetEdgeInk.value = t.facet.edgeInk;
-  const d = t.detail || {};
-  u.uDetailGamma.value = d.gamma ?? 1.5;
-  u.uDetailSat.value = d.sat ?? 0.8;
-  u.uDetailGain.value = d.gain ?? 1;
-  u.uDetailLift.value = d.lift ?? 0;
-  u.uDetailSea.value = d.sea ?? 0.4;
+  u.uDeep.value.set(sf.ocean.deep);
+  u.uMid.value.set(sf.ocean.mid);
+  u.uShelf.value.set(sf.ocean.shelf);
+  u.uSnow.value.set(sf.snow);
+  u.uAtmo.value.set(at.color);
+  u.uLandGamma.value = sf.land.gamma;
+  u.uLandSat.value = sf.land.sat;
+  u.uLandGain.value = sf.land.gain;
+  u.uLandLift.value = sf.land.lift;
+  u.uRelief.value = sf.relief;
+  u.uSunMix.value = light.sunMix;
+  u.uSpec.value = light.spec;
+  u.uFresnel.value = at.enabled ? at.fresnel : 0;
+  u.uFresnelPow.value = at.fresnelPow;
+  u.uRimBase.value = at.rimBase;
+  u.uSnowAmt.value = sf.snowAmt;
+  u.uNight.value.set(light.night);
+  u.uAmbient.value = light.ambient;
+  u.uTermWidth.value = light.termWidth;
+  u.uTermGamma.value = light.termGamma;
+  u.uFacet.value = sf.facet.amount;
+  u.uFacetScale.value = sf.facet.scale;
+  u.uFacetTilt.value = sf.facet.tilt;
+  u.uFacetFlat.value = sf.facet.flat;
+  u.uFacetEdge.value = sf.facet.edge;
+  u.uFacetEdgeInk.value = sf.facet.edgeInk;
+  u.uDetailGamma.value = sf.detail.gamma;
+  u.uDetailSat.value = sf.detail.sat;
+  u.uDetailGain.value = sf.detail.gain;
+  u.uDetailLift.value = sf.detail.lift;
+  u.uDetailSea.value = sf.detail.sea;
+  u.uLandTint.value.set(sf.landTint);
+  u.uLandTintAmt.value = sf.landTintAmt;
+  scaled(sf.emissive, sf.emissiveIntensity, u.uEmissive.value);
+  u.uEmissiveNight.value = sf.emissiveNightOnly ? 1 : 0;
 
+  const gs = shared.globe;
+  u.uGrid.value = gs.graticule.enabled ? gs.graticule.opacity : 0;
+  u.uGridColor.value.set(gs.graticule.color);
+  u.uGridSpacing.value = Math.max(gs.graticule.spacing, 0.5);
+  u.uGridWidth.value = gs.graticule.width;
+  scaled(gs.nightLights.color, gs.nightLights.enabled ? gs.nightLights.intensity : 0, u.uNightLights.value);
+
+  // Lights and fog (shared with the clouds by reference).
+  const e = earth.effects;
+  const L = shared.lighting;
+  scaled(L.ambient.color, L.ambient.intensity, e.uAmbientLight.value);
+  const hemi = L.hemisphere;
+  e.uHemiOn.value = hemi.intensity > 0 ? 1 : 0;
+  scaled(hemi.sky, hemi.intensity, e.uHemiSky.value);
+  scaled(hemi.ground, hemi.intensity, e.uHemiGround.value);
+  scaled(L.fill.color, L.fill.intensity, e.uFillLight.value);
+  scaled(L.rim.color, L.rim.intensity, e.uRimLight.value);
+  e.uRimPower.value = L.rim.power;
+  const fog = shared.fog;
+  e.uFog.value = fog.enabled ? fog.amount : 0;
+  e.uFogMode.value = fog.mode === "exp2" ? 1 : 0;
+  e.uFogColor.value.set(fog.color);
+  e.uFogNear.value = fog.near;
+  e.uFogFar.value = Math.max(fog.far, fog.near + 1e-3);
+  e.uFogDensity.value = fog.density;
+
+  const lt = shared.lighting;
+  u.uSpecPower.value = lt.specPower;
+  u.uSpecColor.value.set(lt.specColor);
+  angleVector(lt.hillshade.azimuth, lt.hillshade.elevation, u.uHillLight.value);
+  // angleVector returns x east, y up, z "north"; the shader wants east/north/up.
+  const hl = u.uHillLight.value;
+  hl.set(hl.x, hl.z, hl.y);
+  u.uShadeMin.value = lt.hillshade.min;
+  u.uShadeMax.value = lt.hillshade.max;
+
+  const cl = t.clouds;
   const c = clouds.uniforms;
-  c.uTint.value.set(t.clouds.tint);
-  c.uShadow.value.set(t.clouds.shadow);
-  c.uSunMix.value = t.clouds.sunMix;
-  c.uLo.value = t.clouds.lo ?? 0.43;
-  c.uHi.value = t.clouds.hi ?? 0.96;
-  c.uGamma.value = t.clouds.gamma ?? 1.0;
-  c.uFade.value = t.clouds.fade ?? 0.0;
-  // Held at nothing until the photograph has arrived; globe.js ramps it.
-  c.uRealMix.value = 0;
-  c.uRealLo.value = t.clouds.realLo ?? 0.2;
-  c.uRealHi.value = t.clouds.realHi ?? 0.9;
-  c.uAmbient.value = t.ambient;
-  c.uTermWidth.value = t.termWidth;
-  c.uTermGamma.value = t.termGamma;
+  c.uTint.value.set(cl.tint);
+  c.uShadow.value.set(cl.shadow);
+  c.uSunMix.value = cl.sunMix;
+  c.uLo.value = cl.lo;
+  c.uHi.value = cl.hi;
+  c.uGamma.value = cl.gamma;
+  c.uFade.value = cl.fade;
+  c.uRealLo.value = cl.realLo;
+  c.uRealHi.value = cl.realHi;
+  c.uAmbient.value = light.ambient;
+  c.uTermWidth.value = light.termWidth;
+  c.uTermGamma.value = light.termGamma;
 
+  const hs = at.halo;
   const h = halo.uniforms;
-  h.uInner.value.set(t.halo.inner);
-  h.uOuter.value.set(t.halo.outer);
-  h.uStrength.value = t.halo.strength;
-  h.uSpread.value = t.halo.spread;
-  h.uTopBias.value = t.halo.topBias;
-  h.uFalloff.value = t.halo.falloff ?? 1.0;
-  h.uBloom.value = t.halo.bloom;
-  h.uBloomSpread.value = t.halo.bloomSpread;
+  h.uInner.value.set(hs.inner);
+  h.uOuter.value.set(hs.outer);
+  h.uStrength.value = hs.strength;
+  h.uSpread.value = hs.spread;
+  h.uTopBias.value = hs.topBias;
+  h.uFalloff.value = hs.falloff;
+  h.uBloom.value = hs.bloom;
+  h.uBloomSpread.value = hs.bloomSpread;
+  h.uRimPow.value = hs.rimPower;
+  h.uSpillPow.value = hs.spillPower;
+
+  const gr = shared.grade;
+  const g = earth.grade;
+  g.uGrade.value = gr.enabled ? 1 : 0;
+  g.uGradeMix.value = gr.mix;
+  g.uGradeBrightness.value = gr.brightness;
+  g.uGradeContrast.value = gr.contrast;
+  g.uGradeSaturation.value = gr.saturation;
+  g.uGradeVibrance.value = gr.vibrance;
+  g.uGradeHue.value = gr.hue * DEG;
+  g.uGradeTemperature.value = gr.temperature;
+  g.uGradeTint.value = gr.tint;
+  lgg(gr.lift, g.uGradeLift.value);
+  lgg(gr.gamma, g.uGradeGamma.value);
+  lgg(gr.gain, g.uGradeGain.value);
 
   return t;
 }
 
+
+export { createGradeUniforms, createEffectUniforms, BLACK };

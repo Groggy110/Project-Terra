@@ -8,10 +8,10 @@
  * offsetWidth here would force a layout on every camera frame.
  */
 import { clamp, DEG, projectPoint } from "./geo.js";
+import { STYLE } from "../style/styleConfig.js";
 
-const CITY_Z = 0.28;
-const COUNTRY_Z = 0.12;
-const COUNTRY_MAX = 3;
+// When names arrive, how many countries may show, and how dim a filtered-out
+// pin goes are all STYLE.labels / STYLE.markers, read each pass.
 
 
 /**
@@ -20,8 +20,9 @@ const COUNTRY_MAX = 3;
  * then fill in gradually rather than all at once.
  */
 function cityRankLimit(z) {
-  if (z < CITY_Z) return -1;
-  return Math.floor(-1 + 11 * Math.sqrt(clamp((z - CITY_Z) / 0.62, 0, 1)));
+  const from = STYLE.labels.cityZoom;
+  if (z < from) return -1;
+  return Math.floor(-1 + 11 * Math.sqrt(clamp((z - from) / 0.62, 0, 1)));
 }
 
 const estWidth = (text, per) => text.length * per + 14;
@@ -180,7 +181,7 @@ export class LabelLayer {
     // scales with the area actually available, and the pins spend it in the
     // order the queue is already in — the ones lettered last frame first, so
     // the set stays stable while the globe turns.
-    const budget = Math.max(4, Math.round((width * height) / 58000));
+    const budget = Math.max(4, Math.round((width * height) / STYLE.labels.pinDensity));
     let spent = 0;
 
     for (const q of queue) {
@@ -225,7 +226,7 @@ export class LabelLayer {
     // Kept deliberately scarce: a few large countries, and only where the
     // city pass has left room. Sorted by how much ground they cover, so the
     // plate that appears is the one with space around it.
-    if (z > COUNTRY_Z) {
+    if (z > STYLE.labels.countryZoom) {
       const candidates = [];
       for (const c of this.countries) {
         if (c.rank > 3) break;
@@ -239,7 +240,7 @@ export class LabelLayer {
       candidates.sort((a, b) => b.px - a.px);
       let placed = 0;
       for (const hit of candidates) {
-        if (placed >= COUNTRY_MAX) break;
+        if (placed >= STYLE.labels.countryMax) break;
         const w = estWidth(hit.c.name, 7.4);
         if (!this.#claim(hit.x - w / 2, hit.y - 13, w, 26)) continue;
         this.#place(`c:${hit.c.name}`, hit.c.name, hit, "place place--country", 0.92 * hit.edge);
@@ -319,7 +320,7 @@ export class LabelLayer {
     });
     const el = node.el;
     el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
-    el.style.opacity = (this.dimmed.has(m.id) ? 0.28 : 1) * clamp(p.edge, 0, 1);
+    el.style.opacity = STYLE.markers.opacity * (this.dimmed.has(m.id) ? STYLE.markers.dimOpacity : 1) * clamp(p.edge, 0, 1);
     // A hard stop at the right edge, over the top of the estimate that decided
     // this plate would fit. estWidth measures a string against an average
     // glyph and is occasionally optimistic by a dozen pixels — which on a

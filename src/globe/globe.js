@@ -7,15 +7,60 @@
  * during motion, and a full-resolution one lands shortly after the camera
  * settles.
  */
-import { PerspectiveCamera, RepeatWrapping, Scene, TextureLoader, Vector2, Vector3, WebGLRenderer } from "three";
+import {
+  ACESFilmicToneMapping,
+  AgXToneMapping,
+  CineonToneMapping,
+  LinearSRGBColorSpace,
+  LinearToneMapping,
+  Matrix4,
+  NeutralToneMapping,
+  NoToneMapping,
+  PerspectiveCamera,
+  Quaternion,
+  ReinhardToneMapping,
+  RepeatWrapping,
+  Scene,
+  SRGBColorSpace,
+  TextureLoader,
+  Vector2,
+  Vector3,
+  WebGLRenderer,
+} from "three";
 
-import { applyTheme, createClouds, createEarth, createHalo, THEMES } from "./earth.js";
-import { clamp, DEG, lerp, smoothstep, viewBounds, visibleCapRadius, visibleExtent } from "./geo.js";
-import { DIST_FAR, GlobeControls, distForZoom, zoomLevel } from "./controls.js";
+import {
+  angleVector,
+  applyTheme,
+  BLACK,
+  createClouds,
+  createEarth,
+  createEffectUniforms,
+  createGradeUniforms,
+  createHalo,
+  createPost,
+  prepare,
+  sphere,
+} from "./earth.js";
+import { paintNightLights } from "./nightlights.js";
+import { PostChain } from "./postchain.js";
+import { clamp, DEG, latLonToVec3, lerp, smoothstep, viewBounds, visibleCapRadius, visibleExtent } from "./geo.js";
+import { GlobeControls, distForZoom, zoomLevel } from "./controls.js";
 import { ImageryLayer } from "./imagery.js";
 import { pickResolution, RES_STEPS, RES_WINDOW, RES_HOLD_MS } from "./resolution.js";
 import { LabelLayer } from "./labels.js";
 import { padBounds, VectorPainter, VectorStore } from "./vectors.js";
+import { STYLE } from "../style/styleConfig.js";
+import { onStyle } from "../style/applyStyle.js";
+
+const TONE_MAPPING = {
+  None: NoToneMapping,
+  Linear: LinearToneMapping,
+  Reinhard: ReinhardToneMapping,
+  Cineon: CineonToneMapping,
+  ACESFilmic: ACESFilmicToneMapping,
+  AgX: AgXToneMapping,
+  Neutral: NeutralToneMapping,
+};
 
 const TEXTURES = [
   ["base", "/textures/blue-marble.jpg"],
@@ -58,6 +103,7 @@ const DETAIL_MOTION_MS = 260;
 
 /**
  * There is one camera move in the entrance, and it is the second one.
+ * (HOME and WORK are STYLE.camera.home and STYLE.camera.work.)
  *
  * The world does not fly in: it simply fades up at HOME, the whole globe, with
  * the headline over it. A flight in *and then* a flight down read as two
@@ -87,16 +133,13 @@ const DETAIL_MOTION_MS = 260;
  * the bar goes up, and then it turns eastward and comes in, decelerating into
  * the drift it keeps thereafter rather than stopping and starting again.
  */
-const HOME = { lat: 14, lon: -52 };
-export const WORK = { lat: 17, lon: 20, dist: 3.4 };
-export const SETTLE_FLIGHT_MS = 1700;
 
 export class Globe {
   constructor(canvas, opts = {}) {
     this.canvas = canvas;
     this.opts = opts;
     this.theme = "dark";
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = Math.min(window.devicePixelRatio || 1, STYLE.renderer.maxPixelRatio);
     /**
      * Fraction of `dpr` actually being drawn; see resolution.js.
      *
@@ -136,6 +179,12 @@ export class Globe {
     this.requesting = new Set();
     this.sunView = new Vector3(-0.3, 0.42, 0.86).normalize();
     this.sunWorld = new Vector3();
+    /** The lamp in view space as it actually is this frame; see syncSun. */
+    this.sunNow = new Vector3();
+    this.sunFixed = new Vector3();
+    this.fillView = new Vector3();
+    this.rimView = new Vector3();
+    this.camInverse = new Quaternion();
     this.bufferSize = new Vector2();
     this.running = false;
 
@@ -148,16 +197,12 @@ export class Globe {
     });
     this.renderer.setPixelRatio(this.dpr);
     this.renderer.setClearColor(0x000000, 0);
+    this.#applyRenderer();
+    this.chain = new PostChain(this.renderer);
 
     this.scene = new Scene();
-    // 35.6°, not 32. The reference frames the disc at 0.72 of the window's
-    // height, and this is the honest way to get there: the alternative was to
-    // push HOME further out, but zoom is measured as a fraction of the span
-    // between DIST_NEAR and DIST_FAR, so moving the far end rescales every
-    // altitude in the app — a ministry opened at zoom 0.62 would sit 60%
-    // higher than it used to. Widening the lens leaves the zoom ladder where
-    // it is and only changes how much of the world each rung shows.
-    this.camera = new PerspectiveCamera(35.6, 1, 0.005, 60);
+    const cam = STYLE.camera;
+    this.camera = new PerspectiveCamera(cam.fov, 1, cam.near, cam.far);
 
     this.controls = new GlobeControls(canvas, this.camera, {
       onFirstGesture: opts.onFirstGesture,
@@ -186,7 +231,7 @@ export class Globe {
     // follow without knowing. It eases back to 0 as the hero retires.
     this.shift = opts.hero?.shift ?? 0;
     this.shiftTarget = this.shift;
-    this.heroDist = opts.hero?.dist ?? DIST_FAR;
+    this.heroDist = opts.hero?.dist ?? STYLE.camera.maxDist;
     this.lastTiles = 0;
     this.tileDist = 0;
     this.labels = new LabelLayer(opts.overlay, {
@@ -220,6 +265,8 @@ export class Globe {
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) this.#recover();
     });
+
+    onStyle((_, groups) => this.restyle(groups));
   }
 
   #recover = () => {
@@ -243,7 +290,7 @@ export class Globe {
     const load = (url) =>
       new Promise((resolve, reject) => loader.load(url, resolve, undefined, () => reject(new Error(url))));
 
-    // The photographic cloud sheet (THEMES.light.clouds.real). Nearly two
+    // The photographic cloud sheet (STYLE.themes.light.clouds.real). Nearly two
     // megabytes, and nothing needs it to draw, so it is not on the loading
     // bar: it streams alongside and fades in when it lands (see #tick).
     const realClouds = load("/textures/clouds-real.jpg").catch(() => null);
@@ -254,16 +301,23 @@ export class Globe {
       step(key === "base" ? "imagery" : key === "aux" ? "topography" : "cloud sheet");
     }
 
-    this.earth = createEarth({
-      ...textures,
-      lines: this.painter.lineTexture,
-      mask: this.painter.maskTexture,
-      baseInk: this.painter.baseTexture,
-      window: this.painter.window,
-      detail: this.imagery.texture,
-      detailWindow: this.imagery.window,
-    });
-    this.clouds = createClouds(textures);
+    const grade = createGradeUniforms();
+    const effects = createEffectUniforms();
+    this.earth = createEarth(
+      {
+        ...textures,
+        lines: this.painter.lineTexture,
+        mask: this.painter.maskTexture,
+        baseInk: this.painter.baseTexture,
+        window: this.painter.window,
+        detail: this.imagery.texture,
+        detailWindow: this.imagery.window,
+      },
+      { segments: STYLE.globe.segments, grade, effects },
+    );
+    this.baseUrl = TEXTURES[0][1];
+    this.clouds = createClouds(textures, { segments: STYLE.globe.clouds.segments, grade, effects });
+    this.clouds.mesh.scale.setScalar(1 + STYLE.globe.clouds.altitude);
     this.clouds.realReady = 0;
     realClouds.then((tex) => {
       if (!tex) return;
@@ -275,7 +329,9 @@ export class Globe {
       this.clouds.realArrived = true;
     });
     this.halo = createHalo();
-    this.scene.add(this.earth.mesh, this.clouds.mesh, this.halo.mesh);
+    this.post = createPost();
+    this.scene.add(this.earth.mesh, this.clouds.mesh, this.halo.mesh, this.post.mesh);
+    this.#applyPost();
     this.setTheme(this.theme);
 
     await this.store.load("50m");
@@ -289,6 +345,7 @@ export class Globe {
     this.places = places;
     this.countries = countries;
     this.labels.setData({ places, countries, ministries: this.ministries || [] });
+    this.#applySurfaceMaps();
     step("places");
 
     this.#resize();
@@ -299,14 +356,15 @@ export class Globe {
     // One full paint at HOME before anything is shown, so what fades up is the
     // finished globe rather than a bare sphere filling itself in. Held still
     // with it: the drift is the settle's to start, not the loading screen's.
+    const home = STYLE.camera.home;
     this.controls.holdSpin(true);
-    this.controls.lat = HOME.lat;
-    this.controls.lon = HOME.lon;
+    this.controls.lat = home.lat;
+    this.controls.lon = home.lon;
     this.controls.dist = this.heroDist;
-    this.controls.target = { ...HOME, dist: this.heroDist };
+    this.controls.target = { lat: home.lat, lon: home.lon, dist: this.heroDist };
     this.controls.update(0.016);
     this.#serviceVectors(true);
-    this.renderer.render(this.scene, this.camera);
+    this.render();
     step("gathering the network");
 
     this.running = true;
@@ -318,17 +376,188 @@ export class Globe {
   /* ------------------------------------------------------------------ api */
 
   setTheme(name) {
-    this.theme = THEMES[name] ? name : "dark";
-    const t = applyTheme(this.theme, this.earth, this.clouds, this.halo);
-    this.themeDef = t;
-    this.cloudBase = t.clouds.opacity;
-    this.facetBase = t.facet.amount;
-    this.sunMixBase = t.sunMix;
-    this.cloudSunMixBase = t.clouds.sunMix;
-    this.sunView.set(...t.sunView).normalize();
+    this.theme = STYLE.themes[name] ? name : "dark";
+    this.#applyThemeStyle();
     this.painter.painted = null; // line colours changed, so force a repaint
     this.painter.repaintBase(this.theme);
     this.dirty = true;
+  }
+
+  /**
+   * Pushes STYLE into the running scene. `groups` names what changed (a set
+   * of top-level or per-theme group names — "camera", "lines", "post" …) so
+   * that a colour tweak does not also rasterise the vectors or rebuild a
+   * sphere; without it, everything is re-applied.
+   */
+  restyle(groups) {
+    if (!this.earth) return;
+    const has = (g) => !groups || groups.has(g);
+
+    if (has("renderer")) this.#applyRenderer();
+
+    if (has("camera")) {
+      const cam = STYLE.camera;
+      this.camera.fov = cam.fov;
+      this.camera.near = cam.near;
+      this.camera.far = cam.far;
+      this.#applyShift();
+      // Only the near stop is enforced here. The entrance frames the globe
+      // from beyond maxDist on purpose, and the next zoom clamps the far end.
+      const c = this.controls;
+      c.dist = Math.max(c.dist, cam.minDist);
+      c.target.dist = Math.max(c.target.dist, cam.minDist);
+      this.#invalidateVectors();
+    }
+
+    if (has("globe")) {
+      const g = STYLE.globe;
+      if (Math.round(g.segments) !== this.earth.segments) {
+        this.earth.mesh.geometry.dispose();
+        this.earth.mesh.geometry = sphere(1, g.segments);
+        this.earth.segments = Math.round(g.segments);
+      }
+      if (Math.round(g.clouds.segments) !== this.clouds.segments) {
+        this.clouds.mesh.geometry.dispose();
+        this.clouds.mesh.geometry = sphere(1, g.clouds.segments);
+        this.clouds.segments = Math.round(g.clouds.segments);
+      }
+      this.clouds.mesh.scale.setScalar(1 + g.clouds.altitude);
+      this.#applySurfaceMaps();
+    }
+
+    if (has("post")) {
+      this.#applyPost();
+      if (!this.chain.active) this.chain.release();
+    }
+
+    // Uniform writes only, so cheap enough to do on every restyle.
+    this.#applyThemeStyle();
+
+    if (has("lines")) {
+      this.painter.baseTheme = null;
+      this.painter.repaintBase(this.theme);
+      this.#invalidateVectors();
+    }
+    this.dirty = true;
+  }
+
+  /**
+   * Asks for a fresh vector window on the next frame. The repaint floor
+   * (SETTLED_PAINT_MS) is lifted as well: it exists to keep camera motion from
+   * rasterising on consecutive frames, and with the camera still, a request
+   * it turned away would not be retried until something moved.
+   */
+  #invalidateVectors() {
+    this.painter.painted = null;
+    this.lastPaint = 0;
+  }
+
+  #applyThemeStyle() {
+    const t = applyTheme(STYLE.themes[this.theme], STYLE, this.earth, this.clouds, this.halo);
+    this.themeDef = t;
+    this.cloudBase = t.clouds.opacity;
+    this.facetBase = t.surface.facet.amount;
+    this.sunMixBase = t.light.sunMix;
+    this.cloudSunMixBase = t.clouds.sunMix;
+    angleVector(t.light.sunAzimuth, t.light.sunElevation, this.sunView);
+    // Where the lamp sits when it does not follow the camera: the same angles,
+    // as seen from HOME.
+    const home = STYLE.camera.home;
+    const eye = latLonToVec3(home.lat, home.lon, 1, new Vector3());
+    const q = new Quaternion().setFromRotationMatrix(new Matrix4().lookAt(eye, new Vector3(), new Vector3(0, 1, 0)));
+    this.sunFixed.copy(this.sunView).applyQuaternion(q);
+    const L = STYLE.lighting;
+    angleVector(L.fill.azimuth, L.fill.elevation, this.fillView);
+    angleVector(L.rim.azimuth, L.rim.elevation, this.rimView);
+    this.#applyVisibility();
+  }
+
+  /**
+   * The textures STYLE can swap: the day imagery (loaded on demand, the old
+   * one kept until the new one has arrived) and the night lights (painted
+   * from the places on first use, and again when their size changes).
+   */
+  #applySurfaceMaps() {
+    const g = STYLE.globe;
+    const url = g.baseTexture || TEXTURES[0][1];
+    if (url !== this.baseUrl && url !== this.baseLoading) {
+      this.baseLoading = url;
+      new TextureLoader().load(
+        url,
+        (tex) => {
+          if (this.baseLoading !== url) return tex.dispose();
+          prepare(tex);
+          const old = this.earth.uniforms.uBase.value;
+          this.earth.uniforms.uBase.value = tex;
+          if (old !== tex) old.dispose();
+          this.baseUrl = url;
+          this.baseLoading = null;
+          this.dirty = true;
+        },
+        undefined,
+        () => {
+          console.warn(`[terra] could not load base texture ${url}`);
+          this.baseLoading = null;
+        },
+      );
+    }
+
+    const n = g.nightLights;
+    if (n.enabled && this.places && this.nightSize !== n.size) {
+      const tex = paintNightLights(this.places, n.size);
+      const old = this.earth.uniforms.uNightTex.value;
+      this.earth.uniforms.uNightTex.value = tex;
+      if (old !== BLACK) old.dispose();
+      this.nightSize = n.size;
+      this.skipSample = true;
+    }
+  }
+
+  /**
+   * Draws one frame: straight to the canvas, or through the post chain when
+   * bloom, chromatic aberration or a non-default AA mode is on. Public for
+   * anything that renders by hand (screenshots, capture) and wants the frame
+   * the page would show.
+   */
+  render() {
+    if (this.chain.active) this.chain.render(this.scene, this.camera);
+    else this.renderer.render(this.scene, this.camera);
+  }
+
+  /** The sheet and the halo, which STYLE can switch off and debug() hides. */
+  #applyVisibility() {
+    const debug = this.earth.uniforms.uDebug.value;
+    this.clouds.mesh.visible = !debug && STYLE.globe.clouds.enabled;
+    this.halo.mesh.visible = !debug && STYLE.themes[this.theme].atmosphere.enabled;
+  }
+
+  #applyRenderer() {
+    const r = STYLE.renderer;
+    this.renderer.toneMapping = TONE_MAPPING[r.toneMapping] ?? NoToneMapping;
+    this.renderer.toneMappingExposure = r.exposure;
+    // The grade is authored in gamma space and nothing is decoded on the way
+    // in, so the honest output is no conversion at all. sRGB encodes it a
+    // second time — brighter and flatter — and is there to compare against.
+    this.renderer.outputColorSpace = r.outputColorSpace === "sRGB" ? SRGBColorSpace : LinearSRGBColorSpace;
+    const dpr = Math.min(window.devicePixelRatio || 1, r.maxPixelRatio);
+    if (dpr !== this.dpr) {
+      this.dpr = dpr;
+      this.renderer.setPixelRatio(this.dpr * this.res);
+      this.renderer.setSize(this.size.w, this.size.h, false);
+      if (this.painter) this.painter.painted = null;
+    }
+  }
+
+  #applyPost() {
+    const { vignette: v, grain: g } = STYLE.post;
+    const u = this.post.uniforms;
+    u.uVignette.value = v.enabled ? v.strength : 0;
+    u.uVigRadius.value = v.radius;
+    u.uVigSoft.value = v.softness;
+    u.uVigColor.value.set(v.color);
+    u.uGrain.value = g.enabled ? g.amount : 0;
+    u.uGrainSize.value = g.size;
+    this.post.mesh.visible = v.enabled || g.enabled;
   }
 
   setMinistries(list) {
@@ -399,9 +628,19 @@ export class Globe {
    * with the old camera's sun.
    */
   syncSun() {
-    this.sunWorld.copy(this.sunView).applyQuaternion(this.camera.quaternion);
+    if (STYLE.lighting.followCamera) {
+      this.sunWorld.copy(this.sunView).applyQuaternion(this.camera.quaternion);
+      this.sunNow.copy(this.sunView);
+    } else {
+      // (fill and rim below always follow the camera; only the sun can be pinned)
+      this.sunWorld.copy(this.sunFixed);
+      this.sunNow.copy(this.sunFixed).applyQuaternion(this.camInverse.copy(this.camera.quaternion).invert());
+    }
     this.earth.uniforms.uSun.value.copy(this.sunWorld);
     this.clouds.uniforms.uSun.value.copy(this.sunWorld);
+    const e = this.earth.effects;
+    e.uFillDir.value.copy(this.fillView).applyQuaternion(this.camera.quaternion);
+    e.uRimDir.value.copy(this.rimView).applyQuaternion(this.camera.quaternion);
   }
 
   /** Pauses or resumes the idle drift. */
@@ -498,7 +737,7 @@ export class Globe {
    * view. Silent, because the page decided to do it — counting it as a
    * gesture would retire the hint that has not been earned yet.
    */
-  settle(ms = SETTLE_FLIGHT_MS) {
+  settle(ms = STYLE.camera.settleMs) {
     this.shiftTarget = 0;
     // No arc. A long hop normally lifts away from the surface and settles
     // back, which reads well between two places at the same height; on a
@@ -509,7 +748,7 @@ export class Globe {
     // direction the drift turns: spinInto hands the tail of that straight to
     // the drift, so the world comes in turning and simply keeps turning.
     this.controls.holdSpin(false);
-    this.controls.flyTo({ ...WORK, ms, silent: true, arc: 0, spinInto: true, ease: "quad" });
+    this.controls.flyTo({ ...STYLE.camera.work, ms, silent: true, arc: 0, spinInto: true, ease: "quad" });
   }
 
   get zoom() {
@@ -535,8 +774,7 @@ export class Globe {
     this.earth.uniforms.uDebug.value = channel;
     // The sheet and the halo sit over the surface; they would only obscure
     // whatever channel is being inspected.
-    this.clouds.mesh.visible = !channel;
-    this.halo.mesh.visible = !channel;
+    this.#applyVisibility();
     this.dirty = true;
     return channel;
   }
@@ -562,7 +800,7 @@ export class Globe {
     const h = this.canvas.clientHeight || window.innerHeight;
     if (w === this.size.w && h === this.size.h) return;
     this.size = { w, h };
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = Math.min(window.devicePixelRatio || 1, STYLE.renderer.maxPixelRatio);
     this.renderer.setPixelRatio(this.dpr * this.res);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(h, 1);
@@ -692,10 +930,11 @@ export class Globe {
     // Screen space, y down, pointing at the lamp. Taken from the same view
     // space vector the surface is lit by, so the bloom cannot drift off the
     // lit hemisphere however the globe is turned.
-    u.uLightDir.value.set(this.sunView.x, -this.sunView.y).normalize();
+    u.uLightDir.value.set(this.sunNow.x, -this.sunNow.y).normalize();
     const limb = Math.asin(clamp(1 / this.controls.camDist, -1, 1));
     const half = Math.tan(this.camera.fov * DEG * 0.5);
     u.uRadius.value = (buffer.y * 0.5) * (Math.tan(limb) / half);
+    this.post.uniforms.uResolution.value.set(buffer.x, buffer.y);
   }
 
   #tick = (now) => {
@@ -734,7 +973,8 @@ export class Globe {
     // The sheet is a fair-weather cloud layer: it thins as you come in so the
     // ground stays readable, and drifts slowly enough to notice only if you
     // stop and look.
-    this.drift = (this.drift + dt * 0.00042) % 1;
+    const gs = STYLE.globe;
+    this.drift = (this.drift + dt * gs.clouds.drift) % 1;
     const z = this.controls.zoom;
     const c = this.clouds.uniforms;
     c.uDrift.value = this.drift;
@@ -753,13 +993,13 @@ export class Globe {
     const real = (this.themeDef?.clouds.real ?? 0) * this.clouds.realReady;
     c.uRealMix.value = real;
     const cloudBase = lerp(this.cloudBase, this.themeDef?.clouds.realOpacity ?? this.cloudBase, real);
-    c.uOpacity.value = lerp(cloudBase, 0, smoothstep(0.12, 0.72, z));
+    c.uOpacity.value = lerp(cloudBase, 0, smoothstep(gs.clouds.fadeStart, gs.clouds.fadeEnd, z));
 
     // The cells are a fixed angular size, so coming in makes each one bigger
     // on screen until a single facet fills the window. The faceted shell is a
     // whole-globe reading of the world; past a region the vectors are what
     // carry the detail, and the facets retire rather than becoming scenery.
-    this.earth.uniforms.uFacet.value = (this.facetBase ?? 1) * (1 - smoothstep(0.46, 0.82, z));
+    this.earth.uniforms.uFacet.value = (this.facetBase ?? 1) * (1 - smoothstep(gs.facetFadeStart, gs.facetFadeEnd, z));
 
     // So does the terminator, and for the same reason.
     //
@@ -803,10 +1043,11 @@ export class Globe {
     // and where the imagery has the water as well it very nearly lets go.
     this.earth.uniforms.uLineMix.value = 1 - 0.5 * this.detailMix - 0.34 * water;
 
-    const local = smoothstep(0.34, 0.78, z);
-    this.earth.uniforms.uSunMix.value = (this.sunMixBase ?? 1) * (1 - 0.78 * local);
-    c.uSunMix.value = (this.cloudSunMixBase ?? 0.55) * (1 - 0.78 * local);
+    const local = smoothstep(gs.sunFlattenStart, gs.sunFlattenEnd, z) * gs.sunFlatten;
+    this.earth.uniforms.uSunMix.value = (this.sunMixBase ?? 1) * (1 - local);
+    c.uSunMix.value = (this.cloudSunMixBase ?? 0.55) * (1 - local);
     this.syncSun();
+    if (this.post.mesh.visible && STYLE.post.grain.animated) this.post.uniforms.uTime.value = now / 1000;
 
     if (moved || this.dirty || this.idleFrames < 3) {
       const { cap } = this.#bounds();
@@ -828,7 +1069,7 @@ export class Globe {
       this.#serviceImagery(this.controls.zoom, true);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    this.render();
   };
 }
 
