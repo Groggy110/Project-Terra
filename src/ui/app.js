@@ -144,7 +144,8 @@ export class App {
     const split = HERO_SPLIT.matches;
     document.body.classList.toggle("hero-split", split);
     this.panel.setOpen(false);
-    this.#theme(store.theme || "dark");
+    // Every visit opens on the night globe; the toggle lasts for the visit.
+    this.#theme("dark");
     this.#bindChrome();
     this.#bindKeys();
 
@@ -427,7 +428,6 @@ export class App {
     const next = name === "light" ? "Switch to dark mode" : "Switch to light mode";
     this.el.themeBtn?.setAttribute("aria-label", next);
     this.el.themeBtn?.setAttribute("title", next);
-    store.setTheme(name);
     this.globe?.setTheme(name);
   }
 

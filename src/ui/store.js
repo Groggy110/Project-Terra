@@ -4,7 +4,7 @@
  */
 const KEY = "terra.v1";
 
-const EMPTY = { posted: [], interests: {}, theme: null, seen: false };
+const EMPTY = { posted: [], interests: {}, seen: false };
 
 function read() {
   try {
@@ -61,15 +61,6 @@ export const store = {
 
   get interestCount() {
     return Object.keys(this.state.interests).length;
-  },
-
-  get theme() {
-    return this.state.theme;
-  },
-
-  setTheme(name) {
-    this.state.theme = name;
-    this.save();
   },
 
   get seen() {
