@@ -60,8 +60,15 @@ export class AuthGate {
     return this.el.classList.contains("is-open");
   }
 
-  open(mode = "signin") {
+  /**
+   * `intent` reshapes the screen for the linked-accounts flows:
+   *   { role, title, sub, email, onCancel } — the role is fixed (no picker),
+   *   the headline explains what is being linked, and the email may be filled.
+   */
+  open(mode = "signin", intent = null) {
     this.mode = mode;
+    this.intent = intent;
+    if (intent?.role) this.role = intent.role;
     this.sent = null;
     this.error = null;
     this.el.hidden = false;
@@ -80,7 +87,9 @@ export class AuthGate {
 
   skip() {
     this.close();
-    this.onSkip?.();
+    if (this.intent?.onCancel) this.intent.onCancel();
+    else this.onSkip?.();
+    this.intent = null;
   }
 
   /* ------------------------------------------------------------- render */
@@ -124,7 +133,7 @@ export class AuthGate {
     }
 
     add(form, [
-      field("Email", { id: "gate-email", name: "email", type: "email", autocomplete: "email", placeholder: "you@example.org", required: true }),
+      field("Email", { id: "gate-email", name: "email", type: "email", autocomplete: "email", placeholder: "you@example.org", required: true, value: this.intent?.email ?? "" }),
       !isMagic && field("Password", {
         id: "gate-pass", name: "password", type: "password",
         autocomplete: isSignup ? "new-password" : "current-password",
@@ -133,7 +142,7 @@ export class AuthGate {
       }),
     ]);
 
-    if (isSignup) {
+    if (isSignup && !this.intent?.role) {
       add(form, [
         h("div", { class: "gate__label", style: { marginTop: "16px" }, text: "I am here to" }),
         h("div", { class: "gate__roles" },
@@ -151,8 +160,8 @@ export class AuthGate {
     ]);
 
     add(this.body, [
-      h("h2", { class: "gate__title", text: isSignup ? "Join Terra" : isMagic ? "Sign in without a password" : "Welcome back" }),
-      h("p", { class: "gate__sub", text: isSignup
+      h("h2", { class: "gate__title", text: this.intent?.title ?? (isSignup ? "Join Terra" : isMagic ? "Sign in without a password" : "Welcome back") }),
+      h("p", { class: "gate__sub", text: this.intent?.sub ? this.intent.sub : isSignup
         ? "Help ministries online, or post what yours needs."
         : isMagic
         ? "We will email you a link that signs you in. No password to remember."
@@ -165,7 +174,7 @@ export class AuthGate {
           ? [ "Already have an account? ", h("button", { type: "button", onclick: () => { this.mode = "signin"; this.render(); } }, "Sign in") ]
           : [ "New here? ", h("button", { type: "button", onclick: () => { this.mode = "signup"; this.render(); } }, "Create an account") ],
       ),
-      h("button", { class: "gate__skip", type: "button", onclick: () => this.skip(), text: "Look around without an account" }),
+      h("button", { class: "gate__skip", type: "button", onclick: () => this.skip(), text: this.intent ? "Cancel" : "Look around without an account" }),
     ]);
   }
 

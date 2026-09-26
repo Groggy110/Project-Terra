@@ -572,3 +572,37 @@
 /* The last line needs room of its own; without it the card edge cuts it. */
 .recs { padding-bottom: 2px; }
 .recs__foot { padding-bottom: 2px; }
+
+/* Ministry accounts show the ministry's name and a square mark, so it is
+   always clear which of two linked accounts is in use. */
+.acct--ministry .acct__dot {
+  border-radius: 8px;
+  background: var(--ink-2);
+}
+
+.acct__name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acct__role {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--surface-sunk);
+}
+
+.acct__needs {
+  margin-right: 8px;
+}
+
+@media (max-width: 760px) {
+  .acct__needs,
+  .acct__role { display: none; }
+}

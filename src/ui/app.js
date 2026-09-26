@@ -8,6 +8,7 @@ import { Network, emptyQuery, queryIsEmpty } from "../data/network.js";
 import { Board } from "./board.js";
 import { Filters } from "./filters.js";
 import { ModalLayer, aboutModal, meetingsModal, needModal, scheduleModal } from "./modals.js";
+import { dashboardModal } from "./dashboard.js";
 import { Panel } from "./panel.js";
 import { PanelSheet } from "./sheet.js";
 import { add, clear, h, icons, nf } from "./dom.js";
@@ -171,6 +172,9 @@ export class App {
       await this.#afterAuth({ quiet: true });
       api.onAuthChange((session) => {
         const was = this.session?.user?.id ?? null;
+        // Every refresh rotates the token; keep the latest so switching back
+        // to this account later works without a password.
+        if (session && session.user.id === was) api.rememberAccount(session, this.profile);
         this.session = session;
         if ((session?.user?.id ?? null) !== was) this.#afterAuth({ quiet: true });
       });
@@ -520,18 +524,81 @@ export class App {
     this.session = await api.currentSession();
     this.profile = this.session ? await api.myProfile() : null;
     this.ministry = this.profile?.role === "ministry" ? await api.myMinistry() : null;
+    if (this.session) api.rememberAccount(this.session, this.profile);
+
+    // Finishing a link started from the other account: this is the new
+    // (or newly signed-in) account arriving, so the two are joined now.
+    if (this.session && api.pendingLink()) {
+      try {
+        if (await api.completeLink()) this.toast("Accounts linked. Switch between them from your account menu.");
+      } catch (e) {
+        this.toast(e.message);
+      }
+    }
+    this.linked = this.session ? await api.linkedAccounts().catch(() => []) : [];
     this.#renderAccount();
 
     if (!this.session) return;
     if (!quiet) this.toast(`Signed in as ${this.profile?.full_name || this.session.user.email}`);
 
-    // A volunteer who has never answered the questions is asked once, after a
-    // beat — immediately on top of a sign-in reads as a second gate.
-    if (this.profile?.role === "volunteer" && !this.askedQuestions) {
-      this.askedQuestions = true;
+    // Each account is onboarded once, after a beat — immediately on top of a
+    // sign-in reads as a second gate. A volunteer answers the questions; a
+    // ministry tells us who it is, which fills in everything it posts.
+    this.onboarded ??= new Set();
+    const id = this.session.user.id;
+    if (this.onboarded.has(id)) return;
+    this.onboarded.add(id);
+    if (this.profile?.role === "volunteer") {
       const existing = await api.loadQuestionnaire();
       if (!existing) setTimeout(() => this.openQuestionnaire(), 900);
+    } else if (this.profile?.role === "ministry" && !this.ministry) {
+      setTimeout(() => this.openMinistrySetup(), 900);
     }
+  }
+
+  /** Links a second account to this one: a personal account, or a ministry. */
+  startLink(role) {
+    if (!this.session) return;
+    api.beginLink(this.session.user.id, role);
+    const from = this.ministry?.name || this.profile?.full_name || "this account";
+    this.gate.open("signup", {
+      role,
+      title: role === "ministry" ? "Create your ministry account" : "Create your personal account",
+      sub: `It stays linked to ${from}, so you can switch in one click. Use a different email address, or sign in if you already have one.`,
+      onCancel: () => api.cancelLink(),
+    });
+  }
+
+  async switchTo(other) {
+    try {
+      await api.switchAccount(other.id);
+      // onAuthChange notices the new user and runs #afterAuth.
+      this.toast(other.role === "ministry" ? "Switched to your ministry account." : "Switched to your personal account.");
+    } catch (e) {
+      if (!e.needsSignIn) return this.toast(e.message);
+      this.gate.open("signin", {
+        role: other.role,
+        email: e.email ?? "",
+        title: other.role === "ministry" ? "Sign in to your ministry account" : "Sign in to your personal account",
+        sub: "You only need to do this once on this device. After that, switching is one click.",
+      });
+    }
+  }
+
+  openDashboard() {
+    if (!this.session) return this.gate.open("signin");
+    dashboardModal(this.modals, {
+      load: () => api.ministryDashboard(),
+      onSetStatus: async (id, status) => {
+        await api.setNeedStatus(id, status);
+        await this.reloadNetwork();
+      },
+      onPost: () => this.postNeed(),
+      onShowNeed: (id) => {
+        const n = this.net.needById(id);
+        if (n) this.openNeed(n, { fly: true });
+      },
+    });
   }
 
   /** The chip in the top bar: sign in, or who you are. */
@@ -547,11 +614,16 @@ export class App {
       slot.appendChild(h("button", { class: "btn btn--ghost", "data-action": "sign-in" }, "Sign in"));
       return;
     }
-    const name = this.profile?.full_name || this.session.user.email || "You";
+    const isMinistry = this.profile?.role === "ministry";
+    const name = isMinistry && this.ministry ? this.ministry.name : this.profile?.full_name || this.session.user.email || "You";
+    if (isMinistry && this.ministry) {
+      slot.appendChild(h("button", { class: "btn btn--ghost acct__needs", onclick: () => this.openDashboard() }, "Your needs"));
+    }
     slot.appendChild(
-      h("button", { class: "acct", "data-action": "account", title: this.session.user.email },
+      h("button", { class: `acct${isMinistry ? " acct--ministry" : ""}`, "data-action": "account", title: this.session.user.email },
         h("span", { class: "acct__dot", text: name.trim().charAt(0).toUpperCase() }),
-        h("span", { class: "acct__name", text: name.split(" ")[0] }),
+        h("span", { class: "acct__name", text: isMinistry ? name : name.split(" ")[0] }),
+        this.linked?.length ? h("span", { class: "acct__role", text: isMinistry ? "Ministry" : "Personal" }) : null,
       ),
     );
   }
@@ -562,8 +634,17 @@ export class App {
       anchor,
       parent: this.el.chrome,
       items: [
-        { label: this.profile?.full_name || this.session.user.email, note: isMinistry ? "Ministry account" : "Volunteer account", icon: menuIcons.info },
+        { label: (isMinistry && this.ministry?.name) || this.profile?.full_name || this.session.user.email, note: isMinistry ? "Ministry account" : "Personal account", icon: menuIcons.info },
+        ...(this.linked ?? []).map((other) => ({
+          label: other.role === "ministry" ? "Switch to ministry account" : "Switch to personal account",
+          note: other.name || other.email || "Linked account",
+          icon: menuIcons.panel,
+          run: () => this.switchTo(other),
+        })),
+        !this.linked?.length && isMinistry && { label: "Create your personal account", note: "Serve as yourself, linked to this ministry", icon: menuIcons.panel, run: () => this.startLink("volunteer") },
+        !this.linked?.length && !isMinistry && { label: "Set up a ministry account", note: "Linked to this one", icon: menuIcons.panel, run: () => this.startLink("ministry") },
         null,
+        isMinistry && this.ministry && { label: "Your needs", note: "Posts and who responded", icon: menuIcons.board, run: () => this.openDashboard() },
         { label: "Your calls", note: "Upcoming video calls", icon: menuIcons.board, run: () => this.openMeetings() },
         !isMinistry && { label: "Suggested for you", note: "Matched to your answers", icon: menuIcons.board, run: () => this.openSuggestions() },
         !isMinistry && { label: "Answer the five questions", icon: menuIcons.panel, run: () => this.openQuestionnaire() },
@@ -603,6 +684,7 @@ export class App {
     ministryModal(this.modals, {
       onCreated: async (m) => {
         this.ministry = m;
+        this.#renderAccount();
         this.toast(`${m.name} is on the map.`);
         await this.reloadNetwork();
         this.postNeed();

@@ -659,3 +659,175 @@
 .modal--side .modal__foot {
   flex-wrap: wrap;
 }
+
+/* ---------- ministry dashboard ---------- */
+
+.btn--sm {
+  height: 32px;
+  padding: 0 13px;
+  font-size: 13px;
+}
+
+.dash {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.dash__need {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-inner);
+  background: var(--surface);
+}
+
+.dash__top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dash__status {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.dash__status.is-live { background: color-mix(in srgb, var(--ongoing) 16%, transparent); color: var(--ongoing); }
+.dash__status.is-review { background: var(--amber-bg); color: var(--amber-ink); }
+.dash__status.is-off { background: var(--surface-sunk); color: var(--muted); }
+
+.dash__when {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.dash__title {
+  display: block;
+  margin: 7px 0 2px;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.dash__reason {
+  margin: 4px 0;
+  font-size: 13px;
+  color: var(--amber-ink);
+}
+
+.dash__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.dash__count {
+  font-size: 13px;
+  font-weight: 560;
+  color: var(--accent);
+  padding: 0;
+  background: none;
+}
+
+.dash__count:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.dash__actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.dash__people {
+  display: none;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dash__need.is-open .dash__people {
+  display: grid;
+}
+
+.dash__call {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+
+.dash__call > .btn {
+  justify-self: start;
+}
+
+.applicant {
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.applicant__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.applicant__head > div {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+
+.applicant__head b {
+  font-size: 14.5px;
+  color: var(--ink);
+}
+
+.applicant__head span:not(.applicant__dot) {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.applicant__dot {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.applicant__about {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--body);
+}
+
+.applicant__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.applicant__meta a {
+  color: var(--accent);
+}

@@ -132,6 +132,7 @@ export async function sendMagicLink({ email, fullName, role }) {
 }
 
 export async function signOut() {
+  forgetAccounts();
   if (supabase) await supabase.auth.signOut();
 }
 
@@ -326,4 +327,147 @@ export async function myMeetings() {
     needTitle: m.needs?.title ?? "A need",
     ministryName: m.ministries?.name ?? "",
   }));
+}
+
+/* -------------------------------------------------------- linked accounts */
+
+/**
+ * A ministry leader can also serve personally, from a second account, and
+ * switch between the two in one click. The link itself lives in
+ * account_links; what makes the switch instant is that each account's
+ * sign-in is remembered here, in this browser, so switching is setSession
+ * rather than a password. On another device the link still shows, and a
+ * single sign-in there makes it instant again.
+ */
+const ACCOUNTS_KEY = "terra.accounts";
+const PENDING_KEY = "terra.pendingLink";
+
+const readJson = (key, fallback) => {
+  try {
+    return JSON.parse(localStorage.getItem(key)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+const writeJson = (key, value) => {
+  try {
+    if (value == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* private mode: switching simply asks for a sign-in */
+  }
+};
+
+/** Keeps the current account's sign-in, so it can be switched back to. */
+export function rememberAccount(session, profile) {
+  if (!session?.user) return;
+  const all = readJson(ACCOUNTS_KEY, {});
+  all[session.user.id] = {
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    email: session.user.email,
+    name: profile?.full_name ?? all[session.user.id]?.name ?? "",
+    role: profile?.role ?? all[session.user.id]?.role ?? "volunteer",
+  };
+  writeJson(ACCOUNTS_KEY, all);
+}
+
+export function forgetAccounts() {
+  writeJson(ACCOUNTS_KEY, null);
+  writeJson(PENDING_KEY, null);
+}
+
+/** The accounts linked to the signed-in one, with what this browser knows. */
+export async function linkedAccounts() {
+  if (!supabase) return [];
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth?.user) return [];
+  const { data } = await supabase.from("account_links").select("linked_id").eq("user_id", auth.user.id);
+  const known = readJson(ACCOUNTS_KEY, {});
+  return (data ?? []).map((r) => ({ id: r.linked_id, ...(known[r.linked_id] ?? {}), ready: !!known[r.linked_id]?.refresh_token }));
+}
+
+/** Switches to a linked account; throws { needsSignIn } if this browser cannot. */
+export async function switchAccount(id) {
+  const sb = requireSupabase();
+  const acc = readJson(ACCOUNTS_KEY, {})[id];
+  if (!acc?.refresh_token) throw Object.assign(new Error("sign in to that account once on this device"), { needsSignIn: true, email: acc?.email });
+  const { error } = await sb.auth.setSession({ access_token: acc.access_token, refresh_token: acc.refresh_token });
+  if (error) {
+    const all = readJson(ACCOUNTS_KEY, {});
+    delete all[id];
+    writeJson(ACCOUNTS_KEY, all);
+    throw Object.assign(new Error("that sign-in has expired; sign in again"), { needsSignIn: true, email: acc.email });
+  }
+}
+
+/** Marks that the next account to sign in should be linked to this one. */
+export function beginLink(fromUserId, role) {
+  writeJson(PENDING_KEY, { from: fromUserId, role, at: Date.now() });
+}
+
+export function pendingLink() {
+  const p = readJson(PENDING_KEY, null);
+  // A day is plenty to click a confirmation email; after that it is stale.
+  return p && Date.now() - p.at < 86_400_000 ? p : null;
+}
+
+export function cancelLink() {
+  writeJson(PENDING_KEY, null);
+}
+
+/**
+ * Links the signed-in account with the remembered one it was started from.
+ * The other account's sign-in is refreshed directly against the auth API (its
+ * access token has usually expired by the time an email is confirmed), and the
+ * rotated refresh token is kept.
+ */
+export async function completeLink() {
+  const sb = requireSupabase();
+  const pending = pendingLink();
+  if (!pending) return false;
+  const { data: auth } = await sb.auth.getSession();
+  const me = auth?.session;
+  if (!me || me.user.id === pending.from) return false;
+  const all = readJson(ACCOUNTS_KEY, {});
+  const other = all[pending.from];
+  if (!other?.refresh_token) throw new Error("sign in to your other account again to link them");
+
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: other.refresh_token }),
+  });
+  const fresh = await res.json();
+  if (!res.ok || !fresh.access_token) throw new Error("your other account's sign-in has expired; sign in to it again");
+  all[pending.from] = { ...other, access_token: fresh.access_token, refresh_token: fresh.refresh_token };
+  writeJson(ACCOUNTS_KEY, all);
+
+  const { error } = await sb.functions.invoke("link-account", { body: { other_token: fresh.access_token } });
+  if (error) {
+    const detail = await error.context?.json?.().catch(() => null);
+    throw new Error(detail?.error ?? error.message);
+  }
+  writeJson(PENDING_KEY, null);
+  return true;
+}
+
+/* -------------------------------------------------------------- dashboard */
+
+/** The signed-in ministry's needs, applicants and booked calls. */
+export async function ministryDashboard() {
+  const sb = requireSupabase();
+  const { data, error } = await sb.functions.invoke("ministry-dashboard", { body: {} });
+  if (error) {
+    const detail = await error.context?.json?.().catch(() => null);
+    throw new Error(detail?.error ?? error.message);
+  }
+  return data;
+}
+
+/** Marks one of the ministry's own needs filled, or reopens it. */
+export async function setNeedStatus(needId, status) {
+  const sb = requireSupabase();
+  const { error } = await sb.from("needs").update({ status }).eq("id", needId);
+  if (error) throw error;
 }
