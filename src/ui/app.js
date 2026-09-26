@@ -152,6 +152,7 @@ export class App {
       await this.globe.start();
       this.globe.setTheme(this.theme);
       this.globe.setMinistries(this.net.ministries);
+      this.globe.setLettering(true);
       this.#initCredit();
     } catch (err) {
       boot.fail(err);
@@ -220,8 +221,10 @@ export class App {
     clearTimeout(this.heroTimer);
     clearTimeout(this.heroInTimer);
     document.body.classList.remove("is-hero", "hero-in", "hero-split");
-    // The split framing glides back to centre whichever way the hero ends.
+    // The split framing glides back to centre whichever way the hero ends,
+    // and pins go back to earning their names by zoom.
     this.globe?.setShift(0);
+    this.globe?.setLettering(false);
     // Whichever way the hero went, the opening frame is over and the globe is
     // free to turn again. On the timed exit the settle starts the turn itself;
     // on a gesture the drift picks it up once the hand comes off.

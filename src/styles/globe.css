@@ -51,77 +51,85 @@ body.is-live .overlay {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  translate: -4.5px -4.5px;
+  /* The tip of the pin, not its middle, stands on the city. */
+  translate: -7px -19px;
   cursor: pointer;
   background: none;
 }
 
-/* A 10px dot is not a target. The pad is a pseudo-element rather than
+/* A 14px pin is not a target. The pad is a pseudo-element rather than
    padding, so growing what you can hit never grows what the layout claims. */
 .pin::before {
   content: "";
   position: absolute;
-  left: -9px;
+  left: -8px;
   top: 50%;
   translate: 0 -50%;
-  width: 29px;
-  height: 29px;
+  width: 30px;
+  height: 32px;
   border-radius: 999px;
 }
 
-/* Small. A pin is a mark on a map, not a button sitting on one — the ring and
-   the shadow are what make it read at 8px, not diameter. The highlight is a
-   single off-centre stop, which is enough to give it a surface without
-   turning it into a glossy bauble. */
+/* Small. A pin is a mark on a map, not a button sitting on one: a red head
+   with a white rim and a white eye, and a soft shadow under it so it stands
+   off the ground rather than being printed on it. */
 .pin__dot {
   position: relative;
-  width: 8px;
-  height: 8px;
+  display: block;
+  width: 14px;
+  height: 19px;
   flex: none;
-  border-radius: 999px;
-  background:
-    radial-gradient(
-      circle at 34% 28%,
-      color-mix(in srgb, var(--urgent) 76%, #fff) 0%,
-      var(--urgent) 62%
-    ),
-    var(--urgent);
-  box-shadow:
-    0 0 0 1.6px rgba(255, 255, 255, 0.96),
-    0 0.5px 1px rgba(16, 42, 74, 0.3),
-    0 1.5px 4px rgba(16, 42, 74, 0.28);
-  transition: scale 0.18s var(--ease-out), background 0.2s;
+  color: var(--urgent);
+  transform-origin: 50% 100%;
+  transition: scale 0.18s var(--ease-out);
 }
 
-:root[data-theme="dark"] .pin__dot {
-  box-shadow:
-    0 0 0 1.6px rgba(9, 15, 25, 0.86),
-    0 0.5px 1px rgba(0, 0, 0, 0.5),
-    0 1.5px 5px rgba(0, 0, 0, 0.55);
+.pin__dot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 1px 1px rgba(16, 42, 74, 0.35)) drop-shadow(0 2px 4px rgba(16, 42, 74, 0.25));
 }
 
-/* A ministry with urgent needs carries a standing ring, so the pressure on
-   the map reads before anything has been opened. The hover ring below is a
-   separate ::after, which is why this one can simply sit there. */
-.pin.is-urgent .pin__dot::before {
-  content: "";
-  position: absolute;
-  inset: -6.5px;
-  border-radius: 999px;
-  border: 1.4px solid color-mix(in srgb, var(--urgent) 32%, transparent);
-  background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--urgent) 13%, transparent) 38%,
-    transparent 72%
-  );
-  pointer-events: none;
+.pin__dot path {
+  fill: currentColor;
+  stroke: #fff;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
 }
 
+.pin__dot circle {
+  fill: #fff;
+}
+
+:root[data-theme="dark"] .pin__dot svg {
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55)) drop-shadow(0 2px 5px rgba(0, 0, 0, 0.5));
+}
+
+/* A ministry with urgent needs carries a standing ring round the spot it
+   marks, so the pressure on the map reads before anything has been opened.
+   The hover ring below is a separate ::after, which is why this one can
+   simply sit there. Both are flattened onto the ground at the tip. */
+.pin.is-urgent .pin__dot::before,
 .pin__dot::after {
   content: "";
   position: absolute;
-  inset: -6px;
-  border-radius: 999px;
+  left: 50%;
+  bottom: -3px;
+  width: 16px;
+  height: 7px;
+  translate: -50% 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.pin.is-urgent .pin__dot::before {
+  border: 1.4px solid color-mix(in srgb, var(--urgent) 45%, transparent);
+  background: color-mix(in srgb, var(--urgent) 14%, transparent);
+}
+
+.pin__dot::after {
   border: 1.5px solid var(--urgent);
   opacity: 0;
   scale: 0.6;
@@ -130,13 +138,13 @@ body.is-live .overlay {
 
 .pin:hover .pin__dot,
 .pin.is-active .pin__dot {
-  scale: 1.18;
+  scale: 1.15;
 }
 
 .pin:hover .pin__dot::after,
 .pin.is-active .pin__dot::after {
-  opacity: 0.55;
-  scale: 1;
+  opacity: 0.6;
+  scale: 1.3;
 }
 
 .pin.is-active .pin__dot::after {
@@ -145,16 +153,16 @@ body.is-live .overlay {
 
 @keyframes pin-pulse {
   0% {
-    opacity: 0.55;
-    scale: 1;
+    opacity: 0.6;
+    scale: 1.3;
   }
   70% {
     opacity: 0;
-    scale: 1.75;
+    scale: 2.4;
   }
   100% {
     opacity: 0;
-    scale: 1.75;
+    scale: 2.4;
   }
 }
 

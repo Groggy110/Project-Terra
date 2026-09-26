@@ -53,6 +53,7 @@ export class LabelLayer {
     this.root = root;
     this.onPinClick = onPinClick;
     this.onPinHover = onPinHover;
+    this.forceLettering = false;
 
     this.ministries = [];
     this.places = [];
@@ -169,7 +170,9 @@ export class LabelLayer {
       queue[i] = queue[cursor];
       queue[cursor++] = q;
     }
-    const lettering = z > PIN_CHIP_Z;
+    // The entrance letters its pins too, though it sits just below the zoom
+    // that would: the names are what make the opening globe read as a map.
+    const lettering = z > PIN_CHIP_Z || this.forceLettering;
 
     // How many pins may carry their city at once.
     //
@@ -197,12 +200,12 @@ export class LabelLayer {
       const room = q.x - 8 + wide < width - 6;
       const affordable = active || spent < budget;
       const chip =
-        (lettering || active) && room && affordable && this.#claim(q.x - 8, q.y - 11, wide, 22, active);
+        (lettering || active) && room && affordable && this.#claim(q.x - 8, q.y - 23, wide, 26, active);
       if (chip) {
         chipped.add(q.m.id);
         spent++;
       }
-      else if (!this.#claim(q.x - 8, q.y - 11, 16, 20)) continue;
+      else if (!this.#claim(q.x - 8, q.y - 21, 16, 23)) continue;
       this.#pin(q.m, q, chip || active, active);
     }
     this.chipped = chipped;
@@ -304,8 +307,12 @@ export class LabelLayer {
       el.dataset.ministry = m.id;
       el.setAttribute("aria-label", `${m.name}, ${m.city} — ${m.openNeeds} open needs`);
       el.title = `${m.name} — ${m.openNeeds} open, ${m.peopleWanted} people wanted`;
+      // A map pin rather than a dot: the tip stands on the city, the head
+      // carries the colour. Inline so it inherits `color` from the theme.
       const dot = document.createElement("span");
-      dot.className = "dot pin__dot";
+      dot.className = "pin__dot";
+      dot.innerHTML =
+        '<svg viewBox="0 0 14 19" aria-hidden="true"><path d="M7 18.2C7 18.2 1.2 11.5 1.2 7.1a5.8 5.8 0 0 1 11.6 0C12.8 11.5 7 18.2 7 18.2Z"/><circle cx="7" cy="7" r="2.2"/></svg>';
       const label = document.createElement("span");
       label.className = "pin__chip";
       label.textContent = m.city;
