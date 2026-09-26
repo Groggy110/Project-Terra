@@ -180,6 +180,13 @@ export class Globe {
       },
     });
     this.detailMix = 0;
+    // The entrance can frame the globe off-centre: `shift` is how far its
+    // centre sits left of the canvas centre, as a fraction of the width,
+    // done with a camera view offset so projection, picking and labels all
+    // follow without knowing. It eases back to 0 as the hero retires.
+    this.shift = opts.hero?.shift ?? 0;
+    this.shiftTarget = this.shift;
+    this.heroDist = opts.hero?.dist ?? DIST_FAR;
     this.lastTiles = 0;
     this.tileDist = 0;
     this.labels = new LabelLayer(opts.overlay, {
@@ -289,8 +296,8 @@ export class Globe {
     this.controls.holdSpin(true);
     this.controls.lat = HOME.lat;
     this.controls.lon = HOME.lon;
-    this.controls.dist = DIST_FAR;
-    this.controls.target = { ...HOME, dist: DIST_FAR };
+    this.controls.dist = this.heroDist;
+    this.controls.target = { ...HOME, dist: this.heroDist };
     this.controls.update(0.016);
     this.#serviceVectors(true);
     this.renderer.render(this.scene, this.camera);
@@ -463,12 +470,30 @@ export class Globe {
     this.controls.holdSpin(false);
   }
 
+  /** Where the entrance frames the globe; see `shift` in the constructor. */
+  setShift(fraction, { instant = false } = {}) {
+    this.shiftTarget = fraction;
+    if (instant) {
+      this.shift = fraction;
+      this.#applyShift();
+    }
+    this.dirty = true;
+  }
+
+  #applyShift() {
+    const { w, h } = this.size;
+    if (Math.abs(this.shift) < 1e-4 || !w) this.camera.clearViewOffset();
+    else this.camera.setViewOffset(w, h, this.shift * w, 0, w, h);
+    this.camera.updateProjectionMatrix();
+  }
+
   /**
    * The camera half of settling: down from the whole globe to the working
    * view. Silent, because the page decided to do it — counting it as a
    * gesture would retire the hint that has not been earned yet.
    */
   settle(ms = SETTLE_FLIGHT_MS) {
+    this.shiftTarget = 0;
     // No arc. A long hop normally lifts away from the surface and settles
     // back, which reads well between two places at the same height; on a
     // descent it puts a small rise at the front, and a page that has just
@@ -535,7 +560,7 @@ export class Globe {
     this.renderer.setPixelRatio(this.dpr * this.res);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(h, 1);
-    this.camera.updateProjectionMatrix();
+    this.#applyShift();
     this.controls.setViewport(w, h);
     this.painter.painted = null;
     this.dirty = true;
@@ -657,7 +682,7 @@ export class Globe {
     const u = this.halo.uniforms;
     const buffer = this.renderer.getDrawingBufferSize(this.bufferSize);
     u.uResolution.value.set(buffer.x, buffer.y);
-    u.uCentre.value.set(buffer.x * 0.5, buffer.y * 0.5);
+    u.uCentre.value.set(buffer.x * (0.5 - this.shift), buffer.y * 0.5);
     // Screen space, y down, pointing at the lamp. Taken from the same view
     // space vector the surface is lit by, so the bloom cannot drift off the
     // lit hemisphere however the globe is turned.
@@ -682,6 +707,14 @@ export class Globe {
     const dt = Math.min(frame / 1000, 0.05);
     this.last = now;
     this.#autoRes(frame, now);
+
+    // The entrance framing glides home on roughly the settle's own clock.
+    if (this.shift !== this.shiftTarget) {
+      const d = this.shiftTarget - this.shift;
+      this.shift = Math.abs(d) < 5e-4 ? this.shiftTarget : this.shift + d * (1 - Math.exp(-dt / 0.42));
+      this.#applyShift();
+      this.dirty = true;
+    }
 
     const moved = this.controls.update(dt);
     if (moved) {

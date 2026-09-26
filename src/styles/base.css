@@ -252,6 +252,47 @@ body.is-hero.hero-in .hero {
   }
 }
 
+/* The split entrance: a column to the right of the planet, set left-aligned,
+   with the find bar standing under it (chrome.css). No disc behind the words
+   here, so the paper veil and the glyph halos have nothing to do. */
+body.hero-split .hero {
+  left: 58%;
+  right: max(6vw, 48px);
+  width: auto;
+  top: 25%;
+  translate: 0 -14px;
+  text-align: left;
+}
+
+body.hero-split.is-hero.hero-in .hero {
+  translate: 0 0;
+  animation-name: hero-in-side;
+}
+
+@keyframes hero-in-side {
+  from {
+    opacity: 0;
+    translate: 24px 0;
+  }
+}
+
+body.hero-split .hero::before {
+  content: none;
+}
+
+body.hero-split .hero__title {
+  margin: 0;
+  font-size: clamp(40px, 4.1vw, 66px);
+  text-shadow: none;
+}
+
+body.hero-split .hero__sub {
+  margin: 20px 0 0;
+  max-width: 34em;
+  font-size: 17px;
+  text-shadow: none;
+}
+
 /* Legibility is carried by the halo on the glyphs themselves; this is only a
    breath of the paper colour laid over the busiest part of the disc, so the
    coastlines stop competing with the sentence. Strong enough and it stops

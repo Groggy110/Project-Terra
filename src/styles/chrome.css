@@ -238,6 +238,15 @@ body.is-hero .findbar {
   margin-inline: auto;
 }
 
+/* Split entrance: the bar joins the right-hand column under the copy. */
+body.is-hero.hero-split .findbar {
+  top: 62%;
+  left: 58%;
+  right: max(6vw, 48px);
+  max-width: none;
+  margin-inline: 0;
+}
+
 .search {
   position: relative;
   height: 46px;
@@ -663,6 +672,20 @@ body.is-hero .search input {
   justify-content: center;
   gap: 10px;
   margin-top: 22px;
+}
+
+/* The split column carries the words and the bar and nothing else: the
+   chips would wrap into the corner stats on a smaller laptop, and they have
+   nothing to filter until the map is there. They come in with the settle. */
+.filters {
+  transition: opacity 0.5s var(--ease) 0.35s, visibility 0.5s 0.35s;
+}
+
+body.is-hero.hero-split .filters {
+  justify-content: flex-start;
+  opacity: 0;
+  visibility: hidden;
+  transition: none;
 }
 
 .chip {

@@ -29,9 +29,17 @@ const HERO_IN_MS = 520;
  * Measured from the headline's cue, not from its arrival: the words take
  * 1.1s to land, so this is about eight tenths of a second of stillness with
  * the sentence fully up. It is a headline over a globe, not a splash screen —
- * it has to be gone before anyone starts waiting for it.
+ * it has to be gone before anyone starts waiting for it. Lengthened to about
+ * two seconds of stillness once the copy grew to a full sentence and a line.
  */
-const HERO_HOLD_MS = 1900;
+const HERO_HOLD_MS = 3100;
+
+/** The side-by-side entrance: wide enough for two columns, and landscape. */
+const HERO_SPLIT = window.matchMedia("(min-width: 1000px) and (min-aspect-ratio: 4/3)");
+/** How far left of centre the planet sits in it, as a fraction of the width. */
+const HERO_SHIFT = 0.21;
+/** A little nearer than the whole-globe stop, so the planet fills the column. */
+const HERO_DIST = 4.05;
 
 export class App {
   constructor() {
@@ -116,6 +124,11 @@ export class App {
     // network figures where the panel will be. Everything settles once the
     // globe has flown in.
     document.body.classList.add("is-hero");
+    // On a wide landscape window the entrance splits: the planet large on the
+    // left, the words and the find bar on the right. Anything narrower keeps
+    // the centred composition, where there is no room for two columns.
+    const split = HERO_SPLIT.matches;
+    document.body.classList.toggle("hero-split", split);
     this.panel.setOpen(false);
     this.#theme(store.theme || "dark", { quiet: true });
     this.#bindChrome();
@@ -123,6 +136,7 @@ export class App {
 
     this.globe = new Globe(this.el.canvas, {
       overlay: this.el.overlay,
+      hero: split ? { shift: HERO_SHIFT, dist: HERO_DIST } : undefined,
       onProgress: (p, label) => boot.progress(p, label),
       onPinClick: (m) => this.openMinistry(m, { fly: true }),
       onGlobeClick: () => this.#deselect(),
@@ -205,7 +219,9 @@ export class App {
     if (!document.body.classList.contains("is-hero")) return;
     clearTimeout(this.heroTimer);
     clearTimeout(this.heroInTimer);
-    document.body.classList.remove("is-hero", "hero-in");
+    document.body.classList.remove("is-hero", "hero-in", "hero-split");
+    // The split framing glides back to centre whichever way the hero ends.
+    this.globe?.setShift(0);
     // Whichever way the hero went, the opening frame is over and the globe is
     // free to turn again. On the timed exit the settle starts the turn itself;
     // on a gesture the drift picks it up once the hand comes off.
