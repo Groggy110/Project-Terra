@@ -80,8 +80,25 @@ export const PROVIDERS = {
 const TILE_BUDGET = 256; // the whole 16x16 canvas MAX_SIDE allows
 /** Hard ceiling on the composited canvas, in pixels a side. */
 const MAX_SIDE = 4096;
-/** Tiles kept decoded. Roughly three windows' worth, so a pull-back is instant. */
-const CACHE_MAX = 640;
+/**
+ * Decoded tiles kept in memory, as a byte budget rather than a count: a 512px
+ * tile is four times a 256px one, and a count that suits Esri would hold 640MB
+ * of Mapbox. 192MB is about three city windows at 256px, so a pull-back — or a
+ * return to somewhere visited a minute ago — composites straight from memory.
+ * Least recently *used* goes first, not least recently fetched: a place you
+ * keep coming back to stays warm however long ago it first loaded.
+ */
+const DECODED_BUDGET = 192 * 1024 * 1024;
+/**
+ * The compressed tiles, kept on disk in Cache Storage across reloads and
+ * visits. JPEG tiles run 15-40KB, so this is on the order of 150MB — every
+ * city someone has looked at in the last good while, already on the device.
+ * The HTTP cache would do some of this, but it is shared with the whole web,
+ * evicted on its own schedule, and Esri only asks for a day.
+ */
+const STORE_MAX = 6000;
+/** Bump to drop every stored tile, e.g. when a provider changes its imagery. */
+const STORE_NAME = "terra-tiles-v1";
 /** Requests in flight. Enough to fill a window in one round trip, not so many
  *  that a fast drag queues fifty dead fetches ahead of the ones that matter. */
 const MAX_INFLIGHT = 16;
@@ -110,6 +127,22 @@ const mercN = (lat) => {
   const p = clamp(lat, -MERC_LIMIT, MERC_LIMIT) * DEG;
   return 0.5 - Math.log(Math.tan(Math.PI / 4 + p / 2)) / (2 * Math.PI);
 };
+
+/**
+ * Opens the tile store, and clears out any older version of it. Resolves to
+ * null wherever Cache Storage is missing or refused, and the layer then runs
+ * exactly as it did before there was one.
+ */
+async function openStore() {
+  try {
+    if (!globalThis.caches) return null;
+    const names = await caches.keys();
+    await Promise.all(names.filter((n) => n.startsWith("terra-tiles-") && n !== STORE_NAME).map((n) => caches.delete(n)));
+    return await caches.open(STORE_NAME);
+  } catch {
+    return null;
+  }
+}
 
 /* ------------------------------------------------------------------- layer */
 
@@ -181,6 +214,10 @@ export class ImageryLayer {
     this.coverage = 0;
 
     this.cache = new Map();
+    this.cacheMax = Math.max(64, Math.floor(DECODED_BUDGET / (this.source?.tile || 256) ** 2 / 4));
+    /** Cache Storage, opened once; null where there is none (plain http, some private windows). */
+    this.store = this.enabled ? openStore() : Promise.resolve(null);
+    this.storeCount = -1;
     this.inflight = new Set();
     this.queue = [];
     this.notify = 0;
@@ -195,13 +232,14 @@ export class ImageryLayer {
      * frame of a flight — only permission for one more pass.
      */
     this.pending = false;
-    this.stats = { tiles: 0, z: 0, requests: 0, failed: 0, size: "0x0" };
+    this.stats = { tiles: 0, z: 0, requests: 0, stored: 0, failed: 0, size: "0x0" };
   }
 
   dispose() {
     clearTimeout(this.notify);
     this.notify = 0;
     this.texture.dispose();
+    for (const img of this.cache.values()) img?.close?.();
     this.cache.clear();
     this.queue.length = 0;
   }
@@ -239,24 +277,65 @@ export class ImageryLayer {
     }
 
     this.inflight.add(id);
-    this.stats.requests++;
-    const img = new Image();
-    // Without this the canvas is tainted and the WebGL upload throws. Every
-    // provider in the table sends the matching header; a custom one must too.
-    img.crossOrigin = "anonymous";
-    img.decoding = "async";
-    const done = (ok) => {
+    const done = (img) => {
       this.inflight.delete(id);
       // Null rather than absent: a 404 over the ocean is a permanent answer,
       // and re-asking for it on every recomposite is a request storm.
-      this.#remember(id, ok ? img : null);
-      if (!ok) this.stats.failed++;
+      this.#remember(id, img);
+      if (!img) this.stats.failed++;
       this.#drain();
       this.#touch();
     };
-    img.onload = () => done(true);
-    img.onerror = () => done(false);
-    img.src = this.#url(z, x, y);
+    this.#load(z, x, y).then(done, () => done(null));
+  }
+
+  /**
+   * One tile as a decoded bitmap: from the device if it has been here before,
+   * otherwise from the network, keeping a copy on the way past. Decoded with
+   * createImageBitmap, off the main thread, so a window of tiles landing does
+   * not stall the frame that draws them.
+   */
+  async #load(z, x, y) {
+    // Keyed by provider and tile, never by the URL: that carries the API key,
+    // and a rotated key must not orphan every tile already on the device.
+    const key = `/__terra-tiles/${this.label.replace(/\W+/g, "-")}/${z}/${x}/${y}`;
+    const store = await this.store;
+    let blob = null;
+    if (store) {
+      const hit = await store.match(key).catch(() => null);
+      if (hit) {
+        blob = await hit.blob();
+        this.stats.stored++;
+      }
+    }
+    if (!blob) {
+      this.stats.requests++;
+      const res = await fetch(this.#url(z, x, y), { mode: "cors", credentials: "omit" });
+      if (!res.ok) return null;
+      blob = await res.blob();
+      if (store) this.#keep(store, key, blob);
+    }
+    return createImageBitmap(blob);
+  }
+
+  /** Writes a tile to the device and, now and then, trims the oldest off. */
+  async #keep(store, key, blob) {
+    try {
+      await store.put(key, new Response(blob, { headers: { "Content-Type": blob.type || "image/jpeg" } }));
+      if (this.storeCount < 0) this.storeCount = (await store.keys()).length;
+      else this.storeCount++;
+      // Trimmed in batches, not one delete per put: listing the keys is the
+      // expensive part. Keys come back in insertion order, oldest first.
+      if (this.storeCount > STORE_MAX + 200) {
+        const keys = await store.keys();
+        const drop = keys.slice(0, keys.length - STORE_MAX);
+        await Promise.all(drop.map((k) => store.delete(k)));
+        this.storeCount = keys.length - drop.length;
+      }
+    } catch {
+      // Quota, or storage switched off mid-session: the tile is still drawn,
+      // it just will not be remembered.
+    }
   }
 
   #drain() {
@@ -268,14 +347,17 @@ export class ImageryLayer {
 
   #remember(id, img) {
     this.cache.set(id, img);
-    if (this.cache.size <= CACHE_MAX) return;
-    // Insertion order is arrival order, and arrival order tracks the camera:
-    // the oldest entries are the ground you have travelled furthest from.
-    const drop = this.cache.size - CACHE_MAX;
+    if (this.cache.size <= this.cacheMax) return;
+    // Map order is recency: #pick moves every tile it draws to the end, so
+    // the front is the ground nobody has looked at for longest.
+    const drop = this.cache.size - this.cacheMax;
     let n = 0;
-    for (const k of this.cache.keys()) {
+    for (const [k, old] of this.cache) {
       if (n++ >= drop) break;
       this.cache.delete(k);
+      // A bitmap holds its pixels until closed; drawImage has already copied
+      // anything that needed them into the canvas.
+      old?.close?.();
     }
   }
 
@@ -287,10 +369,14 @@ export class ImageryLayer {
    */
   #pick(z, x, y) {
     for (let d = 0; d <= ANCESTORS && z - d >= 0; d++) {
-      const img = this.cache.get(`${z - d}/${x >> d}/${y >> d}`);
+      const id = `${z - d}/${x >> d}/${y >> d}`;
+      const img = this.cache.get(id);
       if (!img) continue;
+      // Used, so most recent: to the back of the eviction line.
+      this.cache.delete(id);
+      this.cache.set(id, img);
       const s = 1 << d;
-      const sub = img.naturalWidth / s;
+      const sub = (img.naturalWidth || img.width) / s;
       return { img, sx: (x % s) * sub, sy: (y % s) * sub, ss: sub, exact: d === 0 };
     }
     return null;

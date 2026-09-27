@@ -63,9 +63,21 @@ check(
 );
 
 check(
-  "120Hz dropping to 60 — steps down",
-  pickResolution(trace([8.3, 16.7]), 1) < 1,
+  "120Hz dropping to 60 — holds full resolution, sixty is the floor",
+  pickResolution(trace([8.3, 16.7]), 1) === 1,
   "8/17 alternating",
+);
+
+check(
+  "120Hz holding a steady 60 climbs back to full from the floor",
+  settle(trace([16.7]), 0.55) === 1,
+  "16.7ms flat on a fast panel",
+);
+
+check(
+  "120Hz falling below 60 — steps down",
+  pickResolution(trace([16.7, 33.3]), 1) < 1,
+  "17/33 alternating",
 );
 
 check(

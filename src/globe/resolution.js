@@ -16,6 +16,8 @@
  */
 
 const RES_STEPS = [0.55, 0.7, 0.85, 1];
+/** The slowest cadence counted as keeping up: 60Hz, with a little slack. */
+const CADENCE_FLOOR_MS = 16;
 /** Frames considered per decision. About three quarters of a second. */
 const RES_WINDOW = 48;
 /** Floor between changes, either way. */
@@ -46,8 +48,11 @@ export function pickResolution(samples, current) {
 
   const sorted = [...samples].sort((a, b) => a - b);
   // The display's own cadence: the quickest frames it managed, which is what
-  // it does when nothing is in the way.
-  const base = Math.max(sorted[Math.floor(sorted.length * 0.2)], 4);
+  // it does when nothing is in the way — but never quicker than 60Hz. A
+  // steady sixty is smooth, and on a 120Hz panel the scaler used to buy the
+  // other sixty with sharpness: the look drawn at 70% and softened, for
+  // frames nobody asked for. Below sixty it still gives resolution back.
+  const base = Math.max(sorted[Math.floor(sorted.length * 0.2)], CADENCE_FLOOR_MS);
   const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
   const ratio = mean / base;
 

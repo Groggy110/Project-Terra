@@ -27,9 +27,9 @@ export const STYLE = {
 
   renderer: {
     /** None | Linear | Reinhard | Cineon | ACESFilmic | AgX | Neutral */
-    toneMapping: "None",
+    toneMapping: "Neutral",
     /** Only acts when tone mapping is on, as in three. */
-    exposure: 1,
+    exposure: 1.81,
     /**
      * "Linear" writes the shader's colour as is — right, because the grade is
      * authored in gamma space and nothing is decoded on the way in. "sRGB"
@@ -37,7 +37,7 @@ export const STYLE = {
      */
     outputColorSpace: "Linear",
     /** Device pixel ratio ceiling. Past 2 costs fill rate nobody can see. */
-    maxPixelRatio: 2,
+    maxPixelRatio: 3,
   },
 
   camera: {
@@ -47,7 +47,7 @@ export const STYLE = {
     // between minDist and maxDist, so moving the far end rescales every
     // altitude in the app. Widening the lens leaves the zoom ladder where it
     // is and only changes how much of the world each rung shows.
-    fov: 35.6,
+    fov: 36.7,
     near: 0.005,
     far: 60,
     /**
@@ -99,16 +99,16 @@ export const STYLE = {
      * it to the world instead, at the same angles as seen from HOME.
      */
     followCamera: true,
-    specPower: 46,
+    specPower: 19,
     specColor: "#fffbf2",
     /** The embossing light: north-west, about forty degrees up. */
-    hillshade: { azimuth: 315, elevation: 41.4729, min: 0.42, max: 1.44 },
+    hillshade: { azimuth: 7.5, elevation: 65.6, min: 0.86, max: 1.17 },
     // Extra lights over the authored sun. All at intensity 0, where the
     // shader skips them. Angles are view space, like the sun's.
     ambient: { color: "#ffffff", intensity: 0 },
     hemisphere: { sky: "#bcd8ff", ground: "#3b2c1c", intensity: 0 },
-    fill: { color: "#9cc4ff", intensity: 0, azimuth: 120, elevation: -10 },
-    rim: { color: "#bfe0ff", intensity: 0, azimuth: 180, elevation: 30, power: 3 },
+    fill: { color: "#757575", intensity: 0.84, azimuth: -157, elevation: 33.5 },
+    rim: { color: "#bfe0ff", intensity: 0.97, azimuth: -93, elevation: 57, power: 4 },
   },
 
   /** Depth fog over the globe and the clouds, by distance from the camera in earth radii. */
@@ -116,31 +116,31 @@ export const STYLE = {
 
   globe: {
     /** Sphere tessellation (width segments; height is half). Shape only. */
-    segments: 256,
+    segments: 392,
     /** The day imagery. Swapping it loads a new texture. */
     baseTexture: "/textures/blue-marble.jpg",
     /** Latitude/longitude grid drawn on the surface. */
-    graticule: { enabled: false, color: "#ffffff", opacity: 0.4, spacing: 15, width: 1.2 },
+    graticule: { enabled: false, color: "#ffffff", opacity: 0.09, spacing: 12.5, width: 1.25 },
     /** City lights on the night side, painted from places.json by population. */
-    nightLights: { enabled: false, color: "#ffc978", intensity: 1.2, size: 1.5 },
+    nightLights: { enabled: true, color: "#623c04", intensity: 2.2, size: 0.5 },
     clouds: {
       enabled: true,
       /** Shell height above the ground, in earth radii. */
-      altitude: 0.0055,
+      altitude: 0.0105,
       segments: 128,
       /** Turns of the sheet per second. */
-      drift: 0.00042,
+      drift: 0.00223,
       /** Zoom band over which the sheet goes out. */
       fadeStart: 0.12,
       fadeEnd: 0.72,
     },
     /** Zoom band over which the facets retire. */
-    facetFadeStart: 0.46,
-    facetFadeEnd: 0.82,
+    facetFadeStart: 0,
+    facetFadeEnd: 1,
     /** Zoom band over which the terminator flattens to daylight, and by how much. */
-    sunFlattenStart: 0.34,
+    sunFlattenStart: 0.07,
     sunFlattenEnd: 0.78,
-    sunFlatten: 0.78,
+    sunFlatten: 0.77,
   },
 
   /**
@@ -148,12 +148,12 @@ export const STYLE = {
    * off the shaders skip it entirely, so it costs nothing and changes nothing.
    */
   grade: {
-    enabled: false,
+    enabled: true,
     mix: 1,
-    brightness: 0,
-    contrast: 1,
-    saturation: 1,
-    vibrance: 0,
+    brightness: -0.04,
+    contrast: 0.89,
+    saturation: 0.98,
+    vibrance: -0.06,
     hue: 0,
     temperature: 0,
     tint: 0,
@@ -167,19 +167,19 @@ export const STYLE = {
     // Bloom, chromatic aberration and a non-default anti-aliasing mode route
     // the frame through a render target; with all three at rest it is drawn
     // straight to the canvas as it always was.
-    bloom: { enabled: false, strength: 0.6, radius: 1, threshold: 0.6 },
-    chromatic: { enabled: false, amount: 0.0025 },
+    bloom: { enabled: true, strength: 0, radius: 0.4, threshold: 0.35 },
+    chromatic: { enabled: true, amount: 0.0039 },
     /** msaa (the context's own) | fxaa | none */
     aa: "msaa",
-    vignette: { enabled: false, strength: 0.5, radius: 0.75, softness: 0.45, color: "#000000" },
-    grain: { enabled: false, amount: 0.06, size: 1.5, animated: true },
+    vignette: { enabled: true, strength: 0.32, radius: 1.25, softness: 0.5, color: "#000000" },
+    grain: { enabled: true, amount: 0.02, size: 1.4, animated: false },
   },
 
   markers: {
-    size: 8,
-    rim: 1.5,
+    size: 5.5,
+    rim: 0.8,
     activeRim: 2,
-    hoverScale: 1.25,
+    hoverScale: 1.7,
     activeScale: 1.4,
     /** Soft glow round each dot, in px. 0 is the minimal look. */
     glow: 0,
@@ -187,9 +187,9 @@ export const STYLE = {
     dimOpacity: 0.28,
     opacity: 1,
     /** circle | square | diamond */
-    shape: "circle",
+    shape: "diamond",
     /** Ripple from each dot: off | urgent | all. */
-    pulse: { mode: "off", speed: 1.8, size: 2.6 },
+    pulse: { mode: "urgent", speed: 1.95, size: 3 },
     hoverColorOn: false,
     activeColorOn: false,
   },
@@ -197,14 +197,14 @@ export const STYLE = {
   labels: {
     /** CSS font-family; "" keeps the page's own sans. */
     font: "",
-    chipSize: 14.5,
-    placeSize: 12.5,
-    countrySize: 14,
+    chipSize: 11.5,
+    placeSize: 8,
+    countrySize: 14.5,
     /** Zoom at which city names start to arrive. */
-    cityZoom: 0.28,
+    cityZoom: 0.4,
     /** Zoom at which country plates may appear, and how many at once. */
-    countryZoom: 0.12,
-    countryMax: 3,
+    countryZoom: 0.47,
+    countryMax: 10,
     /** Screen area (px²) each lettered pin needs; smaller letters more of them. */
     pinDensity: 58000,
   },
@@ -226,7 +226,7 @@ export const STYLE = {
     dark: {
       background: {
         /** solid | linear | radial | transparent */
-        mode: "solid",
+        mode: "linear",
         /**
          * The page colour (--paper) the chrome, the hero scrim and the sign-in
          * veil all mix from. The reference's sky is *black* — the corners of
@@ -235,14 +235,14 @@ export const STYLE = {
          */
         page: "#000206",
         solid: "#000206",
-        linear: { top: "#04101e", bottom: "#000206", angle: 180 },
-        radial: { center: "#0a1a2e", mid: "#030b16", edge: "#000206", midStop: 45, width: 70, height: 80, x: 50, y: 48 },
+        linear: { top: "#001a38", bottom: "#000000", angle: 180 },
+        radial: { center: "#0a1a2e", mid: "#030b16", edge: "#000206", midStop: 50, width: 30, height: 80, x: 50, y: 48 },
         /** stars | dots | none */
         pattern: "stars",
         // Tiled rather than stretched: the sheet is built to wrap
         // (tools/make_stars.py), so the field stays the same density on a
         // laptop and on a wall.
-        stars: { source: "texture", count: 1400, radius: 0.7, color: "#ffffff", seed: 7, opacity: 0.85, size: 1024, drift: 0, twinkle: 0, twinkleSpeed: 4 },
+        stars: { source: "texture", count: 450, radius: 0.4, color: "#ffffff", seed: 1, opacity: 0.85, size: 1024, drift: 3, twinkle: 0, twinkleSpeed: 20 },
         dots: { color: "#96b9e6", alpha: 0.13, size: 1, spacing: 24, opacity: 0.8, fadeInner: 32, fadeOuter: 78 },
         // Grain is a property of paper, and over a night sky it is only noise.
         grain: { enabled: false, opacity: 0.035, size: 420 },
@@ -250,65 +250,65 @@ export const STYLE = {
       light: {
         // Behind and above, a touch to the left — see the note above. Degrees
         // in view space: azimuth 0 is toward the viewer, 90 is screen right.
-        sunAzimuth: -122.0054,
-        sunElevation: 79.1238,
+        sunAzimuth: -34.8,
+        sunElevation: 42.3,
         sunMix: 1.0,
         // Not zero: a globe whose underside is literally black loses its
         // silhouette against a near-black sky.
-        ambient: 0.04,
-        termWidth: 0.74,
-        termGamma: 1.35,
-        night: "#04101d",
-        spec: 0.3,
+        ambient: 0,
+        termWidth: 0.73,
+        termGamma: 2.53,
+        night: "#000205",
+        spec: 0.25,
       },
       surface: {
-        ocean: { deep: "#072238", mid: "#16608f", shelf: "#3fabdc" },
-        land: { gamma: 0.5, sat: 1.62, gain: 1.14, lift: 0.005 },
+        ocean: { deep: "#00192e", mid: "#002f4d", shelf: "#2d6766" },
+        land: { gamma: 0.7, sat: 1.53, gain: 1.35, lift: -0.091 },
         // Strong. The reference reads as embossed relief — dune fields and
         // ranges lit from the side — not as a photograph laid on a ball.
-        relief: 7.6,
-        snow: "#e4eefa",
-        snowAmt: 0.22,
+        relief: 1.9,
+        snow: "#878787",
+        snowAmt: 0.76,
         // A whisper. The land in the reference is painted relief with a fine
         // crazing over the vegetation, not a mosaic of tiles.
-        facet: { amount: 0.7, scale: 74, tilt: 0.08, flat: 0.06, edge: 0.055, edgeInk: -0.5 },
+        facet: { amount: 1, scale: 39, tilt: 0.16, flat: 0.32, edge: 0.113, edgeInk: -0.42 },
         // Streamed tiles, brought back to Blue Marble's footing before the land
         // grade runs over both. Net: gamma 1.0, saturation 1.05, gain 1.0 —
         // the imagery as published.
         detail: { gamma: 2.0, sat: 0.65, gain: 0.88, lift: 0.0, sea: 0.5 },
         landTint: "#ffffff",
-        landTintAmt: 0,
-        emissive: "#3f93e6",
+        landTintAmt: 0.25,
+        emissive: "#517aa4",
         emissiveIntensity: 0,
         emissiveNightOnly: true,
       },
       atmosphere: {
         enabled: true,
-        color: "#3f93e6",
-        fresnel: 0.78,
-        fresnelPow: 2.0,
+        color: "#002b57",
+        fresnel: 0.5,
+        fresnelPow: 1.05,
         // Nearly nothing away from the light: the reference's lower limb is
         // black, with no outline drawn round the dark side of the disc.
         rimBase: 0.0,
-        halo: { inner: "#eaf5ff", outer: "#4180c6", strength: 1.9, spread: 0.058, topBias: 0.006, falloff: 4.0, bloom: 1.0, bloomSpread: 1.4, rimPower: 3.2, spillPower: 1.7 },
+        halo: { inner: "#8c8c8c", outer: "#474747", strength: 0.93, spread: 0.161, topBias: 0, falloff: 7.7, bloom: 0.23, bloomSpread: 1.12, rimPower: 10, spillPower: 0.2 },
       },
       clouds: {
-        tint: "#ffffff", shadow: "#0a1524", opacity: 0.98, sunMix: 0.72, lo: 0.42, hi: 0.95, gamma: 2.2, fade: 1,
-        real: 0, realOpacity: 0.98, realLo: 0.2, realHi: 0.9,
+        tint: "#f0f0f0", shadow: "#000000", opacity: 0.31, sunMix: 1, lo: 0.6, hi: 1, gamma: 5, fade: 1,
+        real: 1, realOpacity: 0.34, realLo: 0.32, realHi: 0.63,
       },
       // Against the night sky the coast is drawn as shallow water rather than
       // as an outline: a band of lit turquoise where the shelf comes up.
       lines: {
         coast: { color: "#6cc4e2", width: 1.05, alpha: 0.3 },
-        borders: { color: "#bad6f2", width: 0.85, alpha: 0.2 },
-        rivers: { color: "#568cc0", width: 0.8, alpha: 0.5 },
+        borders: { color: "#000000", width: 1, alpha: 0.76 },
+        rivers: { color: "#568cc0", width: 0.75, alpha: 0.5 },
         lakeEdge: { color: "#6cc4e2", width: 0.8, alpha: 0.24 },
       },
       markers: {
-        urgent: "#e2685a",
-        normal: "#ea9288",
+        urgent: "#ff1900",
+        normal: "#ffae00",
         rimColor: "#ffffff",
-        rimAlpha: 0.9,
+        rimAlpha: 0.67,
         shadowColor: "#000000",
         shadowAlpha: 0.55,
         shadowBlur: 4,
@@ -316,20 +316,20 @@ export const STYLE = {
         activeShadowColor: "#102a4a",
         activeShadowAlpha: 0.4,
         glowColor: "#e2685a",
-        hoverColor: "#ff8a7a",
+        hoverColor: "#1f8104",
         activeColor: "#ffffff",
-        pulseColor: "#e2685a",
+        pulseColor: "#ff1900",
       },
       labels: {
         chipBg: "#121b29",
-        chipBgAlpha: 0.88,
+        chipBgAlpha: 0.83,
         chipHoverBg: "#121b29",
         chipColor: "#eaf1fa",
         placeColor: "#f4f7fb",
-        placeHalo: "#08101c",
-        placeHaloAlpha: 0.72,
-        countryBg: "#121b29",
-        countryBgAlpha: 0.88,
+        placeHalo: "#ffffff",
+        placeHaloAlpha: 0,
+        countryBg: "#f5f5f5",
+        countryBgAlpha: 0,
         countryColor: "#eaf1fa",
       },
     },
