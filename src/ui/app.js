@@ -216,6 +216,11 @@ export class App {
     // Coalesced: a window drag-resize delivers a stream of these, and each one
     // measures a dozen chrome boxes. One measurement per frame is plenty, and
     // it keeps the reads out of the middle of the resize itself.
+    // The find bar glides up out of the entrance for longer than the timed
+    // re-measure waits, and a side card is placed from where it comes to rest.
+    document.querySelector(".findbar")?.addEventListener("transitionend", (e) => {
+      if (e.target === e.currentTarget && e.propertyName === "top") this.syncReserved();
+    });
     let resizePending = 0;
     window.addEventListener("resize", () => {
       if (resizePending) return;
@@ -233,7 +238,10 @@ export class App {
     // brings the camera with it: someone who has already taken hold of the
     // globe has said where they want to be, and having it fly out from under
     // them is the rudest thing the page could do.
-    this.heroInTimer = setTimeout(() => document.body.classList.add("hero-in"), HERO_IN_MS);
+    // Someone who clicked through while it was still loading has already left.
+    if (document.body.classList.contains("is-hero")) {
+      this.heroInTimer = setTimeout(() => document.body.classList.add("hero-in"), HERO_IN_MS);
+    }
     // No timed exit: the landing screen holds until someone engages — a
     // click or drag on the globe, or a search submitted with Enter.
 
@@ -1101,6 +1109,11 @@ export class App {
     if (this.panel.open) push(this.el.panel);
     if (this.board.open) push(this.el.sheet);
     this.globe?.setReserved(rects);
+    // A side card starts below the find bar, so it never covers the search or
+    // a chip. The bar's height follows its chips, which wrap, so it is
+    // measured rather than assumed.
+    const find = document.querySelector(".findbar")?.getBoundingClientRect();
+    if (find?.height) document.documentElement.style.setProperty("--find-bottom", `${Math.round(find.bottom)}px`);
   }
 
   #deselect() {

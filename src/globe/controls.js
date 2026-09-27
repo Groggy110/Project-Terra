@@ -415,24 +415,26 @@ export class GlobeControls {
    */
   #holdAnchor(dist) {
     const a = this.anchor;
-    const cam = this.camera;
+    // Not `cam`: that is the module's STYLE.camera reader, which the latitude
+    // clamp below still needs.
+    const camera = this.camera;
     const { w, h } = this.viewport;
-    const ppd = Math.max(pixelsPerDegree(dist * this.fit, h, cam.fov), 0.4);
+    const ppd = Math.max(pixelsPerDegree(dist * this.fit, h, camera.fov), 0.4);
     for (let i = 0; i < 6; i++) {
-      latLonToVec3(this.lat, this.lon, dist * this.fit, cam.position);
-      cam.up.set(0, 1, 0);
-      cam.lookAt(0, 0, 0);
-      if (camRoll()) cam.rotateZ(camRoll());
-      cam.updateMatrixWorld();
+      latLonToVec3(this.lat, this.lon, dist * this.fit, camera.position);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(0, 0, 0);
+      if (camRoll()) camera.rotateZ(camRoll());
+      camera.updateMatrixWorld();
       // Round the back of the globe from here: head straight for it instead.
       // (Visible means p·camera > 1: the cap shrinks to ~10° at the closest zoom.)
-      if (a.p.dot(cam.position) < 1.001) {
+      if (a.p.dot(camera.position) < 1.001) {
         const at = vec3ToLatLon(a.p);
         this.lat = clamp(this.lat + (at.lat - this.lat) * 0.5, -cam().latLimit, cam().latLimit);
         this.lon += wrapDelta(this.lon, at.lon) * 0.5;
         continue;
       }
-      const q = this.#probe.copy(a.p).project(cam);
+      const q = this.#probe.copy(a.p).project(camera);
       const ex = ((a.x - q.x) * w) / 2;
       const ey = (-(a.y - q.y) * h) / 2;
       if (Math.abs(ex) + Math.abs(ey) < 0.05) break;

@@ -945,6 +945,13 @@ export class Globe {
     // frame back does not integrate a two-minute dt into the drift.
     if (this.covered || document.hidden) {
       this.last = now;
+      // Nobody is watching the framing glide home, so it lands at once:
+      // otherwise a hero left for a dialog comes back still off-centre.
+      if (this.shift !== this.shiftTarget) {
+        this.shift = this.shiftTarget;
+        this.#applyShift();
+        this.dirty = true;
+      }
       return;
     }
 

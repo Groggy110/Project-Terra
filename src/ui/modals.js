@@ -33,13 +33,19 @@ export class ModalLayer {
     if (!this.current) return;
     const { scrim, modal } = this.current;
     this.current = null;
+    document.body.classList.remove("side-card");
     scrim.classList.add("is-out");
     modal.classList.add("is-out");
     this.onToggle?.(false);
-    modal.addEventListener("animationend", () => {
+    // On the card's own exit, not a child's; and on a timer as well, since a
+    // card that never animates out would otherwise leave its scrim standing
+    // over the globe, taking every drag.
+    const done = () => {
       scrim.remove();
       modal.remove();
-    });
+    };
+    modal.addEventListener("animationend", (e) => e.target === modal && done());
+    setTimeout(done, 600);
   }
 
   /** Mounts a dialog; `build(close)` returns the body of the card. */
@@ -62,6 +68,7 @@ export class ModalLayer {
     add(modal, [build(() => this.close())]);
     this.root.append(scrim, modal);
     this.current = { scrim, modal, side };
+    document.body.classList.toggle("side-card", side);
     this.onToggle?.(true);
     const focusTarget =
       modal.querySelector("[data-autofocus]") ??

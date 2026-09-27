@@ -931,7 +931,14 @@ body.is-hero.hero-split .filters {
   color: var(--ink);
   white-space: nowrap;
   cursor: pointer;
-  transition: border-color 0.2s, translate 0.2s var(--ease-out), box-shadow 0.2s;
+  transition: border-color 0.2s, translate 0.2s var(--ease-out), box-shadow 0.2s, opacity 0.4s var(--ease);
+}
+
+/* Not on the landing screen: the board is a way into the working view, so it
+   waits until someone has stepped past the headline onto the globe. */
+body.is-hero .grabber {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .grabber .ico {
@@ -1351,4 +1358,31 @@ body.is-hero.hero-split .filters {
    list gets only the room left below it, and scrolls inside that. */
 body.is-hero.hero-split .suggest {
   max-height: calc(38vh - 84px);
+}
+
+/* ---------- three columns ----------
+
+   Wide enough for a card on each side of the map: the rail on the right, a
+   side card on the left mirroring it (modal.css), and the find bar centred in
+   the column between them, the same gutter from each. The dial lies down
+   along the foot of the window so the left column is free top to bottom, and
+   the credit follows it. Narrower windows keep the two-column arrangement. */
+@media (min-width: 1250px) and (min-height: 521px) {
+  body:not(.is-hero) .findbar {
+    left: calc(var(--edge) + var(--safe-l) + var(--panel-w) + 28px);
+    right: calc(var(--edge) + var(--safe-r) + var(--panel-w) + 28px);
+  }
+
+  body:not(.is-hero) .search {
+    height: 44px;
+  }
+
+  .dial {
+    flex-direction: row;
+  }
+
+  .credit {
+    left: calc(var(--edge) + var(--safe-l) + 4 * 34px + 3 * 11px + 14px);
+    bottom: calc(var(--edge) + var(--safe-b) + 5px);
+  }
 }
