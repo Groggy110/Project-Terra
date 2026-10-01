@@ -466,6 +466,66 @@ body.is-hero .search__clear {
   }
 }
 
+/* The same light, quieter, on the other things you can press: a fainter
+   comet on a thinner band, turning slower, with no bloom — so the search
+   bar stays the brightest thing on the page. Over a faint tint of the
+   whole edge, as the bar's is. Only with a real pointer
+   (touch has no hover to wake it), and only the ring: it sits on the
+   element's own edge (inset -1px covers a 1px border) and never takes the
+   pointer. The accent button's ring is white, as accent on accent would not
+   show. */
+@media (hover: hover) {
+  :where(.btn, .chip__btn, .need, .fab) {
+    position: relative;
+  }
+
+  :where(.btn, .chip__btn, .need, .fab)::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: 1;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
+    background:
+      conic-gradient(
+        from var(--ring-a),
+        transparent 0deg 150deg,
+        color-mix(in srgb, var(--ring-c, var(--accent)) 70%, transparent) 270deg,
+        color-mix(in srgb, var(--ring-c, var(--accent)) 35%, #fff) 318deg,
+        #fff 334deg,
+        var(--ring-c, var(--accent)) 348deg,
+        transparent 360deg
+      ),
+      linear-gradient(color-mix(in srgb, var(--ring-c, var(--accent)) 30%, transparent) 0 0);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box exclude,
+      linear-gradient(#000 0 0);
+    opacity: 0;
+    transition: opacity 0.4s var(--ease);
+    animation: ring-spin 4.8s linear infinite paused;
+  }
+
+  :where(.btn, .chip__btn, .need, .fab):hover::after {
+    opacity: 0.85;
+    animation-play-state: running;
+  }
+
+  .btn--accent {
+    --ring-c: #fff;
+  }
+}
+
+@media (hover: hover) and (prefers-reduced-motion: reduce) {
+  :where(.btn, .chip__btn, .need, .fab)::after {
+    animation: none;
+  }
+}
+
 /* The ring is the focus mark now; the field's own ring would double it. */
 :root body.is-hero .search input:focus {
   border-color: transparent;
@@ -1808,35 +1868,12 @@ body.is-hero .suggest {
     right: calc(var(--edge) + var(--safe-r) + var(--fab) + 12px);
     bottom: var(--dock-b);
     height: var(--dock-h);
-    padding: 0 8px 0 7px;
+    padding: 0 8px;
     border-radius: 999px;
     background: var(--surface);
     border: 1px solid var(--line);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22), 0 14px 34px -14px rgba(0, 0, 0, 0.6);
     transition: translate 0.42s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.25s var(--ease);
-  }
-
-  .dock__home {
-    flex: none;
-    display: grid;
-    place-items: center;
-    width: 46px;
-    height: 46px;
-    border-radius: 50%;
-  }
-
-  .dock__home img {
-    width: 38px;
-    height: 38px;
-    display: block;
-  }
-
-  .dock__sep {
-    flex: none;
-    width: 1px;
-    height: 28px;
-    margin: 0 4px 0 5px;
-    background: var(--line-2);
   }
 
   .dock__btn {
@@ -1867,7 +1904,6 @@ body.is-hero .suggest {
   }
 
   .dock__btn:active,
-  .dock__home:active,
   .fab:active {
     scale: 0.94;
   }
