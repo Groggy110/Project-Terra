@@ -24,17 +24,14 @@ export const LANDING = {
     chromatic: { amount: 0.0021 },
     // The landing frames a quarter of the planet across the whole window, so
     // the imagery is magnified most there; it takes a little more crisping.
-    sharpen: { amount: 0.46 },
+    sharpen: { amount: 0.38 },
   },
-  // A little richer than the working view: the landing is the one place the
-  // planet is the picture, so it carries more colour and a firmer contrast.
-  grade: { brightness: -0.02, contrast: 1.09, saturation: 1.1, vibrance: 0.14 },
   themes: {
     dark: {
       atmosphere: {
         halo: {
-          inner: "#6f95ff",
-          strength: 0.085,
+          inner: "#798fe6",
+          strength: 0.06,
           spread: 0.262,
           falloff: 0.7,
           bloom: 0.08,
@@ -83,7 +80,7 @@ export const STAGE_EXIT = { ms: 2600, dist: 3.05, turn: 14 };
  * much of the blue inside "anywhere." is kept, the rest going to the sky's
  * colour: under 1 lets the outline stand out.
  */
-export const HEADLINE = { size: 1, raise: 0, fade: 0.42, glow: 1, stroke: 1, aura: 0.55, fill: 0.74 };
+export const HEADLINE = { size: 1, raise: 0, fade: 0.63, glow: 0, stroke: 0.61, aura: 0.37, fill: 0.74 };
 
 /** The shipped values of the three above, for the editor's resets. */
 export const LANDING_DEFAULTS = structuredClone({ stage: STAGE, exit: STAGE_EXIT, headline: HEADLINE });
