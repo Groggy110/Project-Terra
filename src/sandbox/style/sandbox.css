@@ -160,3 +160,46 @@ body.tsbx-clean .toasts {
 .tsbx-modal button.is-primary {
   background: #2f6fd0;
 }
+
+/* ---- capture (capture.js) ----
+   Isolation hides with visibility so nothing reflows; a chosen element
+   inside a hidden container is made visible again on its own. */
+body.tcap-iso [data-tcap="hide"] {
+  visibility: hidden !important;
+}
+
+/* At once: the overlay, for one, fades its opacity over 1.6s. */
+body.tcap-iso [data-tcap="gone"] {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  transition: none !important;
+}
+
+body.tcap-iso [data-tcap="show"] {
+  visibility: visible !important;
+}
+
+body.tcap-noshade .chrome::before {
+  display: none !important;
+}
+
+/* The flat ground: over the sky, under the globe and the chrome. */
+.tcap-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* What a cropped recording is cropped to. Never seen. */
+.tcap-crop {
+  position: fixed;
+  z-index: 0;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+/* Nothing of the editor's in a capture. */
+body.tcap-quiet .tsbx-toast {
+  visibility: hidden !important;
+}

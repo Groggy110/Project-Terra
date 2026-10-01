@@ -36,6 +36,7 @@ import {
 } from "../../style/landing.js";
 import { applyStyle, mergeInto } from "../../style/applyStyle.js";
 import { History, download, exportJson, loadStore, parseImport, saveStore, screenshot } from "./tools.js";
+import { Capture } from "./capture.js";
 
 /** Groups whose restyle does real work (a vector repaint, a new sphere). */
 const HEAVY = new Set(["lines", "globe"]);
@@ -55,6 +56,7 @@ export class StylePanel {
     this.closedState = new Map();
     this.ab = false;
     this.abStash = null;
+    this.capture = new Capture(this);
     this.ui = {
       scene: currentScene(),
       theme: this.theme,
@@ -103,6 +105,7 @@ export class StylePanel {
     this.bg = {};
 
     this.#toolbar(gui);
+    this.capture.build(gui);
     this.#landing(gui);
     this.#background(gui);
     this.#camera(gui);
@@ -296,6 +299,7 @@ export class StylePanel {
     head(hd.add(HEADLINE, "glow", 0, 4, 0.01).name("Glow strength"));
     head(hd.add(HEADLINE, "stroke", 0, 3, 0.01).name("“anywhere.” outline (×)"));
     head(hd.add(HEADLINE, "aura", 0, 3, 0.01).name("“anywhere.” colour glow (×)"));
+    head(hd.add(HEADLINE, "fill", 0, 1, 0.01).name("“anywhere.” fill strength"));
 
     const ex = f.addFolder("Transition to the main page");
     ex.add(STAGE_EXIT, "ms", 200, 8000, 50).name("Duration (ms)");

@@ -31,6 +31,8 @@ import { pickVerse, verseText } from "../lib/verses.js";
 
 /** How long after the loading screen lifts the headline lands. */
 const HERO_IN_MS = 520;
+/** How long the headline takes to lift away (base.css, hero-out). */
+const HERO_OUT_MS = 780;
 
 /**
  * A phone held upright. Here the page is the globe: no headline, a search
@@ -267,7 +269,7 @@ export class App {
     if (document.body.classList.contains("is-hero")) {
       const home = this.globe.liftTarget;
       this.globe.setLift(home - STAGE.rise, { instant: true });
-      this.globe.setLift(home, { tau: 1.1 });
+      this.globe.setLift(home, { ms: 2600 });
       this.globe.releaseSpin({ now: true });
     }
 
@@ -305,12 +307,19 @@ export class App {
     if (!document.body.classList.contains("is-hero")) return;
     clearTimeout(this.heroTimer);
     clearTimeout(this.heroInTimer);
-    document.body.classList.remove("is-hero", "hero-in");
+    document.body.classList.remove("is-hero");
+    // The headline lifts away and fades (base.css, hero-out) rather than
+    // going with the class: hero-in holds the words' resting state until it
+    // is over. Words that never arrived have nothing to leave.
+    clearTimeout(this.heroOutTimer);
+    if (document.body.classList.contains("hero-in")) {
+      document.body.classList.add("hero-out");
+      this.heroOutTimer = setTimeout(() => document.body.classList.remove("hero-in", "hero-out"), HERO_OUT_MS);
+    }
     // The landing look eases into the working one over the planet's flight.
     leaveLanding(STAGE_EXIT.ms);
-    // The headline fades as the planet rises through it; the mask follows
-    // the disc until the words are gone.
-    this.stageTrackUntil = performance.now() + 700;
+    // The mask follows the disc until the words are gone.
+    this.stageTrackUntil = performance.now() + HERO_OUT_MS;
     if (this.pendingNote) {
       const note = this.pendingNote;
       this.pendingNote = null;
@@ -374,6 +383,8 @@ export class App {
     this.setView("globe");
     this.panel.setOpen(false);
     this.#hideSuggest();
+    clearTimeout(this.heroOutTimer);
+    document.body.classList.remove("hero-in", "hero-out");
     document.body.classList.add("is-hero");
     const stage = stageFrame();
     stageCss(stage);

@@ -20,7 +20,7 @@
 #globe,
 .overlay {
   opacity: 0;
-  transition: opacity 1.6s var(--ease);
+  transition: opacity 1.9s var(--ease);
 }
 
 body.is-live #globe,

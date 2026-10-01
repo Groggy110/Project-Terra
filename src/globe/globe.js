@@ -830,9 +830,13 @@ export class Globe {
    * there. Like the shift, it is a view offset, so picking and the labels
    * follow it without knowing.
    */
-  setLift(fraction, { instant = false, tau = 0.14 } = {}) {
+  setLift(fraction, { instant = false, tau = 0.14, ms = 0 } = {}) {
     this.liftTarget = fraction;
     this.liftTau = tau;
+    // A timed glide instead of the chase: it leaves at rest and lands at
+    // rest, on the clock rather than on frame times, so a slow first frame
+    // while the imagery uploads cannot throw it forward.
+    this.liftTween = ms > 0 && !instant ? { from: this.lift, to: fraction, t0: performance.now(), ms } : null;
     if (instant) {
       this.lift = fraction;
       this.#applyShift();
@@ -1194,6 +1198,13 @@ export class Globe {
     if (!this.running) return;
     requestAnimationFrame(this.#tick);
 
+    // Held on its last frame (the style editor's still captures): nothing
+    // moves and nothing is drawn, and the clock comes back without a jump.
+    if (this.frozen) {
+      this.last = now;
+      return;
+    }
+
     // Covered, or in a background tab. The clock is kept honest so the first
     // frame back does not integrate a two-minute dt into the drift.
     if (this.covered || document.hidden) {
@@ -1259,6 +1270,15 @@ export class Globe {
         this.liftTarget = 0;
       }
       if (this.controls.flight !== flight) this.liftFollow = null;
+      this.#applyShift();
+      this.dirty = true;
+    } else if (this.liftTween?.to === this.liftTarget && this.lift !== this.liftTarget) {
+      const { from, t0, ms } = this.liftTween;
+      const k = Math.min((performance.now() - t0) / ms, 1);
+      // Soft off the mark, long and quiet into place.
+      const e = k < 0.3 ? 0.39 * (k / 0.3) ** 2 : 1 - 0.61 * ((1 - k) / 0.7) ** 3;
+      this.lift = k >= 1 ? this.liftTarget : from + (this.liftTarget - from) * e;
+      if (k >= 1) this.liftTween = null;
       this.#applyShift();
       this.dirty = true;
     } else if (this.lift !== this.liftTarget) {

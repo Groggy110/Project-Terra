@@ -228,16 +228,40 @@ button {
   );
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
+  /* A mask cuts at the box, and the box would end at the foot of the words:
+     room under them (given back in margin, so nothing moves) lets the glow
+     round "anywhere." fade out instead of stopping at a straight edge. */
+  padding-bottom: calc(var(--title-size) * 0.6);
+  margin-bottom: calc(var(--title-size) * -0.6);
 }
 
 /* Two classes, because the entrance and the headline are on different clocks:
    is-hero composes the chrome from the first frame, hero-in lands the words
    as the planet finishes rising. */
-body.is-hero.hero-in .hero {
+body.hero-in .hero {
   opacity: 1;
   visibility: visible;
   translate: -50% 0;
   animation: hero-in 0.6s var(--ease) both;
+}
+
+/* Leaving: the block lifts away and fades as the planet comes up under it,
+   rather than vanishing the moment the class that held it goes. The words
+   keep their resting state through it (hero-in stays on until it ends). */
+body.hero-out .hero {
+  animation: hero-out 0.75s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes hero-out {
+  from {
+    opacity: 1;
+    translate: -50% 0;
+  }
+  to {
+    opacity: 0;
+    translate: -50% calc(var(--title-size) * -0.4);
+    filter: blur(6px);
+  }
 }
 
 /* The block itself only fades: the motion is the words' own (word-in). */
@@ -300,13 +324,13 @@ body.is-hero.hero-in .hero {
      is padded out (and the padding taken back in margin) because a mask
      clips at the box, and the glow — and the aura behind "anywhere." — has
      to fit inside it. */
-  padding: 0.5em;
-  margin: -0.5em;
-  -webkit-mask-image: linear-gradient(to bottom, #000 38%, rgb(0 0 0 / var(--title-fade, 0.42)) calc(100% - 0.5em));
-  mask-image: linear-gradient(to bottom, #000 38%, rgb(0 0 0 / var(--title-fade, 0.42)) calc(100% - 0.5em));
+  padding: 0.5em 0.8em 0.6em;
+  margin: -0.5em -0.8em -0.6em;
+  -webkit-mask-image: linear-gradient(to bottom, #000 38%, rgb(0 0 0 / var(--title-fade, 0.42)) calc(100% - 0.6em));
+  mask-image: linear-gradient(to bottom, #000 38%, rgb(0 0 0 / var(--title-fade, 0.42)) calc(100% - 0.6em));
 }
 
-body.is-hero.hero-in .hero__title {
+body.hero-in .hero__title {
   animation:
     glow-ignite 2.2s var(--ease) calc(var(--word-lead) + 3 * var(--word-step) + 0.55s) both,
     glow-breathe 5.5s ease-in-out calc(var(--word-lead) + 3 * var(--word-step) + 2.75s) infinite alternate;
@@ -341,10 +365,13 @@ body.is-hero.hero-in .hero__title {
    the ordinary word space in the markup. */
 .hero__word {
   display: inline-block;
-  will-change: transform, filter, opacity;
+  /* Not filter: a word left holding a filter (even blur(0)) cuts off every
+     glow inside it at its own box, which showed as a pale box round
+     "anywhere.". */
+  will-change: transform, opacity;
 }
 
-body.is-hero.hero-in .hero__word {
+body.hero-in .hero__word {
   animation: word-in 1.35s var(--ease-expo) calc(var(--word-lead) + var(--i, 0) * var(--word-step)) both;
 }
 
@@ -360,7 +387,7 @@ body.is-hero.hero-in .hero__word {
   to {
     opacity: 1;
     transform: none;
-    filter: blur(0);
+    filter: none;
   }
 }
 
@@ -384,7 +411,7 @@ body.is-hero.hero-in .hero__word {
 }
 
 /* The pill comes down to meet the words as they come up. */
-body.is-hero.hero-in .hero__eyebrow {
+body.hero-in .hero__eyebrow {
   animation: eyebrow-in 1s var(--ease-expo) both;
 }
 
@@ -425,8 +452,12 @@ body.is-hero.hero-in .hero__eyebrow {
 }
 
 /* The one word in colour — a light-to-brand blue running through it, so it
-   reads as lit rather than as a flat highlight — with a narrow band of light
-   laid over it that sweeps through now and then (--sheen). The solid colour
+   reads as lit rather than as a flat highlight, and taken partway down toward
+   the sky (--title-fill-pc, HEADLINE.fill) so the white outline stands out
+   round it. Toward the sky colour rather than see-through: under a
+   see-through fill the outline's own overlapping contours show inside the
+   letters. A narrow band of light sweeps through it now and then
+   (--sheen). The solid colour
    stays as the fallback wherever text can't take a background. */
 .hero__mark {
   color: var(--brand-blue);
@@ -440,9 +471,9 @@ body.is-hero.hero-in .hero__eyebrow {
       var(--sheen) 0 / 260% 100% no-repeat,
     linear-gradient(
       100deg,
-      color-mix(in srgb, var(--brand-blue) 62%, #fff) 0%,
-      var(--brand-blue) 55%,
-      color-mix(in srgb, var(--brand-blue) 88%, #7b5cff) 100%
+      color-mix(in srgb, color-mix(in srgb, var(--brand-blue) 62%, #fff) var(--title-fill-pc, 74%), var(--paper)) 0%,
+      color-mix(in srgb, var(--brand-blue) var(--title-fill-pc, 74%), var(--paper)) 55%,
+      color-mix(in srgb, color-mix(in srgb, var(--brand-blue) 88%, #7b5cff) var(--title-fill-pc, 74%), var(--paper)) 100%
     );
   -webkit-background-clip: text;
   background-clip: text;
@@ -455,7 +486,7 @@ body.is-hero.hero-in .hero__eyebrow {
 /* Right to left in background terms is left to right on screen: at 100%
    the band waits just off the word's left edge, at 0% it has gone off the
    right. */
-body.is-hero.hero-in .hero__mark {
+body.hero-in .hero__mark {
   animation: mark-sheen 7s var(--ease-move) calc(var(--word-lead) + 3 * var(--word-step) + 0.9s) infinite;
 }
 
@@ -485,8 +516,14 @@ body.is-hero.hero-in .hero__mark {
 
 .hero__any {
   position: relative;
+  display: inline-block;
   /* The aura's negative layer stays inside the word, behind its letters. */
   isolation: isolate;
+}
+
+/* The outline is placed against the word itself, not the wrapper. */
+.hero__any .hero__word {
+  position: relative;
 }
 
 .hero__mark {
@@ -515,20 +552,24 @@ body.is-hero.hero-in .hero__mark {
 
 .hero__aura {
   position: absolute;
-  inset: -0.14em -0.16em 0 -0.18em;
+  /* Well past the word on every side, and faded out to nothing well before
+     its own edge (the mask), so wherever a browser does clip the blur there
+     is no colour left to show a hard edge. */
+  inset: -0.45em -0.5em -0.4em -0.5em;
   z-index: -1;
   pointer-events: none;
-  border-radius: 45%;
   background:
-    radial-gradient(36% 66% at var(--aura-a) var(--aura-y), rgb(76 139 234), transparent 74%),
-    radial-gradient(32% 62% at var(--aura-b) calc(100% - var(--aura-y)), rgb(123 92 255), transparent 74%),
-    radial-gradient(30% 58% at var(--aura-c) 58%, rgb(56 214 255 / 0.9), transparent 74%),
-    radial-gradient(26% 52% at var(--aura-d) 42%, rgb(255 106 213 / 0.7), transparent 74%);
-  filter: blur(calc(var(--title-size) * 0.15)) hue-rotate(var(--aura-hue)) saturate(1.15);
+    radial-gradient(30% 40% at calc(8% + var(--aura-a) * 0.84) var(--aura-y), rgb(76 139 234), transparent 74%),
+    radial-gradient(27% 38% at calc(8% + var(--aura-b) * 0.84) calc(100% - var(--aura-y)), rgb(123 92 255), transparent 74%),
+    radial-gradient(25% 36% at calc(8% + var(--aura-c) * 0.84) 56%, rgb(56 214 255 / 0.9), transparent 74%),
+    radial-gradient(22% 32% at calc(8% + var(--aura-d) * 0.84) 44%, rgb(255 106 213 / 0.7), transparent 74%);
+  -webkit-mask-image: radial-gradient(closest-side, #000 52%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 52%, transparent 100%);
+  filter: blur(calc(var(--title-size) * 0.1)) hue-rotate(var(--aura-hue)) saturate(1.15);
   opacity: calc(var(--aura-pulse) * var(--aura-in) * var(--title-aura, 0.55));
 }
 
-body.is-hero.hero-in .hero__aura {
+body.hero-in .hero__aura {
   animation:
     aura-in 2.4s var(--ease) calc(var(--word-lead) + 3 * var(--word-step) + 0.5s) both,
     aura-a 9s ease-in-out infinite alternate,
@@ -566,13 +607,13 @@ body.is-hero.hero-in .hero__aura {
   .hero__eyebrow i::after {
     animation: none;
   }
-  body.is-hero.hero-in .hero__word,
-  body.is-hero.hero-in .hero__mark,
-  body.is-hero.hero-in .hero__eyebrow {
+  body.hero-in .hero__word,
+  body.hero-in .hero__mark,
+  body.hero-in .hero__eyebrow {
     animation: hero-in 0.6s var(--ease) both;
   }
-  body.is-hero.hero-in .hero__title,
-  body.is-hero.hero-in .hero__aura {
+  body.hero-in .hero__title,
+  body.hero-in .hero__aura {
     animation: none;
   }
 }
