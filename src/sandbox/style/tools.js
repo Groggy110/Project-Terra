@@ -4,6 +4,7 @@
  * control; panel.js does that.
  */
 import { STYLE, STYLE_VERSION } from "../../style/styleConfig.js";
+import { currentScene, landingPayload, sceneStyle } from "../../style/landing.js";
 
 /* ---------------------------------------------------------------- storage */
 
@@ -59,7 +60,12 @@ export class History {
 
 /* ------------------------------------------------------- export / import */
 
-/** The complete snapshot: every value, not just the changed ones. */
+/**
+ * The complete snapshot: every value, not just the changed ones. `style` is
+ * always the working view's look, whichever scene was on screen; `landing`
+ * is the landing screen's — its own whole look, the stage, the flight off it
+ * and the headline.
+ */
 export function exportPayload(note = "", theme = "dark") {
   return {
     app: "terra",
@@ -68,7 +74,9 @@ export function exportPayload(note = "", theme = "dark") {
     timestamp: new Date().toISOString(),
     note,
     theme,
-    style: structuredClone(STYLE),
+    scene: currentScene(),
+    style: sceneStyle("main") ?? structuredClone(STYLE),
+    landing: landingPayload(),
   };
 }
 
@@ -101,7 +109,8 @@ export function parseImport(text) {
   const version = data.version ?? style.version;
   const warning =
     version !== STYLE_VERSION ? `Settings are version ${version}; this app is version ${STYLE_VERSION}. Matching keys were applied.` : "";
-  return { style, note: typeof data.note === "string" ? data.note : "", warning };
+  const landing = data.landing && typeof data.landing === "object" ? data.landing : null;
+  return { style, note: typeof data.note === "string" ? data.note : "", warning, landing };
 }
 
 /* ------------------------------------------------------------- screenshot */

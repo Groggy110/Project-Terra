@@ -10,7 +10,7 @@
  * that returns no session means confirmation is required, and it says so
  * instead of leaving someone staring at a form that looked like it worked.
  */
-import { h, add, clear, svg } from "./dom.js";
+import { h, add, clear, icons, svg } from "./dom.js";
 import { signIn, signUp, sendMagicLink } from "../lib/api.js";
 
 const ENVELOPE = '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="m3.8 7 7.1 5.3a2 2 0 0 0 2.2 0L20.2 7"/>';
@@ -34,6 +34,9 @@ export class AuthGate {
     this.card = h(
       "div",
       { class: "gate__card", role: "dialog", "aria-modal": "true", "aria-label": "Sign in to Terra" },
+      // The same way out every dialog has; on a phone the card fills the
+      // screen and there is no scrim left to tap.
+      h("button", { class: "modal__x gate__x", type: "button", "aria-label": "Close", onclick: () => this.skip() }, icons.close()),
       this.body,
     );
     this.el = h(
@@ -75,7 +78,10 @@ export class AuthGate {
     // One frame, so the transition has a from-state to animate out of.
     requestAnimationFrame(() => this.el.classList.add("is-open"));
     window.addEventListener("keydown", this.onKey);
-    setTimeout(() => this.card.querySelector("input")?.focus(), 240);
+    // Not on a phone, where it would open the keyboard over the card.
+    if (!window.matchMedia("(max-width: 720px)").matches) {
+      setTimeout(() => this.card.querySelector("input")?.focus(), 240);
+    }
   }
 
   close() {

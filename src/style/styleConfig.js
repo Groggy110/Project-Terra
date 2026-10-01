@@ -151,9 +151,9 @@ export const STYLE = {
     enabled: true,
     mix: 1,
     brightness: -0.04,
-    contrast: 0.89,
+    contrast: 1.05,
     saturation: 0.98,
-    vibrance: -0.06,
+    vibrance: -0.02,
     hue: 0,
     temperature: 0,
     tint: 0,
@@ -167,8 +167,13 @@ export const STYLE = {
     // Bloom, chromatic aberration and a non-default anti-aliasing mode route
     // the frame through a render target; with all three at rest it is drawn
     // straight to the canvas as it always was.
+    // The working view carries no bloom, only aberration gathered at the
+    // planet's edge. The landing screen has its own, softer-edged look over
+    // these (style/landing.js) and eases into this one on the way out.
     bloom: { enabled: true, strength: 0, radius: 0.4, threshold: 0.35 },
     chromatic: { enabled: true, amount: 0.0039 },
+    /** Local contrast over the planet's face (not the limb); see postchain.js. */
+    sharpen: { enabled: true, amount: 0.22 },
     /** msaa (the context's own) | fxaa | none */
     aa: "msaa",
     vignette: { enabled: true, strength: 0.32, radius: 1.25, softness: 0.5, color: "#000000" },
@@ -263,15 +268,17 @@ export const STYLE = {
       },
       surface: {
         ocean: { deep: "#00192e", mid: "#002f4d", shelf: "#2d6766" },
-        land: { gamma: 0.7, sat: 1.53, gain: 1.35, lift: -0.091 },
+        land: { gamma: 0.8, sat: 1.28, gain: 1.2, lift: -0.07 },
         // Strong. The reference reads as embossed relief — dune fields and
         // ranges lit from the side — not as a photograph laid on a ball.
-        relief: 1.9,
+        relief: 2.6,
         snow: "#878787",
         snowAmt: 0.76,
         // A whisper. The land in the reference is painted relief with a fine
-        // crazing over the vegetation, not a mosaic of tiles.
-        facet: { amount: 1, scale: 39, tilt: 0.16, flat: 0.32, edge: 0.113, edgeInk: -0.42 },
+        // crazing over the vegetation, not a mosaic of tiles — and with the 8K
+        // imagery there is real detail under it, so the cells average little
+        // of it away (flat) and their seams stay a hint (edge, edgeInk).
+        facet: { amount: 0.55, scale: 39, tilt: 0.16, flat: 0.12, edge: 0.06, edgeInk: -0.18 },
         // Streamed tiles, brought back to Blue Marble's footing before the land
         // grade runs over both. Net: gamma 1.0, saturation 1.05, gain 1.0 —
         // the imagery as published.
@@ -289,7 +296,9 @@ export const STYLE = {
         fresnelPow: 1.05,
         // Nearly nothing away from the light: the reference's lower limb is
         // black, with no outline drawn round the dark side of the disc.
-        rimBase: 0.0,
+        rimBase: 0,
+        // A tight, nearly neutral rim all the way round with almost no spill,
+        // so the limb reads as an edge against the black rather than a glow.
         halo: { inner: "#8c8c8c", outer: "#474747", strength: 0.93, spread: 0.161, topBias: 0, falloff: 7.7, bloom: 0.23, bloomSpread: 1.12, rimPower: 10, spillPower: 0.2 },
       },
       clouds: {
@@ -389,7 +398,7 @@ export const STYLE = {
         fresnel: 0.68,
         fresnelPow: 3.6,
         rimBase: 0.58,
-        halo: { inner: "#e6f2fc", outer: "#c6def5", strength: 1.0, spread: 0.08, topBias: 0.7, falloff: 0.8, bloom: 0.3, bloomSpread: 0.38, rimPower: 3.2, spillPower: 1.7 },
+        halo: { inner: "#e6f2fc", outer: "#c6def5", strength: 1, spread: 0.08, topBias: 0.7, falloff: 0.8, bloom: 0.3, bloomSpread: 0.38, rimPower: 3.2, spillPower: 1.7 },
       },
       // `real` swaps the synthetic sheet for NASA's Blue Marble cloud composite
       // once it has streamed in — a real day's weather, at `realOpacity`.

@@ -87,6 +87,23 @@ Deno.serve(async (req) => {
   if (mErr || !ministry) return json({ error: "ministry not found" }, 404);
   if (ministry.owner_id !== auth.user.id) return json({ error: "that is not your ministry" }, 403);
 
+  // An edit names the need it changes. Edits come through here for the same
+  // reason posts do: a need that passed the check once and could then be
+  // rewritten freely would make the check a formality. The browser cannot
+  // change a need's content itself (guard_need_content), only this can.
+  const needId = body.need_id ? String(body.need_id) : "";
+  let existing: { id: string; status: string; ministry_id: string } | null = null;
+  if (needId) {
+    const { data, error } = await asCaller
+      .from("needs")
+      .select("id, status, ministry_id")
+      .eq("id", needId)
+      .single();
+    if (error || !data) return json({ error: "need not found" }, 404);
+    if (data.ministry_id !== ministryId) return json({ error: "that need is not this ministry's" }, 403);
+    existing = data;
+  }
+
   const submission = [
     `Ministry: ${ministry.name} — ${ministry.city}, ${ministry.country}`,
     ministry.blurb ? `About the ministry: ${ministry.blurb}` : "",
@@ -115,50 +132,58 @@ Deno.serve(async (req) => {
 
   // The fail-closed line. Anything other than an explicit pass is held.
   const passed = verdict?.plausible === true;
-  const status = passed ? "live" : "pending_review";
+  // An edit that passes keeps a filled need filled; one that does not goes
+  // back under review whatever it was, like a new post would.
+  const status = passed ? (existing?.status === "filled" ? "filled" : "live") : "pending_review";
 
   const service = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  const { data: inserted, error: insErr } = await service
-    .from("needs")
-    .insert({
-      ministry_id: ministryId,
-      title,
-      type: body.type ?? "volunteers",
-      urgency: body.urgency ?? "soon",
-      people: Number(body.people ?? 0) || 0,
-      focus: body.focus ?? null,
-      remote: Boolean(body.remote),
-      commitment: body.commitment ?? null,
-      skills: Array.isArray(body.skills) ? body.skills : [],
-      // Search metadata. Written whatever the verdict, so a need that a
-      // reviewer later releases is already findable.
-      tags: cleanTags(verdict?.tags),
-      detail: detail || null,
-      status,
-      moderation: {
-        model: MODEL,
-        checked_at: new Date().toISOString(),
-        verdict: verdict ?? null,
-        note: note || null,
-      },
-    })
-    .select()
-    .single();
+  const fields = {
+    title,
+    type: body.type ?? "volunteers",
+    urgency: body.urgency ?? "soon",
+    people: Number(body.people ?? 0) || 0,
+    focus: body.focus ?? null,
+    remote: Boolean(body.remote),
+    commitment: body.commitment ?? null,
+    skills: Array.isArray(body.skills) ? body.skills : [],
+    // Search metadata. Written whatever the verdict, so a need that a
+    // reviewer later releases is already findable.
+    tags: cleanTags(verdict?.tags),
+    detail: detail || null,
+    status,
+    moderation: {
+      model: MODEL,
+      checked_at: new Date().toISOString(),
+      verdict: verdict ?? null,
+      note: note || null,
+      edited: existing ? true : undefined,
+    },
+  };
+
+  const write = existing
+    ? service.from("needs").update(fields).eq("id", existing.id)
+    : service.from("needs").insert({ ministry_id: ministryId, ...fields });
+  const { data: saved, error: insErr } = await write.select().single();
 
   if (insErr) return json({ error: insErr.message }, 500);
 
   return json({
-    need: inserted,
+    need: saved,
     status,
+    edited: !!existing,
     // The ministry is told it is under review and why, but never the exact
     // rule it tripped — that is a recipe for rewriting until it passes.
-    message: passed
-      ? "Posted. It is on the globe now."
-      : "Posted for review. A person will look at it before it appears on the globe.",
+    message: existing
+      ? passed
+        ? "Saved. The changes are on the globe now."
+        : "Saved for review. A person will look at the changes before they appear on the globe."
+      : passed
+        ? "Posted. It is on the globe now."
+        : "Posted for review. A person will look at it before it appears on the globe.",
     reason: passed ? null : verdict?.reason ?? null,
   });
 });

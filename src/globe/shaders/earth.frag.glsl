@@ -234,13 +234,19 @@ void main() {
   float hS = texture2DGradEXT(uAux, uv + vec2(0.0, e.y), ddx, ddy).r;
 
   float cosLat = max(cos(latRad), 0.18);
-  vec2 slope = vec2((hR - hL) / cosLat, -(hS - hN)) * uRelief;
+  // The slope is a height difference across `e`, so a finer raster, sampled
+  // across fewer kilometres, would read as flatter. Scaled back to the step
+  // the 4096-wide raster took at this zoom, the relief keeps the strength it
+  // was tuned at and only gains detail.
+  float mip4k = max(1.0, length(ddx * vec2(4096.0, 2048.0)));
+  float stepScale = (mip4k / 4096.0) / (mip / uAuxSize.x);
+  vec2 slope = vec2((hR - hL) / cosLat, -(hS - hN)) * uRelief * stepScale;
   vec3 tN = normalize(vec3(-slope.x, -slope.y, 1.0));
   vec3 tL = normalize(uHillLight);
   float shade = 1.0 + (dot(tN, tL) / tL.z - 1.0) * mask;
   shade = clamp(shade, uShadeMin, uShadeMax);
-  // The relief is modelled from a 4096-wide elevation raster - eleven
-  // kilometres a texel. Over a city it is not detail, it is a slow stain
+  // The relief is modelled from a 4096- or 8192-wide elevation raster -
+  // eleven or five kilometres a texel. Over a city it is not detail, it is a slow stain
   // across ground whose own light and shadow the imagery already carries, so
   // it hands over as the tiles come in.
   shade = mix(shade, 1.0, inDetail * 0.8);

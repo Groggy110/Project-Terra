@@ -65,6 +65,15 @@ export function distForZoom(z) {
   return maxDist * Math.pow(minDist / maxDist, clamp(z, 0, 1));
 }
 
+/**
+ * What is left of a finger's throw after one second. A mouse drag wants to
+ * stop close to where it let go; a flick on glass is expected to glide, and
+ * at the mouse's friction the planet stopped in a sixth of a second, as if
+ * the flick had been caught. This is a glide of about a quarter-second
+ * longer.
+ */
+const TOUCH_THROW_DECAY = 0.03;
+
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 /**
  * The same S, one power gentler.
@@ -174,7 +183,19 @@ export class GlobeControls {
    * cap — has to be built from, or they disagree with what is on screen.
    */
   get camDist() {
-    return this.dist * this.fit;
+    return this.fitted(this.dist);
+  }
+
+  /**
+   * A semantic distance after the portrait fit. The withdrawal scales the
+   * *altitude*, not the distance from the centre: from orbit the two are
+   * nearly the same thing, but at the close stop the old product put a phone
+   * a whole Earth radius up — the fit doubled 1.014 into 2.04 — so a phone
+   * could never come down to a city at all. Scaling the height above the
+   * ground keeps the whole-globe framing and gives the close stop back.
+   */
+  fitted(dist) {
+    return 1 + (dist - 1) * this.fit;
   }
 
   /**
@@ -218,9 +239,12 @@ export class GlobeControls {
   #bind() {
     const dom = this.dom;
     dom.addEventListener("pointerdown", this.#down, { passive: false });
-    dom.addEventListener("pointermove", this.#move, { passive: false });
-    dom.addEventListener("pointerup", this.#up);
-    dom.addEventListener("pointercancel", this.#up);
+    // Moves and releases are heard on the window, not the canvas: a touch
+    // that began on a pin is implicitly captured by the pin, so the canvas
+    // never hears the rest of it. Only pointers this took hold of count.
+    window.addEventListener("pointermove", this.#move, { passive: false });
+    window.addEventListener("pointerup", this.#up);
+    window.addEventListener("pointercancel", this.#up);
     dom.addEventListener("wheel", this.#wheel, { passive: false });
     dom.addEventListener("dblclick", this.#dbl);
     dom.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -256,11 +280,24 @@ export class GlobeControls {
     this.onFirstGesture?.();
   }
 
-  #down = (e) => {
+  /**
+   * A gesture that began on something laid over the globe — a pin, a city
+   * plate — and belongs to it all the same. Not captured to the canvas: the
+   * pin keeps the pointer, so a tap still arrives at the pin as a click.
+   */
+  grab(e) {
+    this.#down(e, false);
+  }
+
+  #down = (e, capture = true) => {
     if (e.button !== 0 && e.pointerType === "mouse") return;
+    if (this.pointers.has(e.pointerId)) return;
     this.quiet = 0;
-    this.dom.setPointerCapture?.(e.pointerId);
-    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (capture) this.dom.setPointerCapture?.(e.pointerId);
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
+    this.downX = e.clientX;
+    this.downY = e.clientY;
+    if (this.pointers.size === 1) this.downT = e.timeStamp;
     this.#takeOver();
     this.moved = false;
     if (this.pointers.size === 1) {
@@ -268,30 +305,152 @@ export class GlobeControls {
       this.vel.lat = 0;
       this.vel.lon = 0;
       this.dom.classList.add("is-dragging");
+      this.#doubleTap(e);
+      if (e.pointerType === "touch" && !this.anchor) this.#dragAnchor(e.clientX, e.clientY);
     } else if (this.pointers.size === 2) {
+      // A second finger turns the drag into a pinch, and whatever the first
+      // finger was throwing is not what the hand means any more.
       this.pinch = this.#spread();
+      this.vel.lat = 0;
+      this.vel.lon = 0;
+      this.#pinchAnchor();
     }
   };
+
+  /**
+   * Two quick taps in the same place zoom in on it, halfway, the way every
+   * map on a phone does. A browser only turns taps into dblclick when it is
+   * allowed to own the gesture, and this canvas is touch-action: none.
+   */
+  #doubleTap(e) {
+    if (e.pointerType !== "touch") return;
+    // The first half has to have been a *tap* — short, and still. Counting
+    // any touch-down made two quick flicks in a row a double-tap, and the
+    // second flick zoomed in instead of turning the globe.
+    const last = this.lastTap;
+    this.lastTap = null;
+    if (!last || e.timeStamp - last.t > 300 || Math.hypot(e.clientX - last.x, e.clientY - last.y) > 32) return;
+    this.#note();
+    this.#zoomTo(this.#scaled(this.target.dist, 0.5), e);
+    // The second tap's finger is still down, which counts as a drag; the
+    // zoom must hold its point through it all the same.
+    if (this.anchor) this.anchor.tap = true;
+  }
+
+  /**
+   * A finger on the globe takes hold of the ground under it, and for the rest
+   * of the drag that point is solved to stay under the finger — exactly, at
+   * the limb as well as the centre. Turning by a fixed degrees-per-pixel only
+   * holds at the middle of the disc; toward the edge the sphere foreshortens
+   * and the ground slid out from under the thumb. Off the disc, in space,
+   * there is nothing to hold and the drag falls back to that rate.
+   */
+  #dragAnchor(clientX, clientY) {
+    const hit = this.#firmGround(clientX, clientY, 0.3);
+    this.anchor = hit ? { ...hit, drag: true } : null;
+    this.dragPrev = null;
+  }
+
+  /**
+   * The ground under a screen point, if it faces the camera by at least
+   * `facing` (the cosine between the ground's normal and the view). Near the
+   * limb the sphere is foreshortened to nothing, and holding ground there
+   * means a pixel of finger swings the planet by degrees; past `facing` the
+   * drag lets go of it and turns at the plain rate instead.
+   */
+  #firmGround(clientX, clientY, facing) {
+    const rect = this.rect;
+    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.ndc.set(x, y);
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    const hit = this.raycaster.ray.intersectSphere(this.sphere, this.hit);
+    if (!hit) return null;
+    const toCam = this.#probe.copy(this.camera.position).sub(hit).normalize();
+    if (hit.dot(toCam) < facing) return null;
+    return { p: hit.clone(), x, y, sx: x, sy: y };
+  }
+
+  /**
+   * Picks the ground point between the two fingers. For the rest of the
+   * pinch that point is held under their midpoint: spreading zooms on it,
+   * and moving both fingers together carries it, which is a two-finger pan.
+   */
+  #pinchAnchor() {
+    const [a, b] = [...this.pointers.values()];
+    const rect = this.rect;
+    const x = (((a.x + b.x) / 2 - rect.left) / rect.width) * 2 - 1;
+    const y = -(((a.y + b.y) / 2 - rect.top) / rect.height) * 2 + 1;
+    this.ndc.set(x, y);
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    const hit = this.raycaster.ray.intersectSphere(this.sphere, this.hit);
+    this.anchor = hit ? { p: hit.clone(), x, y, pinch: true } : null;
+  }
 
   #move = (e) => {
     const prev = this.pointers.get(e.pointerId);
     if (!prev) return;
     let dx = e.clientX - prev.x;
     let dy = e.clientY - prev.y;
+    const since = Math.max((e.timeStamp - prev.t) / 1000, 1 / 240);
     prev.x = e.clientX;
     prev.y = e.clientY;
+    prev.t = e.timeStamp;
 
     if (this.pointers.size >= 2) {
       const spread = this.#spread();
       if (this.pinch > 0 && spread > 0) {
         const [a, b] = [...this.pointers.values()];
-        this.#zoomTo(this.target.dist * (this.pinch / spread), { clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 });
+        this.#note();
+        this.moved = true;
+        const from = this.target.dist;
+        this.target.dist = this.#scaled(from, this.pinch / spread);
         this.pinch = spread;
+        // How fast the height is changing, in e-folds a second, for the
+        // glide after the fingers come off.
+        const rate = Math.log((this.target.dist - 1) / Math.max(from - 1, 1e-6)) / since;
+        this.zoomVel = (this.zoomVel ?? 0) * 0.5 + rate * 0.5;
+        this.lastPinch = e.timeStamp;
+        const rect = this.rect;
+        if (this.anchor?.pinch) {
+          this.anchor.x = (((a.x + b.x) / 2 - rect.left) / rect.width) * 2 - 1;
+          this.anchor.y = -(((a.y + b.y) / 2 - rect.top) / rect.height) * 2 + 1;
+        } else {
+          // Began off the limb, in space: pick the ground up as soon as the
+          // fingers are over some.
+          this.#pinchAnchor();
+        }
       }
       return;
     }
 
     if (!this.dragging) return;
+    if (e.pointerType === "touch" && !this.anchor?.tap) {
+      if (this.anchor?.drag) {
+        // Still over firm ground? Near the limb, let go and turn at the rate.
+        const rect = this.rect;
+        const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        if (this.#firmGround(e.clientX, e.clientY, 0.18)) {
+          if (Math.abs(e.clientX - this.downX) + Math.abs(e.clientY - this.downY) > 3) {
+            this.moved = true;
+            this.#note();
+          }
+          this.anchor.x = x;
+          this.anchor.y = y;
+          this.lastMove = e.timeStamp;
+          return;
+        }
+        this.anchor = null;
+        this.target.lat = this.lat;
+        this.target.lon = this.lon;
+      } else if (!this.anchor && this.#firmGround(e.clientX, e.clientY, 0.3)) {
+        // Back over the disc from space, or in from the limb: take hold again.
+        this.#dragAnchor(e.clientX, e.clientY);
+        this.lastMove = e.timeStamp;
+        return;
+      }
+    }
     // With the view rolled, a screen drag is rotated back into the unrolled
     // frame, so the ground still follows the cursor.
     const roll = camRoll();
@@ -300,7 +459,11 @@ export class GlobeControls {
       const s = Math.sin(roll);
       [dx, dy] = [dx * c + dy * s, -dx * s + dy * c];
     }
-    if (Math.abs(dx) + Math.abs(dy) > 2) {
+    // Click slop, measured from where the button went down: a click that
+    // wobbles a few pixels is still a click. Counted per event, one uneven
+    // 3px move turned it into a drag, and a click on the landing planet
+    // then left the stage without its camera move.
+    if (Math.hypot(e.clientX - this.downX, e.clientY - this.downY) > 5) {
       this.moved = true;
       this.#note();
     }
@@ -312,19 +475,79 @@ export class GlobeControls {
 
     this.target.lon += dLon;
     this.target.lat = clamp(this.target.lat + dLat, -cam().latLimit, cam().latLimit);
-    // velocity in degrees per second, for the throw
-    this.vel.lon = dLon * 58;
-    this.vel.lat = dLat * 58;
+    // Velocity in degrees per second, for the throw — from the events' own
+    // clock, since a 120Hz screen delivers twice the events a 60Hz one does
+    // and a fixed per-event factor threw half as far on it. Lightly smoothed:
+    // one uneven event should not decide where the globe is flung.
+    const k = 0.6;
+    this.vel.lon = this.vel.lon * (1 - k) + (dLon / since) * k;
+    this.vel.lat = this.vel.lat * (1 - k) + (dLat / since) * k;
+    this.lastMove = e.timeStamp;
   };
 
   #up = (e) => {
+    if (!this.pointers.has(e.pointerId)) return;
+    const wasPinch = this.pointers.size >= 2;
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinch = 0;
+    if (wasPinch && this.pointers.size < 2) {
+      // The pinch is over. What is left of the zoom lands on the camera now
+      // rather than easing off-centre, and the finger still down — if one is
+      // — carries on as a drag from exactly here.
+      this.dist = this.target.dist;
+      if (this.anchor) {
+        this.anchor.sx = this.anchor.x;
+        this.anchor.sy = this.anchor.y;
+        this.#holdAnchor(this.dist);
+      }
+      this.vel.lat = 0;
+      this.vel.lon = 0;
+      this.lastMove = 0;
+      // Unless the fingers were still spreading as they lifted: then the zoom
+      // carries on a little, round the same point, and eases to a stop — the
+      // way a flick carries a drag. A pinch that had come to rest does not.
+      const v = this.zoomVel ?? 0;
+      this.zoomVel = 0;
+      if (this.anchor && e.timeStamp - (this.lastPinch ?? 0) < 80 && Math.abs(v) > 0.4) {
+        this.target.dist = this.#scaled(this.dist, Math.exp(clamp(v, -6, 6) * 0.16));
+        this.anchor.pinch = false;
+        this.anchor.tap = true;
+        this.gliding = true;
+        return this.#release(e);
+      }
+      this.anchor = null;
+      // The finger still down takes hold of the ground where it is.
+      const rest = [...this.pointers.values()][0];
+      if (rest && e.pointerType === "touch") {
+        this.downX = rest.x;
+        this.downY = rest.y;
+        this.#dragAnchor(rest.x, rest.y);
+      }
+    }
+    this.#release(e);
+  };
+
+  #release(e) {
+    if (this.pointers.size === 0 && e.pointerType === "touch") {
+      const still = Math.hypot(e.clientX - this.downX, e.clientY - this.downY) < 10;
+      this.lastTap = still && e.timeStamp - this.downT < 250 && !this.gliding
+        ? { x: e.clientX, y: e.clientY, t: e.timeStamp }
+        : null;
+    }
+    this.gliding = false;
     if (this.pointers.size === 0) {
       this.dragging = false;
       this.dom.classList.remove("is-dragging");
+      this.throwTouch = e.pointerType === "touch";
+      // Let go of the ground; what the hand was doing carries on as a throw.
+      if (this.anchor?.drag) this.anchor = null;
+      // A finger that stopped and then lifted meant "here", not "throw".
+      if (e.timeStamp - (this.lastMove ?? 0) > 90) {
+        this.vel.lat = 0;
+        this.vel.lon = 0;
+      }
     }
-  };
+  }
 
   #spread() {
     const p = [...this.pointers.values()];
@@ -340,7 +563,7 @@ export class GlobeControls {
     this.vel.lat = 0;
     this.vel.lon = 0;
     const step = e.deltaMode === 1 ? e.deltaY * 18 : e.deltaY;
-    const next = this.target.dist * Math.exp(clamp(step, -260, 260) * mo().zoomSpeed);
+    const next = this.#scaled(this.target.dist, Math.exp(clamp(step, -260, 260) * mo().zoomSpeed));
     this.#zoomTo(next, e);
   };
 
@@ -419,9 +642,9 @@ export class GlobeControls {
     // clamp below still needs.
     const camera = this.camera;
     const { w, h } = this.viewport;
-    const ppd = Math.max(pixelsPerDegree(dist * this.fit, h, camera.fov), 0.4);
+    const ppd = Math.max(pixelsPerDegree(this.fitted(dist), h, camera.fov), 0.4);
     for (let i = 0; i < 6; i++) {
-      latLonToVec3(this.lat, this.lon, dist * this.fit, camera.position);
+      latLonToVec3(this.lat, this.lon, this.fitted(dist), camera.position);
       camera.up.set(0, 1, 0);
       camera.lookAt(0, 0, 0);
       if (camRoll()) camera.rotateZ(camRoll());
@@ -435,8 +658,8 @@ export class GlobeControls {
         continue;
       }
       const q = this.#probe.copy(a.p).project(camera);
-      const ex = ((a.x - q.x) * w) / 2;
-      const ey = (-(a.y - q.y) * h) / 2;
+      const ex = (((a.sx ?? a.x) - q.x) * w) / 2;
+      const ey = (-((a.sy ?? a.y) - q.y) * h) / 2;
       if (Math.abs(ex) + Math.abs(ey) < 0.05) break;
       this.lon -= ex / (ppd * Math.max(Math.cos(this.lat * DEG), 0.35));
       this.lat = clamp(this.lat + ey / ppd, -cam().latLimit, cam().latLimit);
@@ -451,7 +674,30 @@ export class GlobeControls {
     this.#note();
     const from = this.target.dist;
     this.#takeOver();
-    this.target.dist = clamp(from * factor, cam().minDist, cam().maxDist);
+    this.target.dist = this.#scaled(from, factor);
+  }
+
+  /**
+   * `dist` zoomed by `factor` — every zoom goes through here: pinch, wheel,
+   * double-tap, the buttons and the glide after a pinch.
+   *
+   * The factor scales the height above the ground, not the distance from the
+   * centre of the Earth. From orbit the two are the same thing; near the
+   * surface they are not remotely: at the close stop the distance is 1.014,
+   * so a pinch that took one percent off it took seventy percent off the
+   * altitude, and the last stretch of every zoom shot in. Scaled on the
+   * height, the ground grows exactly with the fingers at every altitude.
+   *
+   * On top of that, a curve: a touch quicker far out, where there is a lot
+   * of empty distance to cover, and a gentle brake over the final approach,
+   * so the stop is arrived at rather than hit.
+   */
+  #scaled(dist, factor) {
+    const floor = cam().minDist - 1;
+    const alt = Math.max(dist - 1, floor);
+    let e = 1 + 0.25 * smoothstep(1.2, 3, alt);
+    if (factor < 1) e *= 1 - 0.45 * (1 - smoothstep(floor, floor * 7, alt));
+    return clamp(1 + alt * Math.pow(factor, e), cam().minDist, cam().maxDist);
   }
 
   /**
@@ -518,9 +764,16 @@ export class GlobeControls {
    */
   #driftRate() {
     const m = mo();
+    // The floor is past the zoom fade as well: the stage's camera sits close
+    // enough that the fade had all but stopped it.
+    const floor = this.spinFloor ?? 0;
     const fade = 1 - smoothstep(m.spinFadeStart, m.spinFadeEnd, this.zoom);
-    if (fade <= 0) return 0;
-    return Math.min(m.spinPx / Math.max(this.pxPerDeg, 1e-3), m.spinMax) * fade * (m.direction < 0 ? -1 : 1);
+    if (fade <= 0 && !floor) return 0;
+    // spinFloor, degrees a second: the landing stage frames the disc so large
+    // that the pixel-based rate comes out at a fraction of a degree, and the
+    // planet looked parked. There it turns at least this fast.
+    const rate = Math.max(Math.min(m.spinPx / Math.max(this.pxPerDeg, 1e-3), m.spinMax) * fade, floor);
+    return rate * (m.direction < 0 ? -1 : 1);
   }
 
   /** Advances the easing; returns true when the camera actually moved. */
@@ -545,7 +798,18 @@ export class GlobeControls {
       // slowest parts of the two movements meet, and the globe visibly stops
       // and starts again. Blended, the flight's own contribution still falls
       // to zero and what is underneath it is exactly the idle drift.
-      if (f.spinInto && this.spin) f.drift += this.#driftRate() * k * dt;
+      // At full rate from the first frame, not weighted up with the flight:
+      // the planet is already turning when the flight begins (the landing
+      // stage turns it), and a weight starting at zero stopped it dead and
+      // started it again — the jolt at the start of the move.
+      // The landing stage's faster turn (spinFloor) hands over across the
+      // flight too, easing down to the working view's own rate by the end,
+      // so the speed never steps.
+      if (f.spinInto && this.spin) {
+        if (f.floor === undefined) f.floor = this.spinFloor ?? 0;
+        this.spinFloor = f.floor * (1 - k);
+        f.drift += this.#driftRate() * dt;
+      }
       this.lat = f.from.lat + (f.to.lat - f.from.lat) * k;
       this.lon = f.from.lon + (f.to.lon - f.from.lon) * k + f.drift;
       this.dist = clamp(f.from.dist + (f.to.dist - f.from.dist) * k + arc, cam().minDist, cam().maxDist + 1.4);
@@ -571,7 +835,7 @@ export class GlobeControls {
     } else {
       this.target.lon += drift;
       if (!this.dragging) {
-        const decay = Math.pow(mo().throwDecay, dt);
+        const decay = Math.pow(this.throwTouch ? TOUCH_THROW_DECAY : mo().throwDecay, dt);
         this.target.lon += this.vel.lon * dt;
         this.target.lat = clamp(this.target.lat + this.vel.lat * dt, -cam().latLimit, cam().latLimit);
         this.vel.lon *= decay;
@@ -581,13 +845,39 @@ export class GlobeControls {
       }
       const kRot = 1 - Math.exp(-dt / mo().rotateDamping);
       const kZoom = 1 - Math.exp(-dt / mo().zoomDamping);
-      this.dist += (this.target.dist - this.dist) * kZoom;
-      if (this.anchor && !this.dragging) {
+      // A pinch is followed exactly: the fingers are the smoothing, and a
+      // camera trailing them by a time constant feels like pulling on rubber.
+      const pinching = this.pointers.size >= 2;
+      // Fingers are followed within a frame, not snapped to. Touches arrive
+      // on their own clock, not the display's, so a frame sometimes gets two
+      // moves and the next none; snapped, that is a judder in every drag. A
+      // time constant of 18ms irons it out for about a frame of lag.
+      const kTouch = 1 - Math.exp(-dt / 0.018);
+      this.dist = pinching ? this.dist + (this.target.dist - this.dist) * kTouch : this.dist + (this.target.dist - this.dist) * kZoom;
+      const a = this.anchor;
+      if (a && (a.drag || a.pinch)) {
+        a.sx = (a.sx ?? a.x) + (a.x - (a.sx ?? a.x)) * kTouch;
+        a.sy = (a.sy ?? a.y) + (a.y - (a.sy ?? a.y)) * kTouch;
+      } else if (a) {
+        a.sx = a.x;
+        a.sy = a.y;
+      }
+      if (this.anchor && (!this.dragging || pinching || this.anchor.tap || this.anchor.drag)) {
         // While a zoom holds a point, the centre is not eased toward a target
         // but solved from the distance, so the point stays on its pixel on
         // every frame of the zoom rather than only once it settles.
         this.#holdAnchor(this.dist);
-        if (Math.abs(this.target.dist - this.dist) < 1e-6) this.anchor = null;
+        if (this.anchor.drag) {
+          // The throw's velocity, from how the camera actually moved while
+          // the ground was held — degrees a second, lightly smoothed.
+          const prev = this.dragPrev;
+          if (prev && dt > 0) {
+            const k = 0.5;
+            this.vel.lon = this.vel.lon * (1 - k) + (wrapDelta(prev.lon, this.lon) / dt) * k;
+            this.vel.lat = this.vel.lat * (1 - k) + ((this.lat - prev.lat) / dt) * k;
+          }
+          this.dragPrev = { lat: this.lat, lon: this.lon };
+        } else if (!pinching && Math.abs(this.target.dist - this.dist) < 1e-6) this.anchor = null;
       } else {
         this.lat += (this.target.lat - this.lat) * kRot;
         this.lon += wrapDelta(this.lon, this.target.lon) * kRot;

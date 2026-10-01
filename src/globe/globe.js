@@ -68,6 +68,26 @@ const TEXTURES = [
   ["clouds", "/textures/clouds.jpg"],
 ];
 
+/**
+ * The same two maps at 8192 x 4096 (tools/make_earth_textures.py), from the
+ * full-resolution Blue Marble and GEBCO rasters. The 4K pair is magnified
+ * about two to one on a large screen close in — the landing stage frames a
+ * quarter of the planet across the whole window — and that is what read as
+ * soft. Taken only where they pay for themselves: a desktop-sized window, a
+ * GPU that can hold an 8K texture, and nobody asking to save data. STYLE
+ * keeps naming the 4K file; this is a resolution of it, not another map.
+ */
+const HD_TEXTURES = {
+  "/textures/blue-marble.jpg": "/textures/blue-marble-8k.jpg",
+  "/textures/earth-aux.png": "/textures/earth-aux-8k.png",
+};
+
+function wantsHd(renderer) {
+  const big = Math.min(window.screen?.width || 0, window.innerWidth) >= 900;
+  const saveData = !!navigator.connection?.saveData;
+  return big && !saveData && (renderer.capabilities.maxTextureSize || 0) >= 8192;
+}
+
 const SETTLE_MS = 130;
 const MOTION_PAINT_MS = 110;
 /**
@@ -92,6 +112,9 @@ const SETTLED_PAINT_MS = 220;
  * the map at any distance where you can see it is a globe, and it should still
  * be doing most of the work at the point where the tiles first help.
  */
+/** Where the camera looks when it turns off the landing stage. */
+const STAGE_EXIT_LAT = 6;
+
 const DETAIL_IN = [0.25, 0.44];
 /** Tiles are fetched a beat before they are shown, so the fade has them. */
 const DETAIL_ARM = 0.2;
@@ -134,12 +157,26 @@ const DETAIL_MOTION_MS = 260;
  * the drift it keeps thereafter rather than stopping and starting again.
  */
 
+/**
+ * The pixel ratio the globe is drawn at.
+ *
+ * A phone's third pixel is 2.25 times the fragments of a globe whose shader is
+ * the heaviest thing on the page, for detail a 460ppi screen does not show at
+ * arm's length — and a phone's GPU is the part that decides whether a pinch
+ * keeps up with the fingers. The pins and every word are DOM, and stay at the
+ * full density regardless.
+ */
+function drawDpr() {
+  const handheld = matchMedia("(pointer: coarse) and (max-width: 1000px)").matches;
+  return Math.min(window.devicePixelRatio || 1, STYLE.renderer.maxPixelRatio, handheld ? 2 : Infinity);
+}
+
 export class Globe {
   constructor(canvas, opts = {}) {
     this.canvas = canvas;
     this.opts = opts;
     this.theme = "dark";
-    this.dpr = Math.min(window.devicePixelRatio || 1, STYLE.renderer.maxPixelRatio);
+    this.dpr = drawDpr();
     /**
      * Fraction of `dpr` actually being drawn; see resolution.js.
      *
@@ -155,6 +192,8 @@ export class Globe {
     this.res = coarse && this.dpr > 1 ? 0.85 : 1;
     this.resAt = 0;
     this.frames = [];
+    /** Until when one-off work is held back; see quiet(). */
+    this.quietUntil = 0;
     /**
      * Set by any frame that did one-off work — rasterising the vector window,
      * compositing a tile window, reallocating the drawing buffer. Those frames
@@ -209,7 +248,12 @@ export class Globe {
     });
 
     this.store = new VectorStore();
-    this.painter = new VectorPainter(this.store);
+    // A phone. Its GPU, not its CPU, is what decides whether a pinch keeps
+    // up, so it gets smaller windows and — mid-gesture — lazier ones.
+    this.handheld = matchMedia("(pointer: coarse) and (max-width: 1000px)").matches;
+    // A phone's screen at two texels a point, padded, is under three million;
+    // the desktop's budget would have it paint and upload twice that.
+    this.painter = new VectorPainter(this.store, this.handheld ? { budget: 3.2e6 } : undefined);
     const env = import.meta.env ?? {};
     this.imagery = new ImageryLayer({
       provider: opts.tiles?.provider ?? env.VITE_TILES_PROVIDER ?? "esri",
@@ -224,6 +268,7 @@ export class Globe {
         this.dirty = true;
       },
     });
+    this.imagery.attach(this.renderer);
     this.detailMix = 0;
     // The entrance can frame the globe off-centre: `shift` is how far its
     // centre sits left of the canvas centre, as a fraction of the width,
@@ -231,11 +276,28 @@ export class Globe {
     // follow without knowing. It eases back to 0 as the hero retires.
     this.shift = opts.hero?.shift ?? 0;
     this.shiftTarget = this.shift;
+    // The same thing vertically: how far the centre sits *above* the canvas
+    // centre, as a fraction of the height. A phone raises the globe into the
+    // room a bottom sheet leaves, rather than moving the canvas.
+    this.lift = opts.hero?.lift ?? 0;
+    this.liftTarget = this.lift;
+    this.heroHome = opts.hero?.home;
+    // The landing stage turns the planet at a set rate; see spinFloor.
+    this.controls.spinFloor = opts.hero ? (opts.hero.spin ?? 0.7) : 0;
+    // The landing stage shows the painted planet only: no tile imagery, so
+    // nothing on screen needs a provider's credit. Released as the stage is
+    // left, and the imagery fades up on its usual clock.
+    this.detailHeld = !!opts.hero;
     this.heroDist = opts.hero?.dist ?? STYLE.camera.maxDist;
     this.lastTiles = 0;
     this.tileDist = 0;
     this.labels = new LabelLayer(opts.overlay, {
-      onPinClick: opts.onPinClick,
+      // A drag that began on a pin ends with a click on it; that was a turn
+      // of the globe, not a choice of ministry.
+      onPinClick: (m) => {
+        if (this.controls.moved) return;
+        opts.onPinClick?.(m);
+      },
       onPinHover: opts.onPinHover,
     });
 
@@ -244,6 +306,9 @@ export class Globe {
     // with the cursor over a city. The wheel is the globe's, whatever is under
     // it, so it is handed straight on.
     opts.overlay?.addEventListener("wheel", (e) => this.controls.wheel(e), { passive: false });
+    // The same for a finger: a drag or a pinch that happens to start on a pin
+    // turns the globe, as it would a hair to either side.
+    opts.overlay?.addEventListener("pointerdown", (e) => this.controls.grab(e));
 
     canvas.addEventListener("click", (e) => {
       if (this.controls.moved) return;
@@ -295,11 +360,20 @@ export class Globe {
     // bar: it streams alongside and fades in when it lands (see #tick).
     const realClouds = load("/textures/clouds-real.jpg").catch(() => null);
 
+    this.hd = wantsHd(this.renderer);
     const textures = {};
     for (const [key, url] of TEXTURES) {
-      textures[key] = await load(url);
+      const src = this.hd ? (HD_TEXTURES[url] ?? url) : url;
+      // An 8K file that fails falls back to its 4K original rather than
+      // failing the start.
+      textures[key] = await load(src).catch((err) => (src !== url ? load(url) : Promise.reject(err)));
       step(key === "base" ? "imagery" : key === "aux" ? "topography" : "cloud sheet");
     }
+
+    // The stage looks across the planet at a slant toward its rim, where 8x
+    // anisotropy smears the sharper maps; take what the GPU offers, to 16.
+    const aniso = Math.min(16, this.renderer.capabilities.getMaxAnisotropy?.() || 8);
+    for (const key of ["base", "aux"]) textures[key].userData.anisotropy = aniso;
 
     const grade = createGradeUniforms();
     const effects = createEffectUniforms();
@@ -356,7 +430,7 @@ export class Globe {
     // One full paint at HOME before anything is shown, so what fades up is the
     // finished globe rather than a bare sphere filling itself in. Held still
     // with it: the drift is the settle's to start, not the loading screen's.
-    const home = STYLE.camera.home;
+    const home = this.heroHome ?? STYLE.camera.home;
     this.controls.holdSpin(true);
     this.controls.lat = home.lat;
     this.controls.lon = home.lon;
@@ -483,7 +557,7 @@ export class Globe {
     if (url !== this.baseUrl && url !== this.baseLoading) {
       this.baseLoading = url;
       new TextureLoader().load(
-        url,
+        (this.hd && HD_TEXTURES[url]) || url,
         (tex) => {
           if (this.baseLoading !== url) return tex.dispose();
           prepare(tex);
@@ -520,8 +594,13 @@ export class Globe {
    * the page would show.
    */
   render() {
-    if (this.chain.active) this.chain.render(this.scene, this.camera);
-    else this.renderer.render(this.scene, this.camera);
+    if (this.chain.active) {
+      // The aberration is centred on the planet rather than the screen, so it
+      // gathers toward the limb wherever the disc is framed.
+      this.chain.disc = this.discOnScreen();
+      this.chain.view = this.size;
+      this.chain.render(this.scene, this.camera);
+    } else this.renderer.render(this.scene, this.camera);
   }
 
   /** The sheet and the halo, which STYLE can switch off and debug() hides. */
@@ -539,7 +618,7 @@ export class Globe {
     // in, so the honest output is no conversion at all. sRGB encodes it a
     // second time — brighter and flatter — and is there to compare against.
     this.renderer.outputColorSpace = r.outputColorSpace === "sRGB" ? SRGBColorSpace : LinearSRGBColorSpace;
-    const dpr = Math.min(window.devicePixelRatio || 1, r.maxPixelRatio);
+    const dpr = drawDpr();
     if (dpr !== this.dpr) {
       this.dpr = dpr;
       this.renderer.setPixelRatio(this.dpr * this.res);
@@ -682,6 +761,16 @@ export class Globe {
       this.skipSample = false;
       return false;
     }
+    // Not on the landing stage. The planet there only drifts, a fraction of
+    // a degree a second, with no hand on it: nothing the scaler buys with
+    // resolution would be seen, and what it gives up — on a large Retina
+    // window it would step the landing down to 70% or 55% — is exactly the
+    // sharpness the stage is for. It starts measuring once the stage is left
+    // (detailHeld is released with it).
+    if (this.detailHeld || this.#quiet(performance.now())) {
+      this.frames.length = 0;
+      return false;
+    }
     this.frames.push(ms);
     if (this.frames.length > RES_WINDOW) this.frames.shift();
     if (now - this.resAt < RES_HOLD_MS) return false;
@@ -711,13 +800,18 @@ export class Globe {
    * frame still, and someone who has just grabbed the globe has ended that
    * frame as surely as the timer would have.
    */
-  releaseSpin() {
+  releaseSpin({ now = false } = {}) {
     this.controls.holdSpin(false);
+    // `now` skips the pause the drift keeps after a hand has let go — there
+    // has been no hand; the page is opening and the planet should be turning
+    // as it arrives, eased up over the drift's own second.
+    if (now) this.controls.quiet = Math.max(this.controls.quiet, STYLE.motion.spinResume);
   }
 
   /** Where the entrance frames the globe; see `shift` in the constructor. */
-  setShift(fraction, { instant = false } = {}) {
+  setShift(fraction, { instant = false, tau = 0.42 } = {}) {
     this.shiftTarget = fraction;
+    this.shiftTau = tau;
     if (instant) {
       this.shift = fraction;
       this.#applyShift();
@@ -725,10 +819,128 @@ export class Globe {
     this.dirty = true;
   }
 
+  /**
+   * Raises the globe's centre by `fraction` of the canvas height, gliding
+   * there. Like the shift, it is a view offset, so picking and the labels
+   * follow it without knowing.
+   */
+  setLift(fraction, { instant = false, tau = 0.14 } = {}) {
+    this.liftTarget = fraction;
+    this.liftTau = tau;
+    if (instant) {
+      this.lift = fraction;
+      this.#applyShift();
+    }
+    this.dirty = true;
+  }
+
+  /**
+   * Off the landing stage by hand. A drag has the rotation, so there is no
+   * flight to ride: the planet comes up to the centre and eases out to
+   * `dist` on a short curve of its own instead, moving at once and slowing
+   * into place, while the hand goes on turning it. A wheel part way through
+   * has the distance from then on; a flight has all of it.
+   */
+  leaveStage({ ms = 1100, dist } = {}) {
+    this.quiet(ms + 300);
+    this.liftFollow = null;
+    this.controls.spinFloor = 0;
+    this.shiftTarget = 0;
+    const from = this.controls.target.dist;
+    this.stageOut = { t: 0, ms, lift: this.lift, from, to: dist ?? from, last: from };
+    this.liftTarget = this.lift;
+    this.dirty = true;
+  }
+
+  /**
+   * Back onto the landing stage — the style editor's way of looking at it
+   * again once the page has left it. The planet flies out to the stage's
+   * framing and turns at the stage's rate, painted only, as it opened.
+   */
+  enterStage({ lift, shift = 0, dist, home, spin = 0.7 }, { ms = 1600 } = {}) {
+    this.liftFollow = null;
+    this.stageOut = null;
+    this.controls.spinFloor = spin;
+    this.detailHeld = true;
+    // Back to full resolution for the stage; see #autoRes.
+    if (this.res < 1) {
+      this.res = 1;
+      this.resAt = performance.now();
+      this.frames.length = 0;
+      this.skipSample = true;
+      this.renderer.setPixelRatio(this.dpr);
+      this.renderer.setSize(this.size.w, this.size.h, false);
+      this.painter.painted = null;
+    }
+    this.heroHome = home;
+    this.heroDist = dist;
+    this.controls.flyTo({ lat: home.lat, lon: home.lon, ms, silent: true, arc: 0, ease: "cubic" });
+    // flyTo keeps to the zoom ladder; the stage can stand outside it.
+    this.#stageDist(dist);
+    this.setLift(lift, { tau: ms / 3000 });
+    this.setShift(shift, { tau: ms / 3000 });
+    this.dirty = true;
+  }
+
+  /** Resizes the planet on the stage, gliding: the editor's size handle. */
+  setStageDist(dist) {
+    this.heroDist = dist;
+    this.#stageDist(dist);
+    this.dirty = true;
+  }
+
+  #stageDist(dist) {
+    const c = this.controls;
+    if (c.flight) c.flight.to.dist = dist;
+    c.target.dist = dist;
+  }
+
+  /**
+   * Keeps the next `ms` free of one-off work — tile windows, mid-motion
+   * vector rasterising, resolution changes — so a camera move that has to
+   * read as one continuous gesture (the flight off the landing stage) gets
+   * every frame. What was deferred happens once, at rest.
+   */
+  quiet(ms) {
+    this.quietUntil = Math.max(this.quietUntil || 0, performance.now() + ms);
+    this.quietMove = true;
+  }
+
+  /**
+   * Whether one-off work is being held. At least the time asked for, and on
+   * past it for as long as the move itself is still running: the flight is
+   * integrated a capped step a frame, so on a slow device it takes longer
+   * than its nominal length, and the hold has to last as long as it does.
+   */
+  #quiet(now) {
+    if (this.quietMove && now >= this.quietUntil && !this.controls.flight && !this.stageOut && !this.liftFollow) {
+      this.quietMove = false;
+    }
+    return this.quietMove || now < this.quietUntil;
+  }
+
+  /** Lets the tile imagery back in; see `detailHeld` in the constructor. */
+  releaseDetail() {
+    this.detailHeld = false;
+    this.dirty = true;
+  }
+
+  /**
+   * The disc as it stands on screen this frame, in CSS pixels: its centre and
+   * radius. The page masks the landing headline with it, so the planet reads
+   * as standing in front of the words.
+   */
+  discOnScreen() {
+    const { w, h } = this.size;
+    const limb = Math.asin(clamp(1 / this.controls.camDist, -1, 1));
+    const half = Math.tan(this.camera.fov * DEG * 0.5);
+    return { x: w * (0.5 - this.shift), y: h * (0.5 - this.lift), r: (h * 0.5 * Math.tan(limb)) / half };
+  }
+
   #applyShift() {
     const { w, h } = this.size;
-    if (Math.abs(this.shift) < 1e-4 || !w) this.camera.clearViewOffset();
-    else this.camera.setViewOffset(w, h, this.shift * w, 0, w, h);
+    if ((Math.abs(this.shift) < 1e-4 && Math.abs(this.lift) < 1e-4) || !w) this.camera.clearViewOffset();
+    else this.camera.setViewOffset(w, h, this.shift * w, this.lift * h, w, h);
     this.camera.updateProjectionMatrix();
   }
 
@@ -737,7 +949,10 @@ export class Globe {
    * view. Silent, because the page decided to do it — counting it as a
    * gesture would retire the hint that has not been earned yet.
    */
-  settle(ms = STYLE.camera.settleMs) {
+  settle(ms = STYLE.camera.settleMs, { dist, turn } = {}) {
+    // Off the stage (the only flight that turns onward): hold the one-off
+    // work until the planet has landed.
+    if (turn) this.quiet(ms + 300);
     this.shiftTarget = 0;
     // No arc. A long hop normally lifts away from the surface and settles
     // back, which reads well between two places at the same height; on a
@@ -748,7 +963,21 @@ export class Globe {
     // direction the drift turns: spinInto hands the tail of that straight to
     // the drift, so the world comes in turning and simply keeps turning.
     this.controls.holdSpin(false);
-    this.controls.flyTo({ ...STYLE.camera.work, ms, silent: true, arc: 0, spinInto: true, ease: "quad" });
+    // Off the landing stage the planet turns on into the working view rather
+    // than swinging back to a fixed longitude: onward in the direction it is
+    // already drifting, by `turn` degrees, and only a little north. A fixed
+    // target could lie behind the drift, and then the globe spun backwards.
+    const target = turn
+      ? { lat: STAGE_EXIT_LAT, lon: this.controls.lon + (STYLE.motion.direction < 0 ? -turn : turn) }
+      : STYLE.camera.work;
+    this.controls.flyTo({ ...target, ...(dist ? { dist } : {}), ms, silent: true, arc: 0, spinInto: true, ease: turn ? "cubic" : "quad" });
+    // A globe framed low on the landing stage comes back to centre *on the
+    // flight's own curve*, frame for frame, rather than gliding there on a
+    // clock of its own: two easings side by side read as the planet sliding
+    // one way while the camera pulls another, where one curve reads as a
+    // single camera move.
+    this.liftFollow = Math.abs(this.lift) > 1e-4 ? { from: this.lift, flight: this.controls.flight } : null;
+    if (this.liftFollow) this.liftTarget = this.lift;
   }
 
   get zoom() {
@@ -800,7 +1029,7 @@ export class Globe {
     const h = this.canvas.clientHeight || window.innerHeight;
     if (w === this.size.w && h === this.size.h) return;
     this.size = { w, h };
-    this.dpr = Math.min(window.devicePixelRatio || 1, STYLE.renderer.maxPixelRatio);
+    this.dpr = drawDpr();
     this.renderer.setPixelRatio(this.dpr * this.res);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(h, 1);
@@ -847,8 +1076,13 @@ export class Globe {
     const drifting = this.controls.spinning && !this.controls.dragging;
     const moving = !immediate && !drifting && (this.controls.dragging || this.idleFrames < 2);
     if (moving) {
+      // The flight off the stage draws on the ink it already has — the
+      // window painted for the stage and the whole-globe base under it — and
+      // repaints once it lands, rather than rasterising mid-move.
+      if (this.#quiet(now)) return;
       if (now - this.lastPaint < MOTION_PAINT_MS) return;
-      const quality = this.painter.stats.lastMs > 26 ? 0.4 : 0.6;
+      const quality = this.handheld || this.painter.stats.lastMs > 26 ? 0.4 : 0.6;
+      if (this.handheld && !this.painter.needsRepaint(bounds, ppd, centre, { loose: true, quality })) return;
       if (this.painter.repaint(bounds, ppd, { theme: this.theme, quality, pad: 1.34, centre })) {
         this.lastPaint = now;
         this.skipSample = true;
@@ -885,16 +1119,22 @@ export class Globe {
   #serviceImagery(z, immediate = false) {
     if (!this.imagery.enabled || z < DETAIL_ARM) return;
     const now = performance.now();
+    // Nothing on the landing stage, which shows the painted planet only, and
+    // nothing during the flight off it (see quiet()): a tile window arriving
+    // mid-flight is a canvas upload in the middle of the move, which is the
+    // hitch. The tiles stream once the planet has landed and fade in on their
+    // own long clock, so arriving a moment later costs nothing that shows.
+    if (this.detailHeld || this.#quiet(now)) return;
     const moving = this.controls.dragging || this.idleFrames < 2;
     if (!immediate && moving && now - this.lastTiles < DETAIL_MOTION_MS) return;
 
-    // Tiles are fetched for ground you are looking at, not for ground you are
-    // travelling through. A fly-in crosses six or seven zoom levels in under
-    // two seconds and every one of them is a full window — five hundred
-    // requests to arrive somewhere that needs eighty. Panning still streams,
-    // because the distance is not changing; changing distance waits for the
-    // camera to stop, and the painted globe covers the gap, which is what it
-    // is for.
+    // Sharp tiles are fetched for ground you are looking at, not for ground
+    // you are travelling through. A fly-in crosses six or seven zoom levels in
+    // under two seconds and every one of them is a full window — five hundred
+    // requests to arrive somewhere that needs eighty. So while the distance is
+    // changing only the backstop streams (two levels up, a sixteenth of the
+    // tiles): the ground keeps coming into focus under the zoom instead of
+    // waiting for it to stop, and the sharp level resolves over it at rest.
     const dist = this.controls.camDist;
     const zooming = Math.abs(dist - this.tileDist) > dist * 0.004;
     this.tileDist = dist;
@@ -911,9 +1151,14 @@ export class Globe {
     if (
       this.imagery.update({
         bounds: win,
-        pxPerDeg: this.controls.pxPerDeg * this.dpr,
+        // At most two texels a point. A phone's third is a zoom level more of
+        // tiles — four times the requests, and a canvas four times the size
+        // re-sent whenever the window moves — for a sharpness the eye does
+        // not get back at arm's length.
+        pxPerDeg: this.controls.pxPerDeg * Math.min(this.dpr, 2),
         centre: { lat: this.controls.lat, lon: this.controls.lon },
-        fetch: immediate || !zooming,
+        coarse: !immediate && zooming,
+        lazy: this.handheld && !immediate && moving,
       })
     ) {
       this.lastTiles = now;
@@ -926,7 +1171,9 @@ export class Globe {
     const u = this.halo.uniforms;
     const buffer = this.renderer.getDrawingBufferSize(this.bufferSize);
     u.uResolution.value.set(buffer.x, buffer.y);
-    u.uCentre.value.set(buffer.x * (0.5 - this.shift), buffer.y * 0.5);
+    // y down, like the shader's own coordinates: a lift raises the centre,
+    // which is a *smaller* y.
+    u.uCentre.value.set(buffer.x * (0.5 - this.shift), buffer.y * (0.5 - this.lift));
     // Screen space, y down, pointing at the lamp. Taken from the same view
     // space vector the surface is lit by, so the bloom cannot drift off the
     // lit hemisphere however the globe is turned.
@@ -947,8 +1194,14 @@ export class Globe {
       this.last = now;
       // Nobody is watching the framing glide home, so it lands at once:
       // otherwise a hero left for a dialog comes back still off-centre.
-      if (this.shift !== this.shiftTarget) {
+      if (this.liftFollow || this.stageOut) {
+        this.liftFollow = null;
+        this.stageOut = null;
+        this.liftTarget = 0;
+      }
+      if (this.shift !== this.shiftTarget || this.lift !== this.liftTarget) {
         this.shift = this.shiftTarget;
+        this.lift = this.liftTarget;
         this.#applyShift();
         this.dirty = true;
       }
@@ -963,7 +1216,50 @@ export class Globe {
     // The entrance framing glides home on roughly the settle's own clock.
     if (this.shift !== this.shiftTarget) {
       const d = this.shiftTarget - this.shift;
-      this.shift = Math.abs(d) < 5e-4 ? this.shiftTarget : this.shift + d * (1 - Math.exp(-dt / 0.42));
+      this.shift = Math.abs(d) < 5e-4 ? this.shiftTarget : this.shift + d * (1 - Math.exp(-dt / (this.shiftTau ?? 0.42)));
+      this.#applyShift();
+      this.dirty = true;
+    }
+    if (this.stageOut) {
+      const o = this.stageOut;
+      if (this.controls.flight) {
+        // A flight took over — a pin, a search. The rest of the way to the
+        // centre rides it, as a settle would.
+        this.stageOut = null;
+        this.liftFollow = { from: this.lift, flight: this.controls.flight };
+      } else {
+        o.t = Math.min(o.t + dt * 1000, o.ms);
+        const k = 1 - Math.pow(1 - o.t / o.ms, 3);
+        this.lift = this.liftTarget = o.lift * (1 - k);
+        if (o.to !== null) {
+          if (Math.abs(this.controls.target.dist - o.last) > 1e-6) o.to = null;
+          else this.controls.target.dist = o.last = o.from + (o.to - o.from) * k;
+        }
+        if (o.t >= o.ms) this.stageOut = null;
+        this.#applyShift();
+        this.dirty = true;
+      }
+    }
+    // Riding a settle: the lift is wherever the flight has got to. If the
+    // flight is taken over part way — a hand on the globe — the rest of the
+    // way is the ordinary glide.
+    if (this.liftFollow) {
+      const { from, flight } = this.liftFollow;
+      if (this.controls.flight === flight || flight.t >= flight.ms) {
+        const k = flight.ease(flight.t / flight.ms);
+        this.lift = this.liftTarget = from * (1 - k);
+        if (flight.t >= flight.ms) this.lift = this.liftTarget = 0;
+      } else {
+        this.liftTarget = 0;
+      }
+      if (this.controls.flight !== flight) this.liftFollow = null;
+      this.#applyShift();
+      this.dirty = true;
+    } else if (this.lift !== this.liftTarget) {
+      // The lift rides a sheet coming up, so it keeps a sheet's pace unless
+      // told otherwise.
+      const d = this.liftTarget - this.lift;
+      this.lift = Math.abs(d) < 5e-4 ? this.liftTarget : this.lift + d * (1 - Math.exp(-dt / (this.liftTau ?? 0.14)));
       this.#applyShift();
       this.dirty = true;
     }
@@ -1025,7 +1321,7 @@ export class Globe {
     // fills instead of snapping on over a half-drawn mosaic. Smoothed in time
     // as well, because coverage steps as each tile lands and an unsmoothed mix
     // would flicker with the network.
-    const wanted = this.imagery.enabled
+    const wanted = this.imagery.enabled && !this.detailHeld
       // Coverage only gates the *start*: past a tile or two the canvas carries
       // its own presence in its alpha, so the fade does not have to wait for a
       // window to be complete before it will show any of it.
@@ -1076,6 +1372,9 @@ export class Globe {
       this.#serviceImagery(this.controls.zoom, true);
     }
 
+    // Tiles fading in are sent to the GPU a slot at a time, just before the
+    // frame that shows them.
+    this.imagery.frame(now);
     this.render();
   };
 }

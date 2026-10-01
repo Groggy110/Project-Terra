@@ -1,25 +1,47 @@
-/* The needs board: a sheet that rises from the bottom edge. */
+/* The needs board: a card that rises from below the window.
+
+   On a desktop it stands clear of the bottom edge with its whole frame — the
+   border and the rounded corners all the way round — so it reads as a closed
+   window over the globe rather than one running off the foot of the screen.
+   The phone keeps the edge-anchored sheet (see "phone" below). */
 
 .sheet {
+  --sheet-gap: calc(var(--safe-b) + 18px);
   position: absolute;
   left: 50%;
-  bottom: 0;
-  /* The sheet slides up from the bottom edge, so its own content — not its
-     frame — has to clear the home indicator. */
-  padding-bottom: var(--safe-b);
-  translate: -50% 100%;
+  bottom: var(--sheet-gap);
+  /* Hidden: its own height, the gap under it and room for its shadow. */
+  translate: -50% calc(100% + var(--sheet-gap) + 48px);
   width: min(1180px, calc(100vw - 2 * var(--edge)));
-  height: min(78vh, 780px);
+  height: min(calc(100vh - var(--sheet-gap) - 96px), 78vh, 780px);
   display: flex;
   flex-direction: column;
-  border-radius: 26px 26px 0 0;
+  border-radius: 26px;
+  /* The panes scroll inside the corners rather than over them. */
+  overflow: clip;
   background: var(--surface-veil);
   border: 1px solid var(--line);
-  border-bottom: 0;
   backdrop-filter: blur(24px) saturate(1.5);
-  box-shadow: var(--shadow-3);
+  box-shadow:
+    var(--shadow-3),
+    inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #fff 3%, transparent);
   transition: translate 0.52s var(--ease-out);
   will-change: transform;
+}
+
+/* Both panes fade out over their last few rows, so a list that goes on
+   reads as going on, under the card's closed edge, rather than as cut. The
+   mask is on the scroller's own box, so it stays at the foot as it scrolls. */
+.bd__side,
+.bd__main {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent calc(100% - 4px));
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent calc(100% - 4px));
+}
+
+/* Room under the last row, so it can scroll clear of the fade. */
+.bd__main {
+  scroll-padding-bottom: 56px;
 }
 
 .sheet.is-up {
@@ -99,7 +121,7 @@
 
 .bd__side {
   min-height: 0;
-  padding: 16px 12px 24px 16px;
+  padding: 16px 12px 56px 16px;
   border-right: 1px solid var(--line);
 }
 
@@ -160,7 +182,7 @@
 
 .bd__main {
   min-height: 0;
-  padding: 16px 26px 28px;
+  padding: 16px 26px 64px;
 }
 
 .bd__bar {
@@ -399,11 +421,17 @@ body.board-open .grabber {
 
 @media (max-width: 720px), (max-width: 1000px) and (max-height: 520px) {
   .sheet {
+    /* Anchored to the edge, as a phone's sheets are: the content, not the
+       frame, clears the home indicator. */
+    bottom: 0;
+    padding-bottom: var(--safe-b);
+    translate: -50% 100%;
     width: 100vw;
-    height: min(88vh, 760px);
+    height: min(88dvh, 760px);
     border-radius: 20px 20px 0 0;
     border-left: 0;
     border-right: 0;
+    border-bottom: 0;
     /*
      * Opaque, and no blur.
      *
@@ -507,7 +535,13 @@ body.board-open .grabber {
   }
 
   .bd__main {
-    padding: 12px 16px 22px;
+    padding: 12px 16px 60px;
+  }
+
+  /* A row of chips there, not a column: nothing to fade. */
+  .bd__side {
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   .bd__bar {

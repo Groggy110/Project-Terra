@@ -557,3 +557,34 @@
   }
 
 }
+
+/* A phone: the card is a sheet up from the bottom edge, the height of what is
+   actually visible. 100vh on iOS is the height with the toolbars *hidden*, so
+   a card sized from it ran its submit button under Safari's bottom bar. The
+   lockup stands down — there is no margin above the card for it to sit in, and
+   it landed on the headline. */
+@media (max-width: 720px) {
+  .gate {
+    padding: 0;
+    place-items: end stretch;
+  }
+
+  .gate__brand {
+    display: none;
+  }
+
+  .gate__card {
+    width: 100%;
+    max-height: calc(100dvh - var(--safe-t) - 16px);
+    border-radius: 22px 22px 0 0;
+    border-bottom: 0;
+    translate: 0 40px;
+    scale: 1;
+  }
+
+  .gate__body {
+    padding: 30px 20px calc(var(--safe-b) + 22px);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}

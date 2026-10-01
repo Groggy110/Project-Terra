@@ -16,6 +16,7 @@ get() { # url dest
 
 echo "imagery"
 get "$EO/73909/world.topo.bathy.200412.3x5400x2700.jpg" "$CACHE/blue-marble-5400.jpg"
+get "$EO/73909/world.topo.bathy.200412.3x21600x10800.jpg" "$CACHE/blue-marble-21600.jpg"
 get "$EO/73934/gebco_08_rev_elev_21600x10800.png"       "$CACHE/gebco-elev.png"
 
 echo "natural earth 1:50m"

@@ -7,6 +7,9 @@ import { MINISTRIES, MINISTRY_BY_ID } from "../data/ministries.js";
 
 const SIDE_ROOM = window.matchMedia("(min-width: 1000px)");
 
+/** A phone held upright, where a dialog is a bottom sheet (modal.css). */
+const PHONE_SHEET = window.matchMedia("(max-width: 720px)");
+
 export class ModalLayer {
   constructor(root, { onToggle } = {}) {
     this.root = root;
@@ -48,6 +51,79 @@ export class ModalLayer {
     setTimeout(done, 600);
   }
 
+  /**
+   * On a phone a dialog is a sheet (modal.css), and a sheet is dismissed the
+   * way every sheet on the phone is: pulled down. From the handle at any
+   * time, and from the content once it is scrolled to the top — a downward
+   * drag there has nothing left to scroll, so it can only mean "away".
+   */
+  #pullToClose(modal) {
+    const grab = h("div", { class: "modal__grab", "aria-hidden": "true" });
+    modal.prepend(grab);
+    // Touch events rather than pointer events: once a list starts scrolling
+    // natively the browser cancels the pointer stream, and only a
+    // non-passive touchmove can take the gesture over from the scroller.
+    let y0 = 0;
+    let dy = 0;
+    let t0 = 0;
+    let armed = false;
+    let live = false;
+    const scrolledDown = (el) => {
+      for (let n = el; n && n !== modal; n = n.parentElement) {
+        if (n.scrollTop > 0) return true;
+      }
+      return false;
+    };
+    modal.addEventListener("touchstart", (e) => {
+      armed = false;
+      if (e.touches.length !== 1) return;
+      const t = e.target;
+      if (t.closest("input, textarea, select, [contenteditable]")) return;
+      if (!t.closest(".modal__grab") && scrolledDown(t)) return;
+      armed = true;
+      live = false;
+      y0 = e.touches[0].clientY;
+      t0 = e.timeStamp;
+      dy = 0;
+    }, { passive: true });
+    modal.addEventListener("touchmove", (e) => {
+      if (!armed) return;
+      dy = e.touches[0].clientY - y0;
+      if (!live) {
+        // An upward move is the content's to scroll; a plain downward one,
+        // with nothing above to scroll back to, is the sheet's.
+        if (dy < -4) return void (armed = false);
+        if (dy < 8) return;
+        live = true;
+        modal.classList.add("is-dragging");
+      }
+      e.preventDefault();
+      modal.style.translate = `0 ${Math.max(0, dy - 8)}px`;
+    }, { passive: false });
+    const end = (e) => {
+      if (!armed) return;
+      armed = false;
+      if (!live) return;
+      live = false;
+      const speed = dy / Math.max(e.timeStamp - t0, 1);
+      if (dy > 110 || speed > 0.6) {
+        // Leave from where the finger let go, not from the top.
+        modal.style.transition = "translate 0.22s ease-in";
+        modal.style.translate = "0 100%";
+        setTimeout(() => this.current?.modal === modal && this.close(), 200);
+      } else {
+        modal.style.transition = "translate 0.3s cubic-bezier(0.32, 0.72, 0, 1)";
+        modal.style.translate = "";
+        setTimeout(() => {
+          modal.style.transition = "";
+          modal.classList.remove("is-dragging");
+        }, 320);
+      }
+    };
+    modal.addEventListener("touchend", end);
+    modal.addEventListener("touchcancel", end);
+  }
+
   /** Mounts a dialog; `build(close)` returns the body of the card. */
   show(build, { width, side = false } = {}) {
     this.close();
@@ -66,6 +142,7 @@ export class ModalLayer {
       h("button", { class: "modal__x", "aria-label": "Close", onclick: () => this.close() }, icons.close()),
     );
     add(modal, [build(() => this.close())]);
+    if (PHONE_SHEET.matches) this.#pullToClose(modal);
     this.root.append(scrim, modal);
     this.current = { scrim, modal, side };
     document.body.classList.toggle("side-card", side);
@@ -73,7 +150,15 @@ export class ModalLayer {
     const focusTarget =
       modal.querySelector("[data-autofocus]") ??
       modal.querySelector("input,select,textarea,button:not(.modal__x)");
-    focusTarget?.focus({ preventScroll: true });
+    // Not on a phone: focusing a field there throws the keyboard up over the
+    // sheet before anyone has read it, and focusing a link draws a ring
+    // round it that a finger never asked for. The sheet itself takes focus.
+    if (PHONE_SHEET.matches) {
+      modal.tabIndex = -1;
+      modal.focus({ preventScroll: true });
+    } else {
+      focusTarget?.focus({ preventScroll: true });
+    }
     return modal;
   }
 }
@@ -242,7 +327,7 @@ export function postNeedModal(layer, { ministryId, onPublish }) {
 
 /* ----------------------------------------------------------- need detail */
 
-export function needModal(layer, need, { onPickUp, onMinistry, onDrop, onSchedule }, { side = false } = {}) {
+export function needModal(layer, need, { onPickUp, onMinistry, onDrop, onSchedule, onEdit }, { side = false } = {}) {
   return layer.show((close) => {
     const cell = (label, value) =>
       h("div", { class: "detail__cell" }, h("div", { class: "ml", text: label }), h("strong", { text: value }));
@@ -250,7 +335,9 @@ export function needModal(layer, need, { onPickUp, onMinistry, onDrop, onSchedul
     const pick = h(
       "button",
       {
-        class: need.taken ? "btn btn--soft" : "btn btn--accent",
+        // The one action the card exists for: blue like every primary, going
+        // green under the pointer as the moment of saying yes (modal.css).
+        class: need.taken ? "btn btn--soft" : "btn btn--accent btn--serve",
         onclick: () => {
           // Close first: picking up opens the application in this same layer.
           close();
@@ -258,7 +345,7 @@ export function needModal(layer, need, { onPickUp, onMinistry, onDrop, onSchedul
           else onPickUp(need);
         },
       },
-      need.taken ? "Withdraw interest" : "Pick this up",
+      need.taken ? "Withdraw interest" : "Serve",
     );
 
     return h(
@@ -281,6 +368,13 @@ export function needModal(layer, need, { onPickUp, onMinistry, onDrop, onSchedul
           h("button", { onclick: () => { onMinistry(need); close(); } }, need.ministryName),
           ` · ${need.city}, ${need.country} · posted ${since(need.posted)}`,
         ),
+        // Up with the name it belongs to, rather than as a third action at
+        // the foot competing with the two that answer the need.
+        h("div", { class: "detail__links" },
+          h("button", { class: "btn btn--soft btn--sm", onclick: () => { onMinistry(need); close(); } }, "See the ministry"),
+          // The ministry's own need: the way back into it to change anything.
+          onEdit ? h("button", { class: "btn btn--soft btn--sm", onclick: () => { close(); onEdit(need); } }, icons.edit(), "Edit") : null,
+        ),
         h(
           "div",
           { class: "detail__grid" },
@@ -301,12 +395,11 @@ export function needModal(layer, need, { onPickUp, onMinistry, onDrop, onSchedul
       h(
         "div",
         { class: "modal__foot" },
+        // Picking it up leads; a call is the gentler second step beside it.
+        pick,
         onSchedule
-          ? h("button", { class: "btn btn--accent", onclick: () => { close(); onSchedule(need); } }, "Schedule a call")
+          ? h("button", { class: "btn btn--soft", onclick: () => { close(); onSchedule(need); } }, "Schedule a call")
           : null,
-        // With a call on offer, that is the primary action; interest steps back.
-        (onSchedule && pick.classList.replace("btn--accent", "btn--soft"), pick),
-        h("button", { class: "btn btn--soft", onclick: () => { onMinistry(need); close(); } }, "See the ministry"),
         h("span", { class: "modal__note spacer", text: "Saved in this browser only." }),
       ),
     );
@@ -318,7 +411,7 @@ export function needModal(layer, need, { onPickUp, onMinistry, onDrop, onSchedul
 /** What to ask, by the kind of need — a designer and a donor show different work. */
 const ASK = {
   volunteers: {
-    why: "Why do you want to pick this up?",
+    why: "Why do you want to serve here?",
     quals: "What experience do you have with this kind of work?",
     qualsHint: "Similar roles, how long you've done it, anything you've led.",
     work: "Anything that shows you've done this before — a lesson plan, a recording, photos, a reference.",
@@ -357,7 +450,7 @@ const fileSize = (n) =>
   n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
 
 /**
- * The application behind "Pick this up": why, what qualifies you, and
+ * The application behind "Serve": why, what qualifies you, and
  * previous work as links or files. Files need somewhere to go, so without a
  * sign-in (`canUpload` false) only links are offered.
  */
@@ -506,7 +599,7 @@ export function pickUpModal(layer, need, { canUpload, onSignIn, onSubmit }) {
     send.addEventListener("click", async () => {
       // A link typed but not added is almost always meant to be sent.
       if (linkInput.value.trim()) addLink();
-      for (const [el, msg] of [[why, "Say a little about why you want to pick this up."], [quals, "Tell them what qualifies you."]]) {
+      for (const [el, msg] of [[why, "Say a little about why you want to serve here."], [quals, "Tell them what qualifies you."]]) {
         if (el.value.trim().length < 10) {
           el.setAttribute("aria-invalid", "true");
           el.focus();
@@ -529,7 +622,7 @@ export function pickUpModal(layer, need, { canUpload, onSignIn, onSubmit }) {
 
     return h("div", { class: "modal__inner" },
       h("div", { class: "modal__body scroll" },
-        h("div", { class: "modal__eyebrow", text: "Pick this up" }),
+        h("div", { class: "modal__eyebrow", text: "Serve" }),
         h("h2", { class: "modal__title", text: need.title }),
         h("p", { class: "modal__lede", text: `A few questions so ${need.ministryName} knows who you are. They'll see your answers alongside your profile.` }),
         h("div", { class: "form" },

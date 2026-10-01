@@ -9,6 +9,28 @@ import { h, svg } from "./dom.js";
 const MARGIN = 12;
 
 /**
+ * A phone held upright. There a menu anchored under its button has nowhere to
+ * go — the buttons are at the foot of the screen — so every menu becomes an
+ * action sheet instead: full width, up from the bottom, over a scrim.
+ */
+export const PHONE = window.matchMedia("(max-width: 720px)");
+
+/**
+ * Mounts `menu` as a bottom sheet on the page itself. It has to leave the
+ * element it was built in: a chip menu lives inside the filter row, which
+ * scrolls sideways and so clips anything that hangs out of it. The scrim
+ * takes the tap that would otherwise land on the globe; the menus' own
+ * click-outside handlers do the closing.
+ */
+export function asSheet(menu) {
+  const scrim = h("div", { class: "pop-scrim" });
+  menu.classList.add("is-sheet");
+  document.body.append(scrim, menu);
+  menu.scrim = scrim;
+  return menu;
+}
+
+/**
  * A chip menu is centred under its chip, which puts the outer chips partly off
  * screen. When that happens it stops being centred and takes an explicit
  * offset instead, so it slides along the row rather than off the edge.
@@ -31,11 +53,21 @@ export function clampMenu(menu, anchor) {
   // Never let the sheet run past the bottom of the window — and never let it
   // grow past the height the stylesheet asks for either. A 32-city list that
   // filled the window would swallow the globe it is meant to be filtering.
+  // And where the row sits low in the window — on the landing screen it is
+  // on the planet, well down the page — it opens upward instead whenever the
+  // list would not fit below and there is more room above.
   const list = menu.querySelector(".pop__list");
   if (list) {
+    menu.classList.remove("is-above");
+    list.style.removeProperty("max-height");
     const chrome = menu.offsetHeight - list.offsetHeight;
-    const room = window.innerHeight - a.bottom - 9 - chrome - MARGIN;
     const cap = Math.min(340, window.innerHeight * 0.46);
+    const need = Math.min(cap, list.scrollHeight);
+    const below = window.innerHeight - a.bottom - 9 - chrome - MARGIN;
+    const above = a.top - 9 - chrome - MARGIN;
+    const up = below < need && above > below;
+    menu.classList.toggle("is-above", up);
+    const room = up ? above : below;
     list.style.maxHeight = `${Math.max(140, Math.round(Math.min(cap, room)))}px`;
     atEnd(list);
   }
@@ -57,7 +89,7 @@ function atEnd(list) {
  * The `...` menu. Anchored under its button, dismissed by a click outside,
  * Escape or a choice, and walkable with the arrow keys.
  *
- * `items` are `{ label, note, icon, kbd, danger, run }`, with `null` for a rule.
+ * `items` are `{ label, note, icon, kbd, badge, danger, run }`, with `null` for a rule.
  */
 export function openPop({ anchor, items, parent = document.body, id = "appMenu" }) {
   const existing = document.getElementById(id);
@@ -91,20 +123,24 @@ export function openPop({ anchor, items, parent = document.body, id = "appMenu" 
         item.label,
         item.note ? h("span", { class: "opt__note", text: item.note }) : null,
       ),
+      item.badge ? h("span", { class: "opt__badge", text: item.badge }) : null,
       item.kbd ? h("span", { class: "opt__kbd", text: item.kbd }) : null,
     );
     rows.push(row);
     menu.appendChild(row);
   }
 
-  parent.appendChild(menu);
-
-  // Right-aligned to the button, then pulled back inside the window.
-  const a = anchor.getBoundingClientRect();
-  const w = menu.offsetWidth;
-  const left = Math.max(MARGIN, Math.min(a.right - w, window.innerWidth - w - MARGIN));
-  menu.style.left = `${Math.round(left)}px`;
-  menu.style.top = `${Math.round(a.bottom + 9)}px`;
+  if (PHONE.matches) {
+    asSheet(menu);
+  } else {
+    parent.appendChild(menu);
+    // Right-aligned to the button, then pulled back inside the window.
+    const a = anchor.getBoundingClientRect();
+    const w = menu.offsetWidth;
+    const left = Math.max(MARGIN, Math.min(a.right - w, window.innerWidth - w - MARGIN));
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(a.bottom + 9)}px`;
+  }
 
   let cursor = -1;
   const keys = (e) => {
@@ -127,6 +163,7 @@ export function openPop({ anchor, items, parent = document.body, id = "appMenu" 
 
   function close() {
     menu.remove();
+    menu.scrim?.remove();
     document.removeEventListener("pointerdown", away);
     window.removeEventListener("keydown", keys, true);
     window.removeEventListener("resize", close);
@@ -148,5 +185,6 @@ export const menuIcons = {
   panel: () => opt('<rect x="2.2" y="3" width="11.6" height="10" rx="1.8"/><path d="M10 3v10"/>'),
   theme: () => opt('<circle cx="8" cy="8" r="5.6"/><path d="M8 2.4a5.6 5.6 0 0 0 0 11.2z" class="ico__fill"/>'),
   reset: () => opt('<path d="M13.2 6.9A4.9 4.9 0 1 0 13.6 10"/><path d="M13.6 3.8v3.2h-3.2"/>'),
+  inbox: () => opt('<path d="M2.4 9.2 4 3.6h8l1.6 5.6v3.2H2.4z"/><path d="M2.4 9.2h3.4l.8 1.4h2.8l.8-1.4h3.4"/>'),
   trash: () => opt('<path d="M3.4 4.6h9.2M6.4 4.6V3.4h3.2v1.2M4.6 4.6l.7 8h5.4l.7-8"/>'),
 };

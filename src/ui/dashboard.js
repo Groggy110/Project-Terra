@@ -15,52 +15,56 @@ const STATUS = {
   filled: { label: "Filled", cls: "is-off" },
 };
 
-export function dashboardModal(layer, { load, onSetStatus, onPost, onShowNeed }) {
+// What they wrote when they picked the need up, and the work they shared.
+// Images are shown, not just named: a photo of the last mural says more
+// than its file name.
+const answers = (a) => {
+  const work = [
+    ...a.links.map((url) => h("a", { class: "work__item", href: url, target: "_blank", rel: "noopener" },
+      h("span", { class: "work__kind", text: "Link" }),
+      h("span", { class: "work__name", text: url.replace(/^https?:\/\//, "") }),
+    )),
+    ...a.files.map((f) => h(f.url ? "a" : "div", { class: "work__item", href: f.url, target: "_blank", rel: "noopener" },
+      f.url && f.type?.startsWith("image/") ? h("img", { class: "work__thumb", src: f.url, alt: "", loading: "lazy" }) : null,
+      h("span", { class: "work__kind", text: "File" }),
+      h("span", { class: "work__name", text: f.name }),
+    )),
+  ];
+  if (!a.why && !a.qualifications && !work.length) return null;
+  return h("div", { class: "applicant__answers" },
+    a.why ? h("div", {}, h("span", { class: "ml", text: "Why" }), h("p", { text: a.why })) : null,
+    a.qualifications ? h("div", {}, h("span", { class: "ml", text: "Qualifications" }), h("p", { text: a.qualifications })) : null,
+    work.length ? h("div", {}, h("span", { class: "ml", text: "Previous work" }), h("div", { class: "work__items" }, work)) : null,
+  );
+};
+
+/** One volunteer: who they are, how to reach them, and what they sent. */
+export const person = (p, extra) =>
+  h("div", { class: "applicant" },
+    h("div", { class: "applicant__head" },
+      h("span", { class: "applicant__dot", text: (p.name || "?").trim().charAt(0).toUpperCase() }),
+      h("div", {},
+        h("b", {}, p.name, p.seen === false ? h("span", { class: "new-pill", text: "New" }) : null),
+        h("span", { text: [p.email, extra].filter(Boolean).join(" · ") }),
+      ),
+      p.email ? h("a", { class: "btn btn--soft btn--sm", href: `mailto:${p.email}` }, "Email") : null,
+    ),
+    p.application ? answers(p.application) : null,
+    p.skills?.length ? h("div", { class: "tags" }, p.skills.slice(0, 6).map((s) => h("span", { class: "tag", text: s }))) : null,
+    p.experience ? h("p", { class: "applicant__about", text: p.experience }) : null,
+    p.availability || p.languages?.length || p.portfolio
+      ? h("div", { class: "applicant__meta" },
+          p.availability ? h("span", { text: p.availability }) : null,
+          p.languages?.length ? h("span", { text: p.languages.join(", ") }) : null,
+          p.portfolio ? h("a", { href: p.portfolio, target: "_blank", rel: "noopener", text: "Portfolio" }) : null,
+        )
+      : null,
+  );
+
+export function dashboardModal(layer, { load, onSetStatus, onPost, onShowNeed, onEdit }) {
   return layer.show((close) => {
     const list = h("div", { class: "dash" }, h("p", { class: "modal__lede", text: "Loading your needs…" }));
     const summary = h("p", { class: "modal__lede" });
-
-    // What they wrote when they picked the need up, and the work they shared.
-    const answers = (a) => {
-      const work = [
-        ...a.links.map((url) => h("a", { class: "work__item", href: url, target: "_blank", rel: "noopener" },
-          h("span", { class: "work__kind", text: "Link" }),
-          h("span", { class: "work__name", text: url.replace(/^https?:\/\//, "") }),
-        )),
-        ...a.files.map((f) => h(f.url ? "a" : "div", { class: "work__item", href: f.url, target: "_blank", rel: "noopener" },
-          h("span", { class: "work__kind", text: "File" }),
-          h("span", { class: "work__name", text: f.name }),
-        )),
-      ];
-      if (!a.why && !a.qualifications && !work.length) return null;
-      return h("div", { class: "applicant__answers" },
-        a.why ? h("div", {}, h("span", { class: "ml", text: "Why" }), h("p", { text: a.why })) : null,
-        a.qualifications ? h("div", {}, h("span", { class: "ml", text: "Qualifications" }), h("p", { text: a.qualifications })) : null,
-        work.length ? h("div", {}, h("span", { class: "ml", text: "Previous work" }), h("div", { class: "work__items" }, work)) : null,
-      );
-    };
-
-    const person = (p, extra) =>
-      h("div", { class: "applicant" },
-        h("div", { class: "applicant__head" },
-          h("span", { class: "applicant__dot", text: (p.name || "?").trim().charAt(0).toUpperCase() }),
-          h("div", {},
-            h("b", { text: p.name }),
-            h("span", { text: [p.email, extra].filter(Boolean).join(" · ") }),
-          ),
-          p.email ? h("a", { class: "btn btn--soft btn--sm", href: `mailto:${p.email}` }, "Email") : null,
-        ),
-        p.application ? answers(p.application) : null,
-        p.skills?.length ? h("div", { class: "tags" }, p.skills.slice(0, 6).map((s) => h("span", { class: "tag", text: s }))) : null,
-        p.experience ? h("p", { class: "applicant__about", text: p.experience }) : null,
-        p.availability || p.languages?.length || p.portfolio
-          ? h("div", { class: "applicant__meta" },
-              p.availability ? h("span", { text: p.availability }) : null,
-              p.languages?.length ? h("span", { text: p.languages.join(", ") }) : null,
-              p.portfolio ? h("a", { href: p.portfolio, target: "_blank", rel: "noopener", text: "Portfolio" }) : null,
-            )
-          : null,
-      );
 
     const needBlock = (n) => {
       const st = STATUS[n.status] ?? STATUS.live;
@@ -84,6 +88,9 @@ export function dashboardModal(layer, { load, onSetStatus, onPost, onShowNeed })
       for (const a of n.applicants) open.appendChild(person(a, `interested ${since(a.at)}`));
 
       const actions = h("div", { class: "dash__actions" });
+      // Any need can be edited, in any state: the changes are checked again
+      // either way, and a need held for review may just need rewording.
+      if (onEdit) actions.append(h("button", { class: "btn btn--soft btn--sm", onclick: () => { close(); onEdit(n); } }, "Edit"));
       if (n.status === "live") {
         actions.append(
           h("button", { class: "btn btn--soft btn--sm", onclick: () => { close(); onShowNeed(n.id); } }, "View on map"),

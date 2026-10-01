@@ -6,6 +6,11 @@
                                     G = land mask    (land / ocean split)
                                     B = coast proximity (shallow-water tint)
 
+and the same two at 8192 x 4096 (blue-marble-8k.jpg, earth-aux-8k.png), from
+NASA's full 21600-pixel Blue Marble and GEBCO's full elevation raster, for
+screens that can hold them (globe.js, HD_TEXTURES). The 4K pair stays as it is
+for phones and for any GPU whose texture limit is below 8192.
+
 The colour image is never pre-graded: the shader lifts land through a tone
 curve, separates snow from desert by chroma and recolours the ocean from depth,
 so the same source stays usable under either theme.
@@ -24,6 +29,7 @@ CACHE = ROOT / "tools" / "cache"
 OUT = ROOT / "public" / "textures"
 
 AUX_W, AUX_H = 4096, 2048
+HD_W, HD_H = 8192, 4096
 SS = 2  # rasterise the mask at 2x, then box-down for antialiased coastlines
 
 
@@ -52,9 +58,9 @@ def to_pixels(ring, w, h):
     return [((lon + 180.0) / 360.0 * w, (90.0 - lat) / 180.0 * h) for lon, lat in ring]
 
 
-def rasterise_land():
+def rasterise_land(out_w=AUX_W, out_h=AUX_H):
     """Land = Natural Earth 1:10m land polygons minus inland lakes."""
-    w, h = AUX_W * SS, AUX_H * SS
+    w, h = out_w * SS, out_h * SS
     img = Image.new("L", (w, h), 0)
     draw = ImageDraw.Draw(img)
 
@@ -80,36 +86,25 @@ def rasterise_land():
                 m += 1
         log(f"lakes subtracted: {m}")
 
-    return img.resize((AUX_W, AUX_H), Image.BOX)
+    return img.resize((out_w, out_h), Image.BOX)
 
 
-def topography():
+def topography(w=AUX_W, h=AUX_H):
     """GEBCO_08 revised elevation ramp, box-reduced to the aux resolution."""
     src = CACHE / "gebco-elev.png"
     if not src.exists():
         log("gebco-elev.png missing - topography channel will be flat")
-        return Image.new("L", (AUX_W, AUX_H), 0)
+        return Image.new("L", (w, h), 0)
     img = Image.open(src).convert("L")
     log(f"gebco source: {img.size[0]}x{img.size[1]}")
-    while img.size[0] >= AUX_W * 2:
+    while img.size[0] >= w * 2:
         img = img.reduce(2)
-    return img.resize((AUX_W, AUX_H), Image.LANCZOS)
+    return img.resize((w, h), Image.LANCZOS)
 
 
-def main():
-    OUT.mkdir(parents=True, exist_ok=True)
-
-    bm = CACHE / "blue-marble-5400.jpg"
-    if bm.exists():
-        img = Image.open(bm).convert("RGB")
-        log(f"blue marble: {img.size[0]}x{img.size[1]}")
-        img.save(OUT / "blue-marble.jpg", quality=90, optimize=True, progressive=True)
-    else:
-        log("blue-marble-5400.jpg missing - run tools/fetch_sources.sh")
-        return 1
-
-    topo = topography()
-    mask = rasterise_land()
+def write_aux(w, h, name):
+    topo = topography(w, h)
+    mask = rasterise_land(w, h)
 
     # Most land sits low: half of it below 0.10 on the GEBCO ramp. Expanding
     # with a gamma curve spreads that range over more code values, which keeps
@@ -117,25 +112,55 @@ def main():
     topo_a = (np.asarray(topo, dtype=np.float32) / 255.0) ** 0.65
 
     # Coastal proximity: a wide blur of the mask reads as "how far from shore",
-    # on both sides of the line, which the shader uses for the shelf tint.
-    prox = mask.filter(ImageFilter.GaussianBlur(radius=16))
+    # on both sides of the line, which the shader uses for the shelf tint. The
+    # radius is in texels, so it scales with the raster to cover the same
+    # ground at any size.
+    prox = mask.filter(ImageFilter.GaussianBlur(radius=16 * w / AUX_W))
 
     # Nudge the mask so the blur cannot bleed the split itself.
     m = np.asarray(mask, dtype=np.float32) / 255.0
     m = np.clip((m - 0.5) * 1.6 + 0.5, 0.0, 1.0)
 
-    aux = np.stack(
-        [
-            topo_a,
-            m,
-            np.asarray(prox, dtype=np.float32) / 255.0,
-        ],
-        axis=-1,
-    )
-    Image.fromarray((aux * 255.0 + 0.5).astype(np.uint8), "RGB").save(
-        OUT / "earth-aux.png", optimize=True
-    )
-    log(f"wrote earth-aux.png {AUX_W}x{AUX_H}")
+    aux = np.stack([topo_a, m, np.asarray(prox, dtype=np.float32) / 255.0], axis=-1)
+    Image.fromarray((aux * 255.0 + 0.5).astype(np.uint8), "RGB").save(OUT / name, optimize=True)
+    log(f"wrote {name} {w}x{h}")
+
+
+def write_hd():
+    """The 8K pair. Lanczos down from the full source, then a light unsharp
+    mask: a straight reduction softens the small, high-contrast features —
+    ridgelines, wadis, the edges of lakes — that are the point of having the
+    extra texels at all."""
+    src = CACHE / "blue-marble-21600.jpg"
+    if not src.exists():
+        log("blue-marble-21600.jpg missing - run tools/fetch_sources.sh (HD skipped)")
+        return
+    img = Image.open(src).convert("RGB")
+    log(f"blue marble full: {img.size[0]}x{img.size[1]}")
+    img = img.reduce(2).resize((HD_W, HD_H), Image.LANCZOS)
+    img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=55, threshold=2))
+    img.save(OUT / "blue-marble-8k.jpg", quality=86, optimize=True, progressive=True)
+    log(f"wrote blue-marble-8k.jpg {HD_W}x{HD_H}")
+    write_aux(HD_W, HD_H, "earth-aux-8k.png")
+
+
+def main():
+    OUT.mkdir(parents=True, exist_ok=True)
+
+    bm = CACHE / "blue-marble-5400.jpg"
+    if "--hd-only" in sys.argv:
+        pass
+    elif bm.exists():
+        img = Image.open(bm).convert("RGB")
+        log(f"blue marble: {img.size[0]}x{img.size[1]}")
+        img.save(OUT / "blue-marble.jpg", quality=90, optimize=True, progressive=True)
+    else:
+        log("blue-marble-5400.jpg missing - run tools/fetch_sources.sh")
+        return 1
+
+    if "--hd-only" not in sys.argv:
+        write_aux(AUX_W, AUX_H, "earth-aux.png")
+    write_hd()
     return 0
 
 

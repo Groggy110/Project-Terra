@@ -251,6 +251,16 @@ export async function postNeed(fields) {
   return { need: shapeNeed(data.need), status: data.status, message: data.message, reason: data.reason };
 }
 
+/**
+ * Saves changes to one of the ministry's own needs. Through the same edge
+ * function as a new post, for the same reason: the new text is checked
+ * before it goes back on the globe, and the table refuses content edits from
+ * the browser (guard_need_content).
+ */
+export async function updateNeed(needId, fields) {
+  return postNeed({ ...fields, need_id: needId });
+}
+
 /* --------------------------------------------------------- questionnaire */
 
 export async function loadQuestionnaire() {
@@ -547,6 +557,21 @@ export async function ministryDashboard() {
     throw new Error(detail?.error ?? error.message);
   }
   return data;
+}
+
+/** How many applications to the ministry's needs it has not opened yet. */
+export async function unseenApplications() {
+  const sb = requireSupabase();
+  const { data, error } = await sb.rpc("unseen_applications");
+  if (error) throw error;
+  return data ?? 0;
+}
+
+/** Marks one application opened; does nothing unless the need is ours. */
+export async function markApplicationSeen(needId, userId) {
+  const sb = requireSupabase();
+  const { error } = await sb.rpc("mark_application_seen", { p_need: needId, p_user: userId });
+  if (error) throw error;
 }
 
 /** Marks one of the ministry's own needs filled, or reopens it. */

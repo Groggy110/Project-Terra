@@ -71,17 +71,6 @@
      two things that happen to start together. */
   --ease-move: cubic-bezier(0.4, 0.02, 0.2, 1);
 
-  /*
-   * The landing composition's unit: one pixel of the reference frame, a
-   * 1951 x 820 window, where the split entrance was tuned. Whichever of the
-   * two dimensions is shorter than the reference's proportions decides it,
-   * so the globe, the headline and the find bar keep the same sizes and gaps
-   * *relative to each other* on every screen — a narrower laptop gets the
-   * same picture smaller, with room above and below, rather than the same
-   * type crowding a planet that the height alone had sized. heroUnit() in
-   * app.js computes the same number for the camera; keep the two in step.
-   */
-  --u: clamp(0.72px, min(0.12195vh, 0.051256vw), 1.25px);
 }
 
 :root[data-theme="dark"] {
@@ -223,21 +212,34 @@ button {
 
 /* ---------- hero ---------- */
 
-/* The headline is the page while the world is still arriving: it stands in
-   front of the globe, at full ink, and retires altogether once you engage.
-   Its predecessor sat *behind* the disc as a watermark, which left the middle
-   of the sentence eclipsed and the ends of it floating — a caption you had to
-   read around rather than a headline. */
+/* The landing stage. The planet rises from the foot of the window like a
+   horizon (STAGE in app.js), and the headline stands on it: set large, with
+   the foot of its second line tucked behind the rim, so the planet reads as
+   standing in front of the words and the words as part of the picture rather
+   than a caption laid over it. --stage-rim is where the rim sits, written by
+   app.js; the block is hung from just below it, so however the type wraps
+   it grows upward, into sky. */
+:root {
+  /* --title-scale, --title-nudge, --title-fade and --title-glow are the
+     style editor's handles on the headline (style/landing.js, HEADLINE). */
+  --title-size: calc(clamp(52px, min(8.1vw, 13.2vh), 150px) * var(--title-scale, 1));
+  /* How far the foot of the headline runs down behind the rim. */
+  --title-tuck: calc(var(--title-size) * 0.19);
+  /* How far the block stands up off that line, into the sky. */
+  --title-raise: calc(clamp(10px, 2.4vh, 30px) + var(--title-nudge, 0px));
+}
+
 .hero {
   position: fixed;
   z-index: 3;
-  left: 50%;
-  /* Deep enough into the disc that a good band of the northern hemisphere is
-     still open above it — the pins up there are the first evidence that the
-     map has anything on it. */
-  top: 19.5%;
+  /* Centred over the disc, which the stage can slide sideways. */
+  left: calc(50% + var(--stage-x, 0px));
+  bottom: calc(100% - var(--stage-rim, 36vh) - var(--title-tuck) + var(--title-raise));
   translate: -50% -14px;
-  width: min(980px, 88vw);
+  width: min(1400px, calc(100vw - 2 * var(--edge)));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
   pointer-events: none;
   opacity: 0;
@@ -246,173 +248,375 @@ button {
     opacity 0.5s var(--ease),
     translate 0.7s var(--ease),
     visibility 0.5s;
+  /* The planet in front of the words: everything inside the disc is cut
+     away, and the band just outside it fades, so the letters dissolve into
+     the atmosphere the way the limb itself does rather than stopping at a
+     hard line. The disc is tracked frame by frame (app.js, #trackStage);
+     until it has been measured the mask sits far below and cuts nothing. */
+  --disc-x: 50%;
+  --disc-y: 400vh;
+  --disc-r: 10px;
+  -webkit-mask-image: radial-gradient(
+    circle at var(--disc-x) var(--disc-y),
+    transparent calc(var(--disc-r) + 1px),
+    rgba(0, 0, 0, 0.35) calc(var(--disc-r) + var(--title-size) * 0.1),
+    #000 calc(var(--disc-r) + var(--title-size) * 0.5)
+  );
+  mask-image: radial-gradient(
+    circle at var(--disc-x) var(--disc-y),
+    transparent calc(var(--disc-r) + 1px),
+    rgba(0, 0, 0, 0.35) calc(var(--disc-r) + var(--title-size) * 0.1),
+    #000 calc(var(--disc-r) + var(--title-size) * 0.5)
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
 }
 
 /* Two classes, because the entrance and the headline are on different clocks:
    is-hero composes the chrome from the first frame, hero-in lands the words
-   as the camera finishes withdrawing to the whole globe. */
+   as the planet finishes rising. */
 body.is-hero.hero-in .hero {
   opacity: 1;
   visibility: visible;
   translate: -50% 0;
-  animation: hero-in 1.1s var(--ease-out) both;
+  animation: hero-in 0.6s var(--ease) both;
 }
 
+/* The block itself only fades: the motion is the words' own (word-in). */
 @keyframes hero-in {
   from {
     opacity: 0;
-    translate: -50% 20px;
   }
 }
 
-/* The split entrance: a column to the right of the planet, set left-aligned,
-   with the find bar standing under it (chrome.css). No disc behind the words
-   here, so the paper veil and the glyph halos have nothing to do. */
-/* Positions are offsets from the middle of the window in --u, so the column
-   stays where it sits in the reference frame relative to the planet. */
-body.hero-split .hero {
-  left: calc(50% + 138 * var(--u));
-  right: auto;
-  width: calc(692 * var(--u));
-  top: calc(50% - 205 * var(--u));
-  translate: 0 -14px;
-  text-align: left;
+/* ---- the headline's arrival ----
+
+   Three beats, the way a title card lands:
+
+   1. word-in — each word rises out from behind the planet's rim, from a
+      soft blur to sharp, a beat after the one before (--i, in index.html).
+      An expo ease, so it moves off quickly and spends its time settling:
+      the words arrive rather than slide.
+   2. glow-ignite — once they have landed, the light round the letters
+      swells past its resting strength and settles back, as if the rim light
+      had just caught them.
+   3. glow-breathe and mark-sheen — from then on, a slow breathe in the glow
+      and, every few seconds, a band of light across "anywhere.".
+
+   The glow is animated through a registered number (--glow-k) that the
+   drop-shadows multiply by, so the filter itself never has to change shape. */
+@property --glow-k {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
 }
 
-body.hero-split.is-hero.hero-in .hero {
-  translate: 0 0;
-  animation-name: hero-in-side;
+@property --sheen {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
 }
 
-@keyframes hero-in-side {
+:root {
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  /* When the first word starts, after the block begins to fade in. */
+  --word-lead: 120ms;
+  --word-step: 110ms;
+}
+
+/* Two lines, always, set the way a display face wants at this size: heavy,
+   tight but not crushed, the lines close enough to read as one block. */
+.hero__title {
+  font-size: var(--title-size);
+  font-weight: 700;
+  letter-spacing: -0.038em;
+  line-height: 0.98;
+  color: var(--ink);
+  font-feature-settings: "ss01", "cv11";
+  /* A soft glow off the letters, cool like the limb. A filter rather than a
+     text-shadow, so it follows the gradient-filled word too. */
+  filter: drop-shadow(0 0 calc(var(--title-size) * 0.16) rgb(150 190 255 / calc(0.28 * var(--title-glow, 1) * var(--glow-k))))
+    drop-shadow(0 0 calc(var(--title-size) * 0.04) rgb(200 225 255 / calc(0.22 * var(--title-glow, 1) * var(--glow-k))));
+  /* The words dim toward the planet, as if it cast a shadow up across them:
+     full strength at the top of the block, well under it at the rim. The box
+     is padded out (and the padding taken back in margin) because a mask
+     clips at the box, and the glow — and the aura behind "anywhere." — has
+     to fit inside it. */
+  padding: 0.5em;
+  margin: -0.5em;
+  -webkit-mask-image: linear-gradient(to bottom, #000 38%, rgb(0 0 0 / var(--title-fade, 0.42)) calc(100% - 0.5em));
+  mask-image: linear-gradient(to bottom, #000 38%, rgb(0 0 0 / var(--title-fade, 0.42)) calc(100% - 0.5em));
+}
+
+body.is-hero.hero-in .hero__title {
+  animation:
+    glow-ignite 2.2s var(--ease) calc(var(--word-lead) + 3 * var(--word-step) + 0.55s) both,
+    glow-breathe 5.5s ease-in-out calc(var(--word-lead) + 3 * var(--word-step) + 2.75s) infinite alternate;
+}
+
+@keyframes glow-ignite {
+  from {
+    --glow-k: 0;
+  }
+  38% {
+    --glow-k: 1.9;
+  }
+  to {
+    --glow-k: 1;
+  }
+}
+
+@keyframes glow-breathe {
+  from {
+    --glow-k: 1;
+  }
+  to {
+    --glow-k: 1.45;
+  }
+}
+
+.hero__line {
+  display: block;
+}
+
+/* Inline blocks, so each can move on its own; the space between them is
+   the ordinary word space in the markup. */
+.hero__word {
+  display: inline-block;
+  will-change: transform, filter, opacity;
+}
+
+body.is-hero.hero-in .hero__word {
+  animation: word-in 1.35s var(--ease-expo) calc(var(--word-lead) + var(--i, 0) * var(--word-step)) both;
+}
+
+@keyframes word-in {
   from {
     opacity: 0;
-    translate: 24px 0;
+    transform: translateY(0.42em) scale(0.965);
+    filter: blur(16px);
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
   }
 }
 
-body.hero-split .hero::before {
-  content: none;
-}
-
-body.hero-split .hero__title {
-  margin: 0;
-  font-size: calc(66 * var(--u));
-  text-shadow: none;
-}
-
-body.hero-split .hero__sub {
-  margin: calc(20 * var(--u)) 0 0;
-  max-width: 34em;
-  font-size: calc(17 * var(--u));
-  text-shadow: none;
-}
-
-body.hero-split .hero__eyebrow {
-  margin-bottom: calc(22 * var(--u));
-  padding: calc(7 * var(--u)) calc(14 * var(--u)) calc(7 * var(--u)) calc(12 * var(--u));
-  gap: calc(9 * var(--u));
-  font-size: calc(13 * var(--u));
-}
-
-/* Legibility is carried by the halo on the glyphs themselves; this is only a
-   breath of the paper colour laid over the busiest part of the disc, so the
-   coastlines stop competing with the sentence. Strong enough and it stops
-   being a headline over a world and becomes fog. */
-.hero::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 46%;
-  translate: -50% -50%;
-  z-index: -1;
-  width: 126%;
-  height: 235%;
-  pointer-events: none;
-  background: radial-gradient(
-    closest-side at 50% 50%,
-    color-mix(in srgb, var(--paper) 46%, transparent) 0%,
-    color-mix(in srgb, var(--paper) 34%, transparent) 40%,
-    color-mix(in srgb, var(--paper) 13%, transparent) 66%,
-    transparent 84%
-  );
-}
-
-:root[data-theme="dark"] .hero::before {
-  background: radial-gradient(
-    closest-side at 50% 50%,
-    color-mix(in srgb, var(--paper) 62%, transparent) 0%,
-    color-mix(in srgb, var(--paper) 46%, transparent) 40%,
-    color-mix(in srgb, var(--paper) 18%, transparent) 66%,
-    transparent 84%
-  );
-}
-
-.hero__title {
-  width: fit-content;
-  max-width: 100%;
-  margin: 0 auto;
-  font-size: clamp(36px, 4.62vw, 71px);
-  font-weight: 650;
-  letter-spacing: -0.03em;
-  line-height: 1.03;
-  text-wrap: balance;
-  color: var(--ink);
-  /* Two stops, tight and wide: the tight one keeps the letterforms crisp
-     where they cross a coastline, the wide one settles the ground behind a
-     whole word rather than ringing each glyph. */
-  text-shadow:
-    0 0 9px color-mix(in srgb, var(--paper) 88%, transparent),
-    0 0 34px color-mix(in srgb, var(--paper) 62%, transparent);
-}
-
-.hero__sub {
-  margin: 18px auto 0;
-  max-width: 600px;
-  font-size: 16.5px;
-  line-height: 1.6;
-  letter-spacing: -0.006em;
-  text-wrap: balance;
-  color: var(--ink-2);
-  text-shadow:
-    0 0 8px color-mix(in srgb, var(--paper) 90%, transparent),
-    0 0 24px color-mix(in srgb, var(--paper) 70%, transparent);
-}
-
-/* A small ink pill above the headline with the live count, so the first thing
-   the page says is that there is work waiting. */
+/* The live count, first, so the page opens by saying there is work waiting:
+   a quiet glass pill with a pulse of the urgent red in it. */
 .hero__eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  margin-bottom: 22px;
-  padding: 7px 14px 7px 12px;
+  margin-bottom: clamp(16px, 3vh, 30px);
+  padding: 6px 14px 6px 11px;
   border-radius: 999px;
-  background: #0b0f17;
-  color: #fff;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  backdrop-filter: blur(12px) saturate(1.4);
+  color: var(--ink-2);
   font-size: 13px;
   font-weight: 540;
   letter-spacing: -0.004em;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 10px 24px -12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 2px rgba(16, 42, 74, 0.05);
 }
 
-:root[data-theme="dark"] .hero__eyebrow {
-  background: #131c2a;
-  color: var(--ink);
-  box-shadow: 0 0 0 1px var(--line-2);
+/* The pill comes down to meet the words as they come up. */
+body.is-hero.hero-in .hero__eyebrow {
+  animation: eyebrow-in 1s var(--ease-expo) both;
+}
+
+@keyframes eyebrow-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+    filter: blur(6px);
+  }
 }
 
 .hero__eyebrow i {
+  position: relative;
   width: 7px;
   height: 7px;
   border-radius: 999px;
   background: #ff5a4b;
-  box-shadow: 0 0 0 3px rgba(255, 90, 75, 0.22);
 }
 
-/* The one word in colour. */
+.hero__eyebrow i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: hero-pulse 2.4s var(--ease-out) infinite;
+}
+
+@keyframes hero-pulse {
+  from {
+    opacity: 0.55;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 3.2;
+  }
+}
+
+/* The one word in colour — a light-to-brand blue running through it, so it
+   reads as lit rather than as a flat highlight — with a narrow band of light
+   laid over it that sweeps through now and then (--sheen). The solid colour
+   stays as the fallback wherever text can't take a background. */
 .hero__mark {
   color: var(--brand-blue);
+  background:
+    linear-gradient(
+        100deg,
+        transparent 40%,
+        rgb(255 255 255 / 0.85) 50%,
+        transparent 60%
+      )
+      var(--sheen) 0 / 260% 100% no-repeat,
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--brand-blue) 62%, #fff) 0%,
+      var(--brand-blue) 55%,
+      color-mix(in srgb, var(--brand-blue) 88%, #7b5cff) 100%
+    );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  /* The ink halo would print through the transparent fill. */
+  text-shadow: none;
+  padding-right: 0.04em;
+}
+
+/* Right to left in background terms is left to right on screen: at 100%
+   the band waits just off the word's left edge, at 0% it has gone off the
+   right. */
+body.is-hero.hero-in .hero__mark {
+  animation: mark-sheen 7s var(--ease-move) calc(var(--word-lead) + 3 * var(--word-step) + 0.9s) infinite;
+}
+
+/* ---- "anywhere.": outline and aura ----
+
+   Three layers in the word's own box, back to front:
+
+     .hero__aura    a soft cloud of colour — brand blue, violet, cyan and a
+                    touch of rose — each a blurred blob drifting on its own
+                    slow clock, the whole cloud breathing and its hues
+                    turning, so it never repeats the same way twice
+     .hero__stroke  the word again, as a white outline with a light falloff
+     .hero__mark    the coloured word, whose solid fill covers the inner
+                    half of the outline, so only the outside edge shows
+
+   Every moving part is a registered custom property, so each animation
+   drives one number and they layer without fighting over a shorthand.
+   --title-stroke and --title-aura are the style editor's (HEADLINE). */
+@property --aura-a { syntax: "<percentage>"; inherits: false; initial-value: 22%; }
+@property --aura-b { syntax: "<percentage>"; inherits: false; initial-value: 48%; }
+@property --aura-c { syntax: "<percentage>"; inherits: false; initial-value: 70%; }
+@property --aura-d { syntax: "<percentage>"; inherits: false; initial-value: 88%; }
+@property --aura-y { syntax: "<percentage>"; inherits: false; initial-value: 50%; }
+@property --aura-hue { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@property --aura-pulse { syntax: "<number>"; inherits: false; initial-value: 0.8; }
+@property --aura-in { syntax: "<number>"; inherits: false; initial-value: 1; }
+
+.hero__any {
+  position: relative;
+  /* The aura's negative layer stays inside the word, behind its letters. */
+  isolation: isolate;
+}
+
+.hero__mark {
+  position: relative;
+  z-index: 2;
+}
+
+.hero__stroke {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.hero__stroke::before {
+  content: attr(data-text);
+  /* Twice the outline that shows: the word on top covers the inner half. */
+  -webkit-text-stroke: calc(var(--title-size) * 0.026 * var(--title-stroke, 1)) rgb(255 255 255 / 0.92);
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  padding-right: 0.04em;
+  /* A tight white bloom, then a wider cool one that dies away fast. */
+  filter: drop-shadow(0 0 calc(var(--title-size) * 0.018) rgb(255 255 255 / 0.5))
+    drop-shadow(0 0 calc(var(--title-size) * 0.07) rgb(190 215 255 / 0.22));
+}
+
+.hero__aura {
+  position: absolute;
+  inset: -0.14em -0.16em 0 -0.18em;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 45%;
+  background:
+    radial-gradient(36% 66% at var(--aura-a) var(--aura-y), rgb(76 139 234), transparent 74%),
+    radial-gradient(32% 62% at var(--aura-b) calc(100% - var(--aura-y)), rgb(123 92 255), transparent 74%),
+    radial-gradient(30% 58% at var(--aura-c) 58%, rgb(56 214 255 / 0.9), transparent 74%),
+    radial-gradient(26% 52% at var(--aura-d) 42%, rgb(255 106 213 / 0.7), transparent 74%);
+  filter: blur(calc(var(--title-size) * 0.15)) hue-rotate(var(--aura-hue)) saturate(1.15);
+  opacity: calc(var(--aura-pulse) * var(--aura-in) * var(--title-aura, 0.55));
+}
+
+body.is-hero.hero-in .hero__aura {
+  animation:
+    aura-in 2.4s var(--ease) calc(var(--word-lead) + 3 * var(--word-step) + 0.5s) both,
+    aura-a 9s ease-in-out infinite alternate,
+    aura-b 11.5s ease-in-out -3s infinite alternate,
+    aura-c 13s ease-in-out -6s infinite alternate,
+    aura-d 7.5s ease-in-out -2s infinite alternate,
+    aura-y 6.5s ease-in-out infinite alternate,
+    aura-hue 16s ease-in-out infinite alternate,
+    aura-pulse 3.8s ease-in-out infinite alternate;
+}
+
+@keyframes aura-in { from { --aura-in: 0; } to { --aura-in: 1; } }
+@keyframes aura-a { from { --aura-a: 12%; } to { --aura-a: 46%; } }
+@keyframes aura-b { from { --aura-b: 62%; } to { --aura-b: 26%; } }
+@keyframes aura-c { from { --aura-c: 44%; } to { --aura-c: 84%; } }
+@keyframes aura-d { from { --aura-d: 92%; } to { --aura-d: 60%; } }
+@keyframes aura-y { from { --aura-y: 38%; } to { --aura-y: 64%; } }
+@keyframes aura-hue { from { --aura-hue: -18deg; } to { --aura-hue: 26deg; } }
+@keyframes aura-pulse { from { --aura-pulse: 0.7; } to { --aura-pulse: 1; } }
+
+@keyframes mark-sheen {
+  from {
+    --sheen: 100%;
+  }
+  22% {
+    --sheen: 0%;
+  }
+  to {
+    --sheen: 0%;
+  }
+}
+
+/* Still arrives, only without the travel: a plain fade, no blur, no sweep. */
+@media (prefers-reduced-motion: reduce) {
+  .hero__eyebrow i::after {
+    animation: none;
+  }
+  body.is-hero.hero-in .hero__word,
+  body.is-hero.hero-in .hero__mark,
+  body.is-hero.hero-in .hero__eyebrow {
+    animation: hero-in 0.6s var(--ease) both;
+  }
+  body.is-hero.hero-in .hero__title,
+  body.is-hero.hero-in .hero__aura {
+    animation: none;
+  }
 }
 
 /* ---------- primitives ---------- */
@@ -687,6 +891,19 @@ body.hero-split .hero__eyebrow {
   html,
   body {
     overscroll-behavior: none;
+  }
+
+  /* No double-tap zoom anywhere, and none of its 300ms wait on a tap. */
+  html {
+    touch-action: manipulation;
+  }
+
+  /* Things laid over the globe hand every gesture to it (controls.grab), so
+     the browser must not start a pan or a zoom of its own from them. */
+  .mark,
+  .dock,
+  .fabs {
+    touch-action: none;
   }
 
   /* Anything that scrolls does so with momentum, and keeps its rubber band to

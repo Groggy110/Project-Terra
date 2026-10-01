@@ -55,11 +55,13 @@
     <!-- hero stands in front of the globe and retires once you engage with it -->
     <div class="hero" id="hero" aria-hidden="true">
       <div class="hero__eyebrow"><i></i><span id="heroCount">Ministries around the world</span></div>
-      <h1 class="hero__title">Serve ministries from <span class="hero__mark">anywhere.</span></h1>
-      <p class="hero__sub">
-        Ministries post what they need. You offer your skills online, from design
-        to HR, and meet on a quick video call.
-      </p>
+      <!-- Word by word, so each can land on its own beat (base.css, "word-in").
+           "anywhere." is three layers: a moving glow behind, a white outline,
+           and the coloured word itself on top. -->
+      <h1 class="hero__title">
+        <span class="hero__line"><span class="hero__word" style="--i: 0">Serve</span> <span class="hero__word" style="--i: 1">ministries</span></span>
+        <span class="hero__line"><span class="hero__word" style="--i: 2">from</span> <span class="hero__word hero__any" style="--i: 3"><span class="hero__aura" aria-hidden="true"></span><span class="hero__stroke" data-text="anywhere." aria-hidden="true"></span><span class="hero__mark">anywhere.</span></span></span>
+      </h1>
     </div>
 
     <canvas id="globe" aria-label="Globe of ministries and their open needs" role="img"></canvas>
@@ -120,6 +122,12 @@
           <button class="search__clear" id="searchClear" aria-label="Clear search" hidden>
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
           </button>
+          <!-- Landing screen only: takes the search into the globe, as Enter does. -->
+          <button class="search__go" id="searchGo" aria-label="Search">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 10h11M11 5.5l4.5 4.5-4.5 4.5" /></svg>
+          </button>
+          <!-- Phone only: the account, inside the field, where a map app keeps it. -->
+          <span class="search__me" id="searchMe"></span>
           <div class="suggest pop" id="suggest" hidden></div>
         </div>
         <div class="filters" id="filters"></div>
@@ -151,6 +159,54 @@
       </div>
 
       <div class="hint" id="hint">drag to rotate · zoom for cities · click a pin</div>
+
+      <!-- Phone only (chrome.css, "phone"): the globe is the page, with a dock
+           of the few things to do along the bottom and round map controls
+           beside it, the way a map app on a phone is laid out. -->
+      <nav class="dock" id="dock" aria-label="Main">
+        <button class="dock__home" data-action="reset-view" aria-label="Back to the whole globe">
+          <img src="/logo-mark.png" alt="" width="34" height="34" />
+        </button>
+        <span class="dock__sep" aria-hidden="true"></span>
+        <button class="dock__btn" data-action="open-board">
+          <svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5.5h12M4 10h12M4 14.5h7.5" /></svg>
+          <span>Needs</span>
+        </button>
+        <button class="dock__btn" data-action="post-need">
+          <svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" /></svg>
+          <span>Post</span>
+        </button>
+        <button class="dock__btn" data-action="join" id="dockJoin">
+          <svg class="ico" viewBox="0 0 20 20" aria-hidden="true">
+            <circle cx="8.4" cy="7" r="3" /><path d="M2.8 16.2c.7-3 2.9-4.6 5.6-4.6s4.9 1.6 5.6 4.6M15.6 5.6v5M13.1 8.1h5" />
+          </svg>
+          <span>Join</span>
+        </button>
+        <button class="dock__btn" data-action="menu" aria-label="More">
+          <svg class="ico" viewBox="0 0 20 20" aria-hidden="true">
+            <circle cx="4.6" cy="10" r="1.45" class="ico__solid" /><circle cx="10" cy="10" r="1.45" class="ico__solid" /><circle cx="15.4" cy="10" r="1.45" class="ico__solid" />
+          </svg>
+          <span>More</span>
+        </button>
+      </nav>
+
+      <div class="fabs" id="fabs">
+        <button class="fab" data-action="near-me" aria-label="Fly to where you are">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.4 3.6 3.6 8.9l5.3 2.2 2.2 5.3Z" /></svg>
+        </button>
+        <button class="fab" data-action="toggle-filters" id="filtersBtn" aria-label="Filter needs" aria-pressed="false">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5h13M6 10h8M8.6 15h2.8" /></svg>
+        </button>
+        <button class="fab theme-toggle" data-action="cycle-theme" aria-label="Switch theme">
+          <svg class="ico theme-toggle__sun" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="2.9" />
+            <path d="M8 1.4v1.5M8 13.1v1.5M1.4 8h1.5M13.1 8h1.5M3.33 3.33l1.06 1.06M11.61 11.61l1.06 1.06M3.33 12.67l1.06-1.06M11.61 4.39l1.06-1.06" />
+          </svg>
+          <svg class="ico theme-toggle__moon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M13.3 9.6A5.6 5.6 0 0 1 6.4 2.7a5.6 5.6 0 1 0 6.9 6.9Z" />
+          </svg>
+        </button>
+      </div>
 
       <aside class="panel" id="panel"></aside>
       <div class="sheet" id="sheet"></div>

@@ -172,15 +172,24 @@ export function projectPoint(lat, lon, camera, width, height, out = {}) {
   const nz = scratch.z;
 
   const cam = camera.position;
-  const toCam = 1 / (Math.hypot(cam.x, cam.y, cam.z) || 1);
+  const dist = Math.hypot(cam.x, cam.y, cam.z) || 1;
+  const toCam = 1 / dist;
   // dot(surface normal, direction to camera): positive on the near side
   const facing = nx * cam.x * toCam + ny * cam.y * toCam + nz * cam.z * toCam;
+  // The horizon. From a camera at `dist` radii a point is in sight only while
+  // its dot with the camera direction beats 1/dist — not merely while it
+  // faces the camera, which is the rule only from infinitely far away. Up
+  // close (the landing stage frames the planet from about 1.4) the gap is
+  // wide: everything from 45° out to the side of the globe is round the back,
+  // and was being drawn through the planet.
+  const horizon = Math.min(toCam, 1);
 
   scratch.project(camera);
   out.x = (scratch.x * 0.5 + 0.5) * width;
   out.y = (-scratch.y * 0.5 + 0.5) * height;
   out.facing = facing;
-  out.visible = facing > 0 && scratch.z < 1;
-  out.edge = smoothstep(0, 0.24, facing);
+  out.visible = facing > horizon && scratch.z < 1;
+  // The same fade toward the limb as before, measured up from the horizon.
+  out.edge = smoothstep(horizon, horizon + 0.24 * (1 - horizon), facing);
   return out;
 }

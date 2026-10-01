@@ -8,7 +8,7 @@
  */
 import { clear, h, icons, nf, svg } from "./dom.js";
 import { FOCUS_AREAS, NEED_TYPES, REGIONS, URGENCIES } from "../data/taxonomy.js";
-import { clampMenu, watchScrollEnd } from "./pop.js";
+import { PHONE, asSheet, clampMenu, watchScrollEnd } from "./pop.js";
 
 const CARET = () => svg("0 0 12 12", '<path d="M2.4 4.6 6 8.2l3.6-3.6"/>', "chip__caret");
 
@@ -64,6 +64,7 @@ export class Filters {
     if (!this.openChip) return;
     this.openChip.el.classList.remove("is-open");
     this.openChip.menu?.remove();
+    this.openChip.menu?.scrim?.remove();
     this.openChip.menu = null;
     this.openChip.rows = null;
     this.openChip = null;
@@ -173,7 +174,8 @@ export class Filters {
 
     chip.el.classList.add("is-open");
     chip.btn.setAttribute("aria-expanded", "true");
-    chip.el.appendChild(menu);
+    if (PHONE.matches) asSheet(menu);
+    else chip.el.appendChild(menu);
     chip.menu = menu;
     chip.rows = rows;
     chip.clearBtn = clearBtn;
@@ -183,7 +185,7 @@ export class Filters {
 
     this.#sync(chip, { quiet: true });
     watchScrollEnd(list);
-    clampMenu(menu, chip.el);
+    if (!menu.classList.contains("is-sheet")) clampMenu(menu, chip.el);
   }
 
   #toggle(chip, option, row) {

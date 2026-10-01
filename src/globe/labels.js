@@ -255,7 +255,7 @@ export class LabelLayer {
       if (this.live.has(key)) continue;
       if (node.idle === 0) {
         node.el.classList.remove("is-in", "show-chip");
-        node.el.style.opacity = "0";
+        write(node, "opacity", "0");
         node.el.style.pointerEvents = "none";
       }
       if (++node.idle > 2) {
@@ -320,17 +320,21 @@ export class LabelLayer {
     });
     const el = node.el;
     el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
-    el.style.opacity = STYLE.markers.opacity * (this.dimmed.has(m.id) ? STYLE.markers.dimOpacity : 1) * clamp(p.edge, 0, 1);
+    write(node, "opacity", (STYLE.markers.opacity * (this.dimmed.has(m.id) ? STYLE.markers.dimOpacity : 1) * clamp(p.edge, 0, 1)).toFixed(2));
     // A hard stop at the right edge, over the top of the estimate that decided
     // this plate would fit. estWidth measures a string against an average
     // glyph and is occasionally optimistic by a dozen pixels — which on a
     // desktop is slack nobody notices, and on a phone is a ministry's name
     // hanging off the side of the screen. The plate ellipsises instead.
-    el.style.setProperty("--chip-max", `${Math.max(56, Math.round(this.width - p.x - 26))}px`);
+    //
+    // In steps, and only when the step changes: this is a width, so every
+    // write is a relayout of the plate, and written at a pixel's precision it
+    // changed on every frame of every drag for every pin on screen.
+    write(node, "--chip-max", `${Math.max(56, Math.floor((this.width - p.x - 26) / 16) * 16)}px`);
     el.classList.toggle("show-chip", chip);
     el.classList.toggle("is-urgent", m.urgentNeeds > 0);
     el.classList.toggle("is-active", active);
-    el.style.zIndex = active ? 30 : 20;
+    write(node, "zIndex", active ? "30" : "20");
   }
 
   #place(key, name, p, cls, opacity, tick = false) {
@@ -347,7 +351,21 @@ export class LabelLayer {
     });
     const el = node.el;
     el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
-    el.style.opacity = clamp(opacity, 0, 1);
+    write(node, "opacity", clamp(opacity, 0, 1).toFixed(2));
     el.classList.add("is-in");
   }
+}
+
+/**
+ * Sets one style on a marker only if it differs from what was last set.
+ * The label layer runs every frame of every gesture; an unchanged value
+ * written back is still a style invalidation, and with forty markers that is
+ * forty recalcs a frame spent on nothing.
+ */
+function write(node, prop, value) {
+  const last = (node.written ??= {});
+  if (last[prop] === value) return;
+  last[prop] = value;
+  if (prop.startsWith("--")) node.el.style.setProperty(prop, value);
+  else node.el.style[prop] = value;
 }

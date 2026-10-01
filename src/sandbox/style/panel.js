@@ -10,10 +10,30 @@
  *
  * Theme-specific folders are bound to STYLE.themes[theme] for whichever theme
  * the page is showing, and the whole panel is rebuilt when that changes.
+ *
+ * STYLE is the look of the scene on screen — the landing screen or the
+ * working view (style/landing.js) — so every folder edits that scene, and
+ * "original" means that scene's shipped look. The Scene control moves the
+ * page between the two; the landing folder holds what only the landing
+ * screen has: where its planet stands, how big, and the headline over it.
  */
 import GUI from "lil-gui";
 
-import { STYLE, STYLE_DEFAULTS } from "../../style/styleConfig.js";
+import { STYLE } from "../../style/styleConfig.js";
+import {
+  HEADLINE,
+  LANDING_DEFAULTS,
+  STAGE,
+  STAGE_EXIT,
+  applyHeadline,
+  currentScene,
+  landingPayload,
+  loadLanding,
+  onScene,
+  sceneDefaults,
+  sceneStyle,
+  setSceneStyle,
+} from "../../style/landing.js";
 import { applyStyle, mergeInto } from "../../style/applyStyle.js";
 import { History, download, exportJson, loadStore, parseImport, saveStore, screenshot } from "./tools.js";
 
@@ -36,6 +56,7 @@ export class StylePanel {
     this.ab = false;
     this.abStash = null;
     this.ui = {
+      scene: currentScene(),
       theme: this.theme,
       ab: false,
       presetName: "",
@@ -63,6 +84,16 @@ export class StylePanel {
       if (this.builtFor !== this.theme) this.#rebuild();
     });
     this.themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    // A scene arriving is a whole new STYLE under the same controls: show
+    // it, and start the undo history over, since undoing into the other
+    // scene's look would make no sense.
+    onScene((name) => {
+      this.ui.scene = name;
+      this.history = new History();
+      this.history.commit();
+      this.#refresh();
+      this.#lockScene(false);
+    });
     return this;
   }
 
@@ -76,6 +107,7 @@ export class StylePanel {
     this.bg = {};
 
     this.#toolbar(gui);
+    this.#landing(gui);
     this.#background(gui);
     this.#camera(gui);
     this.#lighting(gui);
@@ -163,6 +195,12 @@ export class StylePanel {
     const t = gui.addFolder("Sandbox");
     t.domElement.classList.add("tsbx-toolbar");
 
+    if (this.app.hasLanding) {
+      this.sceneCtrl = t.add(this.ui, "scene", { "Landing page": "landing", "Main page": "main" }).name("Editing scene");
+      this.sceneCtrl.keep = true;
+      this.sceneCtrl.onChange((v) => this.#goScene(v));
+    }
+
     const theme = t.add(this.ui, "theme", { Dark: "dark", Light: "light" }).name("Editing theme");
     theme.keep = true;
     theme.onChange((v) => {
@@ -215,8 +253,86 @@ export class StylePanel {
 
     const hint = document.createElement("div");
     hint.className = "tsbx-hint";
-    hint.textContent = "H hides this panel · Shift-drag a slider for fine steps · drag the title to move";
+    hint.textContent =
+      "Every folder edits the scene on screen · H hides this panel · Shift-drag a slider for fine steps · drag the title to move";
     t.$children.appendChild(hint);
+  }
+
+  /* ------------------------------------------------------------- landing */
+
+  #landing(gui) {
+    if (!this.app.hasLanding) return;
+    const f = this.gui.addFolder("Landing planet & headline");
+    this.landingFolder = f;
+    const b = document.createElement("span");
+    b.className = "tsbx-reset";
+    b.title = "Reset the landing planet and headline to the original";
+    b.textContent = "↺";
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      loadLanding(structuredClone(LANDING_DEFAULTS));
+      this.app.restage({ fly: true });
+      this.#refresh();
+    });
+    f.$title.appendChild(b);
+
+    const note = document.createElement("div");
+    note.className = "tsbx-hint";
+    note.textContent = "Shows on the landing page — switch the scene above to see it.";
+    f.$children.appendChild(note);
+
+    // Not STYLE: these go straight to the page, with no undo.
+    const stage = (c) => c.onChange(() => this.app.restage());
+    const fly = (c) => c.onFinishChange(() => this.app.restage({ fly: true }));
+    const head = (c) => c.onChange(() => applyHeadline());
+
+    const pl = f.addFolder("Planet size & position");
+    stage(pl.add(STAGE, "scale", 0.4, 2.5, 0.01).name("Size (× fit to corners)"));
+    stage(pl.add(STAGE, "rim", 0.1, 0.9, 0.005).name("Top of planet (× height)"));
+    stage(pl.add(STAGE, "x", -0.5, 0.5, 0.005).name("Offset right (× width)"));
+    stage(pl.add(STAGE, "maxSize", 1, 6, 0.05).name("Largest fit (× height)"));
+    stage(pl.add(STAGE, "minRim", 0, 600, 1).name("Sky above, at least (px)"));
+    stage(pl.add(STAGE, "spin", 0, 6, 0.05).name("Spin speed (deg/s)"));
+    fly(pl.add(STAGE.home, "lat", -87, 87, 0.5).name("Facing latitude"));
+    fly(pl.add(STAGE.home, "lon", -180, 180, 0.5).name("Facing longitude"));
+    pl.add(STAGE, "rise", 0, 0.5, 0.005).name("Rises in from (× height)");
+    this.#button(pl, "Fly back to the landing view", () => this.app.restage({ fly: true }), true);
+
+    const hd = f.addFolder("Headline");
+    head(hd.add(HEADLINE, "size", 0.5, 1.6, 0.01).name("Size (×)"));
+    head(hd.add(HEADLINE, "raise", -200, 300, 1).name("Move up (px)"));
+    head(hd.add(HEADLINE, "fade", 0, 1, 0.01).name("Opacity at the planet"));
+    head(hd.add(HEADLINE, "glow", 0, 4, 0.01).name("Glow strength"));
+    head(hd.add(HEADLINE, "stroke", 0, 3, 0.01).name("“anywhere.” outline (×)"));
+    head(hd.add(HEADLINE, "aura", 0, 3, 0.01).name("“anywhere.” colour glow (×)"));
+
+    const ex = f.addFolder("Transition to the main page");
+    ex.add(STAGE_EXIT, "ms", 200, 8000, 50).name("Duration (ms)");
+    ex.add(STAGE_EXIT, "dist", 1.2, 4.45, 0.01).name("Lands at distance");
+    ex.add(STAGE_EXIT, "turn", -180, 180, 1).name("Turns on by (deg)");
+  }
+
+  #goScene(name) {
+    if (name === currentScene()) return;
+    if (this.ab) this.#setAB(false);
+    // Controls held still while the look blends, so an edit is not lost
+    // under it; the scene arriving lets go (mount, onScene).
+    this.#lockScene(true);
+    if (name === "landing") this.app.showLanding();
+    else this.app.showMain();
+    if (currentScene() !== name) {
+      // Nothing moved (the page was not in a state to): say so, and let go.
+      this.#lockScene(false);
+      this.ui.scene = currentScene();
+      this.sceneCtrl?.updateDisplay();
+      return this.toast("That scene is not available right now", true);
+    }
+    this.toast(name === "landing" ? "Editing the landing page" : "Editing the main page");
+  }
+
+  #lockScene(on) {
+    for (const c of this.gui.controllersRecursive()) if (!c.keep) c.enable(!on);
   }
 
   /* ---------------------------------------------------------- background */
@@ -672,6 +788,10 @@ export class StylePanel {
     c.bool(ca, p.chromatic, "enabled", "On");
     c.num(ca, p.chromatic, "amount", 0, 0.03, 0.0001, "Amount");
 
+    const sh = this.#folder(f, "Sharpen (planet face)", [["post", "sharpen"]]);
+    c.bool(sh, p.sharpen, "enabled", "On");
+    c.num(sh, p.sharpen, "amount", 0, 1.5, 0.01, "Amount");
+
     c.pick(f, p, "aa", { "MSAA (default)": "msaa", FXAA: "fxaa", None: "none" }, "Anti-aliasing");
 
     const v = this.#folder(f, "Vignette", [["post", "vignette"]]);
@@ -759,14 +879,15 @@ export class StylePanel {
 
   resetAll() {
     if (this.ab) return this.toast("Turn A/B off first", true);
-    this.#load(structuredClone(STYLE_DEFAULTS));
+    this.#load(sceneDefaults());
     this.#commit();
-    this.toast("Back to the original look");
+    this.toast(`Back to the ${currentScene() === "landing" ? "landing page's" : "main page's"} original look`);
   }
 
   #resetFolder(f) {
     if (this.ab) return this.toast("Turn A/B off first", true);
-    for (const p of f.paths) mergeInto(get(STYLE, p), structuredClone(get(STYLE_DEFAULTS, p)));
+    const defaults = sceneDefaults();
+    for (const p of f.paths) mergeInto(get(STYLE, p), get(defaults, p));
     this.#applyAll();
     this.#refresh();
     this.#commit();
@@ -777,7 +898,7 @@ export class StylePanel {
     this.ab = on;
     if (on) {
       this.abStash = structuredClone(STYLE);
-      mergeInto(STYLE, structuredClone(STYLE_DEFAULTS));
+      mergeInto(STYLE, sceneDefaults());
     } else if (this.abStash) {
       mergeInto(STYLE, this.abStash);
       this.abStash = null;
@@ -807,7 +928,8 @@ export class StylePanel {
 
   #savePreset() {
     const name = this.ui.presetName.trim() || `Preset ${Object.keys(this.store.presets).length + 1}`;
-    this.store.presets[name] = { savedAt: new Date().toISOString(), style: structuredClone(STYLE) };
+    const { stage, exit, headline } = landingPayload();
+    this.store.presets[name] = { savedAt: new Date().toISOString(), scene: currentScene(), style: structuredClone(STYLE), landing: { stage, exit, headline } };
     if (!saveStore(this.store)) return this.toast("Could not write to localStorage", true);
     this.ui.preset = name;
     this.ui.presetName = "";
@@ -820,6 +942,11 @@ export class StylePanel {
     const p = this.store.presets[this.ui.preset];
     if (!p) return this.toast("Pick a preset first", true);
     this.#load(structuredClone(p.style));
+    if (p.landing) {
+      loadLanding(structuredClone(p.landing));
+      this.app.restage();
+      this.#refresh();
+    }
     this.#commit();
     this.toast(`Loaded “${this.ui.preset}”`);
   }
@@ -837,11 +964,21 @@ export class StylePanel {
 
   #applyImport(text) {
     try {
-      const { style, note, warning } = parseImport(text);
+      const { style, note, warning, landing } = parseImport(text);
       // Start from the original so the file decides every value it has, and
       // anything it lacks comes back as shipped rather than as last edited.
-      mergeInto(STYLE, structuredClone(STYLE_DEFAULTS));
-      this.#load(style);
+      if (landing && this.app.hasLanding) {
+        // A file with both scenes: each goes to its own, and the one on
+        // screen shows.
+        setSceneStyle("main", mergeInto(sceneDefaults("main"), style));
+        loadLanding(landing);
+        this.#load(sceneStyle(currentScene()));
+        this.app.restage({ fly: true });
+      } else {
+        // A single look goes to the scene on screen.
+        mergeInto(STYLE, sceneDefaults());
+        this.#load(style);
+      }
       if (note) {
         this.ui.note = note;
         this.store.note = note;
@@ -998,7 +1135,8 @@ export class StylePanel {
   #restoreFolders() {
     for (const f of this.gui.foldersRecursive()) {
       const key = this.#folderKey(f);
-      const closed = this.closedState.has(key) ? this.closedState.get(key) : key !== "Sandbox";
+      const open = key === "Sandbox" || key === "Landing planet & headline";
+      const closed = this.closedState.has(key) ? this.closedState.get(key) : !open;
       f.open(!closed);
     }
   }

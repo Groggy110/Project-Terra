@@ -525,6 +525,40 @@ body.side-card .chrome {
   text-decoration: underline;
 }
 
+.detail__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.detail__links .btn svg {
+  width: 13px;
+  height: 13px;
+  margin-right: 5px;
+}
+
+/* "Serve". Blue at rest like every primary action; under the pointer
+   it turns a quiet green — a deep, slightly grey emerald rather than a
+   signal green, so it reads as "yes" without shouting over the card. */
+.btn--serve {
+  transition: background 0.2s var(--ease), box-shadow 0.2s var(--ease), scale 0.12s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.btn--serve:hover,
+.btn--serve:focus-visible,
+.btn--serve:active {
+  background: #2f8a63;
+  box-shadow: 0 1px 2px rgba(16, 42, 74, 0.14), 0 10px 22px -10px rgba(47, 138, 99, 0.6);
+}
+
+:root[data-theme="dark"] .btn--serve:hover,
+:root[data-theme="dark"] .btn--serve:focus-visible,
+:root[data-theme="dark"] .btn--serve:active {
+  background: #3a9870;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 22px -10px rgba(58, 152, 112, 0.55);
+}
+
 .detail__grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
@@ -889,7 +923,7 @@ body.side-card .chrome {
   white-space: pre-line;
 }
 
-/* ---------- previous work (pick this up) ---------- */
+/* ---------- previous work (the Serve application) ---------- */
 
 .work__open {
   width: fit-content;
@@ -1024,4 +1058,286 @@ a.work__item:hover { border-color: var(--accent); }
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
+}
+
+/* ---------- phone: every dialog is a sheet ----------
+
+   A card floating in the middle of a phone is a desktop habit. Here a dialog
+   comes up from the bottom edge, full width, as tall as its content and never
+   taller than what is actually visible (dvh, not vh: see auth.css), with the
+   home-indicator inset under its last row. It can be pulled down to dismiss
+   (ModalLayer), and its actions are thumb-sized. */
+@media (max-width: 720px) {
+  .modal,
+  .modal.modal--side {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: 100% !important;
+    max-height: calc(100dvh - var(--safe-t) - 12px);
+    translate: 0 0;
+    border-radius: 22px 22px 0 0;
+    border-bottom: 0;
+    animation: sheet-in 0.4s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+    transition: none;
+  }
+
+  .modal.is-out,
+  .modal.modal--side.is-out {
+    animation: sheet-out 0.26s var(--ease) forwards;
+  }
+
+  .modal.is-dragging {
+    animation: none;
+  }
+
+  .modal:focus {
+    outline: none;
+  }
+
+  .modal__grab {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 26px;
+    z-index: 2;
+    touch-action: none;
+  }
+
+  .modal__grab::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    translate: -50% 0;
+    width: 40px;
+    height: 5px;
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--ink) 24%, transparent);
+  }
+
+  .modal__x {
+    top: 14px;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+    background: var(--surface-soft);
+    color: var(--muted);
+  }
+
+  .modal__body {
+    padding: 30px 20px 20px;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Clear of the round close button. */
+  .modal__eyebrow,
+  .modal__title {
+    padding-right: 40px;
+  }
+
+  .modal__title {
+    font-size: 25px;
+  }
+
+  /* Whatever comes last sits above the home indicator. */
+  .modal__body:last-child,
+  .modal__inner > .modal__body:last-child,
+  .modal__foot {
+    padding-bottom: calc(var(--safe-b) + 18px);
+  }
+
+  .modal__foot {
+    padding: 14px 20px calc(var(--safe-b) + 16px);
+    flex-wrap: wrap;
+    gap: 10px;
+    border-top: 1px solid var(--line);
+  }
+
+  /* Thumb-sized and sharing the row: the first action takes it whole when
+     there are three, the way an action sheet leads with the one you came for. */
+  .modal__foot .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 48px;
+    padding: 0 14px;
+    justify-content: center;
+    font-size: 15.5px;
+  }
+
+  .modal__foot .btn:first-child:nth-last-of-type(n + 3) {
+    flex-basis: 100%;
+  }
+
+  .modal__foot .spacer {
+    display: none;
+  }
+
+  .modal__foot .modal__note,
+  .modal__foot .form__err,
+  .modal__foot .err {
+    flex-basis: 100%;
+    order: 9;
+    text-align: center;
+  }
+
+  .modal__foot .modal__note:empty,
+  .modal__foot .form__err:empty,
+  .modal__foot .err:empty {
+    display: none;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    translate: 0 100%;
+  }
+}
+
+@keyframes sheet-out {
+  to {
+    translate: 0 100%;
+  }
+}
+
+/* ---------- applications inbox ---------- */
+
+.new-pill {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--urgent) 14%, transparent);
+  color: var(--urgent);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  vertical-align: 2px;
+}
+
+.inbox {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.inbox__head {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.inbox__head b {
+  font-size: 15.5px;
+  color: var(--ink);
+}
+
+.inbox__head span {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.inbox__people {
+  display: grid;
+  gap: 6px;
+}
+
+.inbox__row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.inbox__row:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: var(--surface-soft);
+}
+
+.inbox__row.is-new {
+  border-color: color-mix(in srgb, var(--urgent) 35%, var(--line));
+}
+
+.inbox__row > .ico {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.6;
+}
+
+.inbox__row .new-pill { margin-left: 0; }
+
+.inbox__who {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.inbox__who b {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.inbox__who span {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 14px;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.inbox__back .ico {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.inbox__detail {
+  margin-top: 16px;
+}
+
+.inbox__detail .applicant {
+  padding: 14px 16px;
+}
+
+/* An uploaded image, previewed in its row. */
+.work__thumb {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 7px;
+  object-fit: cover;
+  background: var(--surface-sunk);
 }

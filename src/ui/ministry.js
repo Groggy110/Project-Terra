@@ -10,7 +10,7 @@ import { add, clear, h, icons, nf } from "./dom.js";
 import { FOCUS_AREAS, NEED_TYPES, URGENCIES } from "../data/taxonomy.js";
 import { chipGroup } from "./chips.js";
 import { primePlaces, regionFor, resolvePlace, searchPlaces } from "../data/places.js";
-import { createMinistry, postNeed } from "../lib/api.js";
+import { createMinistry, postNeed, updateNeed } from "../lib/api.js";
 
 const field = (label, control, note) =>
   h("div", { class: "field" },
@@ -255,20 +255,29 @@ function cityField({ onPick, onType, onBlur, countryOf }) {
 
 /* --------------------------------------------------------------- post a need */
 
-export function postNeedModal(layer, { ministry, onPosted } = {}) {
+/**
+ * Posts a new need — or, given `need`, edits one: the same form, filled in
+ * with what the need says now, saved through the same check a new post goes
+ * through.
+ */
+export function postNeedModal(layer, { ministry, need = null, onPosted } = {}) {
+  const editing = !!need;
   return layer.show((close) => {
-    const title = h("input", { class: "input", placeholder: "Part-time HR adviser", "data-autofocus": true });
-    // Terra is for help given online, so the types are the two a person can be.
+    const title = h("input", { class: "input", placeholder: "Part-time HR adviser", "data-autofocus": true, value: need?.title ?? "" });
+    // Terra is for help given online, so the types are the two a person can be
+    // — plus, when editing, whatever an older need was already posted as.
+    const types = NEED_TYPES.filter((t) => t.id === "expertise" || t.id === "volunteers" || t.id === need?.type);
     const type = h("select", { class: "select" },
-      NEED_TYPES.filter((t) => t.id === "expertise" || t.id === "volunteers").map((t) => h("option", { value: t.id }, `${t.label} — ${t.note.toLowerCase()}`)));
-    const urgency = h("select", { class: "select" }, URGENCIES.map((u) => h("option", { value: u.id, selected: u.id === "soon" }, u.label)));
+      types.map((t) => h("option", { value: t.id, selected: t.id === need?.type }, `${t.label} — ${t.note.toLowerCase()}`)));
+    const urgency = h("select", { class: "select" }, URGENCIES.map((u) => h("option", { value: u.id, selected: u.id === (need?.urgency ?? "soon") }, u.label)));
     const focus = h("select", { class: "select" },
-      FOCUS_AREAS.map((f) => h("option", { value: f.id, selected: f.id === ministry.focus?.[0] }, f.label)));
-    const people = h("input", { class: "input", type: "number", min: "0", max: "500", value: "1" });
-    const commitment = h("input", { class: "input", placeholder: "3 hrs/week · 3 months" });
+      FOCUS_AREAS.map((f) => h("option", { value: f.id, selected: f.id === (need?.focus ?? ministry.focus?.[0]) }, f.label)));
+    const people = h("input", { class: "input", type: "number", min: "0", max: "500", value: String(need?.people ?? 1) });
+    const commitment = h("input", { class: "input", placeholder: "3 hrs/week · 3 months", value: need?.commitment ?? "" });
     const detail = h("textarea", { class: "area", rows: 4, placeholder: "What the work involves and why it matters." });
+    detail.value = need?.detail ?? "";
 
-    const skills = [];
+    const skills = [...(need?.skills ?? [])];
     const skillChips = chipGroup({
       options: [],
       batch: 0,
@@ -283,20 +292,22 @@ export function postNeedModal(layer, { ministry, onPosted } = {}) {
     });
 
     const err = h("span", { class: "modal__note", style: { color: "var(--urgent)" } });
-    const go = h("button", { class: "btn btn--accent" }, "Post this need");
+    const label = editing ? "Save changes" : "Post this need";
+    const go = h("button", { class: "btn btn--accent" }, label);
 
     go.addEventListener("click", async () => {
       if (!title.value.trim()) { err.textContent = "Give the need a title first."; return; }
       go.disabled = true; go.textContent = "Checking…"; err.textContent = "";
       try {
-        const res = await postNeed({
+        const save = editing ? (fields) => updateNeed(need.id, fields) : postNeed;
+        const res = await save({
           ministry_id: ministry.id,
           title: title.value.trim(),
           type: type.value,
           urgency: urgency.value,
           focus: focus.value,
           people: Math.max(0, Number(people.value) || 0),
-          remote: true,
+          remote: need?.remote ?? true,
           commitment: commitment.value.trim(),
           skills: [...skills],
           detail: detail.value.trim(),
@@ -304,15 +315,20 @@ export function postNeedModal(layer, { ministry, onPosted } = {}) {
         showResult(res);
       } catch (e) {
         err.textContent = String(e.message ?? e);
-        go.disabled = false; go.textContent = "Post this need";
+        go.disabled = false; go.textContent = label;
       }
     });
 
     const card = shell(
       [
-        h("div", { class: "modal__eyebrow", text: "New need" }),
-        h("h2", { class: "modal__title", text: "What do you need?" }),
-        h("p", { class: "modal__lede", text: `Posting for ${ministry.name} — ${ministry.city}. Everything posted is checked before it appears on the globe.` }),
+        h("div", { class: "modal__eyebrow", text: editing ? "Edit need" : "New need" }),
+        h("h2", { class: "modal__title", text: editing ? "Edit this need" : "What do you need?" }),
+        h("p", {
+          class: "modal__lede",
+          text: editing
+            ? `For ${ministry.name} — ${ministry.city}. Changes are checked the way a new post is before they appear on the globe.`
+            : `Posting for ${ministry.name} — ${ministry.city}. Everything posted is checked before it appears on the globe.`,
+        }),
         h("div", { class: "form" },
           field("Title", title),
           h("div", { class: "row2" }, field("Type", type), field("Urgency", urgency)),
@@ -332,7 +348,7 @@ export function postNeedModal(layer, { ministry, onPosted } = {}) {
         h("div", { class: "modal__body" },
           h("div", { class: `post-done${held ? " is-held" : ""}` },
             held ? icons.pin() : icons.check(),
-            h("h2", { class: "modal__title", text: held ? "Posted for review" : "It is on the globe" }),
+            h("h2", { class: "modal__title", text: held ? (editing ? "Saved for review" : "Posted for review") : editing ? "Changes saved" : "It is on the globe" }),
             h("p", { class: "modal__lede", text: res.message }),
             res.reason && h("p", { class: "post-done__why", text: res.reason }),
             held && h("p", { class: "modal__note", text: "You can see it in your own list meanwhile — it is only hidden from the public globe." }),

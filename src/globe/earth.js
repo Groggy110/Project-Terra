@@ -43,7 +43,7 @@ export function prepare(texture, { mips = true } = {}) {
   texture.magFilter = LinearFilter;
   texture.minFilter = mips ? LinearMipmapLinearFilter : LinearFilter;
   texture.generateMipmaps = mips;
-  texture.anisotropy = 8;
+  texture.anisotropy = texture.userData?.anisotropy ?? 8;
   return texture;
 }
 

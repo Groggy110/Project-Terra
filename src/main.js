@@ -1,5 +1,13 @@
 import { App } from "./ui/app.js";
 
+// Safari pinch-zooms the *page* whenever two fingers land anywhere other
+// than the canvas — on a pin, the dock, the search field — and ignores the
+// viewport's maximum-scale while doing it. The page is a fixed app over a
+// globe that has its own pinch, so the page's is switched off outright.
+for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
+  document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+}
+
 const app = new App();
 
 /**

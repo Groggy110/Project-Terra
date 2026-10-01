@@ -11,6 +11,7 @@ system, and the app needs them:
 
 - `src/style/styleConfig.js` holds `STYLE`, the single source of truth, and `STYLE_VERSION`.
 - `src/style/applyStyle.js` has `applyStyle()`, `onStyle()` and `mergeInto()`.
+- `src/style/landing.js` holds the landing screen's look, stage, exit flight and headline, and blends between the two scenes. The app uses it with or without the sandbox.
 - `src/style/css.js` writes STYLE's CSS half as custom properties.
 - `src/style/stars.js` makes the procedural star sheet.
 - `src/globe/shaders/grade.glsl`, `effects.glsl` and `post.frag.glsl` hold the optional grade, the extra lights and fog, and the vignette/grain pass. All are off by default.

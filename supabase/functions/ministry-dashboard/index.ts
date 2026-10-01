@@ -27,14 +27,14 @@ Deno.serve(async (req) => {
 
   const { data: needs } = await service
     .from("needs")
-    .select("id, title, type, urgency, status, commitment, posted, people, moderation")
+    .select("id, title, type, urgency, status, commitment, posted, people, focus, remote, skills, detail, moderation")
     .eq("ministry_id", ministry.id)
     .order("created_at", { ascending: false });
   const ids = (needs ?? []).map((n) => n.id);
   if (!ids.length) return json({ ministry, needs: [] });
 
   const [{ data: interests }, { data: meetings }] = await Promise.all([
-    service.from("interests").select("user_id, need_id, created_at, why, qualifications, links, files").in("need_id", ids),
+    service.from("interests").select("user_id, need_id, created_at, seen_at, why, qualifications, links, files").in("need_id", ids),
     service.from("meetings").select("id, need_id, requester_id, starts_at, duration_min, meet_url, note, status").in("need_id", ids).eq("status", "scheduled"),
   ]);
 
@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     why: i.why ?? null,
     qualifications: i.qualifications ?? null,
     links: i.links ?? [],
-    files: ((i.files ?? []) as Upload[]).map((f) => ({ name: f.name, size: f.size ?? null, url: signed.get(f.path) ?? null })),
+    files: ((i.files ?? []) as Upload[]).map((f) => ({ name: f.name, size: f.size ?? null, type: f.type ?? null, url: signed.get(f.path) ?? null })),
   });
 
   const person = (id: string) => {
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       ...n,
       reason: n.status === "pending_review" ? (n.moderation as { verdict?: { reason?: string } })?.verdict?.reason ?? null : null,
       moderation: undefined,
-      applicants: (interests ?? []).filter((i) => i.need_id === n.id).map((i) => ({ ...person(i.user_id), at: i.created_at, application: application(i) })),
+      applicants: (interests ?? []).filter((i) => i.need_id === n.id).map((i) => ({ ...person(i.user_id), at: i.created_at, seen: !!i.seen_at, application: application(i) })),
       calls: (meetings ?? []).filter((m) => m.need_id === n.id).map((m) => ({
         id: m.id, startsAt: m.starts_at, minutes: m.duration_min, meetUrl: m.meet_url, note: m.note, person: person(m.requester_id),
       })),

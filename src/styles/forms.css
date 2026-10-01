@@ -602,3 +602,28 @@
 @media (max-width: 760px) {
   .acct__role { display: none; }
 }
+
+/* Unopened applications, on the chip and (on a phone) on the round picture
+   in the search field. Red, like every other unread count people know. */
+.acct__badge {
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--urgent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.acct__badge--float {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+}

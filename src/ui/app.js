@@ -9,9 +9,10 @@ import { Board } from "./board.js";
 import { Filters } from "./filters.js";
 import { ModalLayer, aboutModal, meetingsModal, needModal, pickUpModal, scheduleModal } from "./modals.js";
 import { dashboardModal } from "./dashboard.js";
+import { applicationsModal } from "./applications.js";
 import { Panel } from "./panel.js";
 import { PanelSheet } from "./sheet.js";
-import { add, clear, h, icons, plural } from "./dom.js";
+import { add, clear, h, icons, plural, svg } from "./dom.js";
 import { openPop, menuIcons } from "./pop.js";
 import { store } from "./store.js";
 import { REVISION } from "three";
@@ -21,42 +22,65 @@ import { ministryModal, postNeedModal as postNeedForm } from "./ministry.js";
 import { Recommendations } from "./recommend.js";
 import * as api from "../lib/api.js";
 import { applyStyle } from "../style/applyStyle.js";
+import { STYLE } from "../style/styleConfig.js";
+// The stage, the flight off it and the landing look are the style editor's
+// to change as well, so they live with the style (see landing.js).
+import { STAGE, STAGE_EXIT, enterLanding, leaveLanding, returnToLanding } from "../style/landing.js";
+import { pickVerse, verseText } from "../lib/verses.js";
 
 
 /** How long after the loading screen lifts the headline lands. */
 const HERO_IN_MS = 520;
 
-/** The side-by-side entrance: wide enough for two columns, and landscape. */
-const HERO_SPLIT = window.matchMedia("(min-width: 1000px) and (min-aspect-ratio: 4/3)");
 /**
- * The split entrance is tuned in one reference frame, 1951 x 820, and every
- * other window gets that same picture scaled — see --u in base.css, which
- * this must match. In the reference the planet's centre sits 409.5px left of
- * the window's middle (0.21 of the width), at a camera distance of 4.05.
+ * A phone held upright. Here the page is the globe: no headline, a search
+ * field across the top, a dock along the bottom and the sheet only when a pin
+ * asks for it (chrome.css, "phone").
  */
-const HERO_REF = { w: 1951, h: 820, offset: 409.5, dist: 4.05 };
+const PHONE = window.matchMedia("(max-width: 720px)");
 
-/** One reference pixel, in real pixels, clamped as --u is. */
-function heroUnit() {
-  const u = Math.min(window.innerHeight / HERO_REF.h, window.innerWidth / HERO_REF.w);
-  return Math.min(Math.max(u, 0.72), 1.25);
+/** A count for a badge: past 99 it is just "lots". */
+const badge = (n) => (n > 99 ? "99+" : String(n));
+/**
+ * The phone's whole-planet view: the disc filling the width the way a map
+ * app's globe does, with a margin of space round it. (Semantic distance; the
+ * portrait fit is applied on top.) Kept above the zoom where imagery is armed,
+ * so the overview is the painted planet and fetches nothing.
+ */
+const PHONE_DIST = 3.35;
+
+/** The camera for the stage at this window size. */
+function stageFrame() {
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const rim = Math.max(STAGE.rim, STAGE.minRim / H);
+  // A circle centred on the window's middle line, touching `rim` at the top
+  // and passing through (0, H) and (W, H): with a = H - rim, the radius is
+  // ((W/2)^2 + a^2) / 2a.
+  const a = (1 - rim) * H;
+  const R = ((W / 2) ** 2 + a ** 2) / (2 * a);
+  const d = Math.min((2 * R) / H, STAGE.maxSize) * STAGE.scale;
+  // The fov is vertical, so the disc's height on screen is tan(asin(1/dist))
+  // over tan(fov/2), as a share of the window's.
+  const tan = d * Math.tan((STYLE.camera.fov * Math.PI) / 360);
+  return {
+    // STAGE.x is to the right; the view offset's shift runs the other way.
+    shift: -STAGE.x,
+    // A view offset: negative lowers the centre, here to below the window.
+    lift: 0.5 - (rim + d / 2),
+    dist: 1 / Math.sin(Math.atan(tan)),
+    home: STAGE.home,
+    spin: STAGE.spin,
+    rim: rim * H,
+    x: STAGE.x * W,
+  };
 }
 
-/**
- * The camera for the split entrance at this window size. The globe's size on
- * screen is set by the height, so where the unit is held back by the width,
- * the camera withdraws until the disc is `u` reference pixels per pixel too:
- * the silhouette's radius goes as tan(asin(1/d)), so scaling that tangent by
- * the ratio scales the disc exactly.
- */
-function heroFrame() {
-  const u = heroUnit();
-  const k = (u * HERO_REF.h) / window.innerHeight;
-  const tan = Math.tan(Math.asin(1 / HERO_REF.dist)) * k;
-  return {
-    shift: (HERO_REF.offset * u) / window.innerWidth,
-    dist: 1 / Math.sin(Math.atan(tan)),
-  };
+/** Where the headline hangs from: the rim, and the disc's centre line. */
+function stageCss(stage) {
+  const s = document.documentElement.style;
+  s.setProperty("--stage-rim", `${stage.rim}px`);
+  s.setProperty("--stage-x", `${stage.x}px`);
 }
 
 export class App {
@@ -71,6 +95,8 @@ export class App {
     this.session = null;
     this.profile = null;
     this.ministry = null;
+    // Applications to this ministry's needs it has not opened yet.
+    this.unseen = 0;
     this.query = emptyQuery();
     this.view = "globe";
     this.selected = null;
@@ -119,7 +145,9 @@ export class App {
       // The sheet is one of the rectangles the label layer has to keep clear
       // of, and its height changes on every drag, so the reserved list is
       // recomputed whenever it settles.
-      onDetent: () => {
+      onDetent: (_, px) => {
+        this.sheetPx = px;
+        this.#syncLift();
         this.syncReserved();
         this.#syncCovered();
       },
@@ -141,12 +169,15 @@ export class App {
     // The entrance state: headline, a find bar standing under it, and the
     // network figures where the panel will be. Everything settles once the
     // globe has flown in.
-    document.body.classList.add("is-hero");
-    // On a wide landscape window the entrance splits: the planet large on the
-    // left, the words and the find bar on the right. Anything narrower keeps
-    // the centred composition, where there is no room for two columns.
-    const split = HERO_SPLIT.matches;
-    document.body.classList.toggle("hero-split", split);
+    // A phone has no entrance: the headline over a small disc is a web page,
+    // and on a phone the planet is the page from the first frame.
+    const phone = PHONE.matches;
+    if (!phone) document.body.classList.add("is-hero");
+    const stage = phone ? undefined : stageFrame();
+    if (stage) {
+      stageCss(stage);
+      enterLanding();
+    }
     this.panel.setOpen(false);
     // Every visit opens on the night globe; the toggle lasts for the visit.
     this.#theme("dark");
@@ -155,7 +186,7 @@ export class App {
 
     this.globe = new Globe(this.el.canvas, {
       overlay: this.el.overlay,
-      hero: split ? heroFrame() : undefined,
+      hero: stage,
       onProgress: (p, label) => boot.progress(p, label),
       onPinClick: (m) => {
         this.#leaveHero();
@@ -227,10 +258,21 @@ export class App {
       resizePending = requestAnimationFrame(() => {
         resizePending = 0;
         this.syncReserved();
+        this.#syncLift();
       });
     });
-    boot.done();
+    await boot.done();
     document.body.classList.add("is-live");
+    // The planet rises into place as the loading screen lifts, already
+    // turning: from a little below where the stage puts its rim, with the
+    // drift starting under it.
+    if (document.body.classList.contains("is-hero")) this.#trackStage();
+    if (document.body.classList.contains("is-hero")) {
+      const home = this.globe.liftTarget;
+      this.globe.setLift(home - STAGE.rise, { instant: true });
+      this.globe.setLift(home, { tau: 1.1 });
+      this.globe.releaseSpin({ now: true });
+    }
 
     // The world fades up where it stands and the headline lands just behind it,
     // so the two read as one arrival. Then it holds, and then the page settles
@@ -241,13 +283,23 @@ export class App {
     // Someone who clicked through while it was still loading has already left.
     if (document.body.classList.contains("is-hero")) {
       this.heroInTimer = setTimeout(() => document.body.classList.add("hero-in"), HERO_IN_MS);
+    } else if (phone && !this.globe.controls.gestured) {
+      // The one camera move, straight away: the whole planet coming in to
+      // fill the screen, already turning.
+      this.globe.releaseSpin();
+      this.globe.settle(undefined, { dist: PHONE_DIST });
     }
     // No timed exit: the landing screen holds until someone engages — a
     // click or drag on the globe, or a search submitted with Enter.
 
     if (!store.seen) {
       store.markSeen();
-      setTimeout(() => this.toast("Fictional sample data — drag the globe to look around."), 3400);
+      // Not over the landing screen, where it would sit on the find bar's
+      // suggestions: it waits for the working view, where it is about the map
+      // in front of you.
+      const note = "Fictional sample data — drag the globe to look around.";
+      if (document.body.classList.contains("is-hero")) this.pendingNote = note;
+      else setTimeout(() => this.toast(note), 3400);
     }
     return this;
   }
@@ -256,27 +308,152 @@ export class App {
     if (!document.body.classList.contains("is-hero")) return;
     clearTimeout(this.heroTimer);
     clearTimeout(this.heroInTimer);
-    document.body.classList.remove("is-hero", "hero-in", "hero-split");
-    // The split framing glides back to centre whichever way the hero ends.
-    this.globe?.setShift(0);
+    document.body.classList.remove("is-hero", "hero-in");
+    // The landing look eases into the working one over the planet's flight.
+    leaveLanding(STAGE_EXIT.ms);
+    // The headline fades as the planet rises through it; the mask follows
+    // the disc until the words are gone.
+    this.stageTrackUntil = performance.now() + 700;
+    if (this.pendingNote) {
+      const note = this.pendingNote;
+      this.pendingNote = null;
+      setTimeout(() => this.toast(note), 1600);
+    }
+    this.globe?.releaseDetail();
     // Whichever way the hero went, the opening frame is over and the globe is
     // free to turn again. On the timed exit the settle starts the turn itself;
     // on a gesture the drift picks it up once the hand comes off.
     this.globe?.releaseSpin();
     // Synchronously, in the same turn that drops the class the chrome
-    // transitions on, so the bar starts rising and the globe starts growing
-    // on the same frame.
-    if (settle) this.globe?.settle();
-    this.panel.setOpen(true);
+    // transitions on, so the bar starts rising and the globe starts moving
+    // on the same frame. Either way the planet comes up to the centre and
+    // lands at the same size: on the settle's flight, or — when a hand has
+    // the globe — on a short ease of its own under the drag.
+    if (settle) this.globe?.settle(STAGE_EXIT.ms, { dist: STAGE_EXIT.dist, turn: STAGE_EXIT.turn });
+    else this.globe?.leaveStage({ dist: STAGE_EXIT.dist });
+    // The panel is frosted glass over a live render, the most expensive thing
+    // the page can slide across it; it comes in as the planet slows into
+    // place rather than on the flight's opening frames, which are the ones
+    // that decide whether the move reads as smooth.
+    const panelIn = Math.round((settle ? STAGE_EXIT.ms : 1100) * 0.55);
+    clearTimeout(this.panelInTimer);
+    this.panelInTimer = setTimeout(() => {
+      if (this.onLanding) return;
+      this.panel.setOpen(true);
+      this.syncReserved();
+    }, panelIn);
     // Twice: once to give the ground the headline was holding straight back
     // to the pins, and again once the panel and the find bar have landed.
     this.syncReserved();
-    setTimeout(() => this.syncReserved(), 760);
+    setTimeout(() => this.syncReserved(), panelIn + 760);
   }
 
+  /* ------------------------------------------------ the style editor's */
+
+  /** Whether the landing screen is up. */
+  get onLanding() {
+    return document.body.classList.contains("is-hero");
+  }
+
+  /** Whether this window has a landing screen at all (a phone does not). */
+  get hasLanding() {
+    return !PHONE.matches;
+  }
+
+  /** Off the landing screen, exactly as a click on the globe takes you. */
+  showMain() {
+    this.#leaveHero({ settle: true });
+  }
+
+  /**
+   * Back onto the landing screen from the working view, so its look can be
+   * edited again: whatever is open closes, the planet flies back down to the
+   * stage and the look blends back to the landing one.
+   */
+  showLanding() {
+    if (this.onLanding || !this.hasLanding || !this.globe) return;
+    clearTimeout(this.panelInTimer);
+    this.#deselect();
+    this.setView("globe");
+    this.panel.setOpen(false);
+    this.#hideSuggest();
+    document.body.classList.add("is-hero");
+    const stage = stageFrame();
+    stageCss(stage);
+    this.globe.enterStage(stage, { ms: STAGE_EXIT.ms * 0.7 });
+    returnToLanding(STAGE_EXIT.ms * 0.7);
+    this.#trackStage();
+    this.heroInTimer = setTimeout(() => document.body.classList.add("hero-in"), STAGE_EXIT.ms * 0.35);
+    this.syncReserved();
+  }
+
+  /**
+   * Re-frames the landing planet after the stage has been edited. `fly`
+   * also turns it back to the stage's own view, for a change of where it
+   * faces.
+   */
+  restage({ fly = false } = {}) {
+    if (!this.onLanding || !this.globe) return;
+    const stage = stageFrame();
+    stageCss(stage);
+    if (fly) return this.globe.enterStage(stage, { ms: 1200 });
+    this.globe.setShift(stage.shift, { instant: true });
+    this.globe.setLift(stage.lift, { instant: true });
+    this.globe.setStageDist(stage.dist);
+    this.globe.controls.spinFloor = stage.spin;
+  }
+
+  /**
+   * Keeps the landing headline masked by the planet, frame by frame, so the
+   * disc stands in front of the words — as it rises in, on a resize, and as
+   * it rises through them on the way out. The mask is a radial gradient in
+   * the headline's own box (base.css), so the centre is measured from the box
+   * as it is drawn, translate and all.
+   */
+  #trackStage() {
+    const hero = this.el.hero;
+    if (!hero || this.stageTracking) return;
+    this.stageTracking = true;
+    const step = () => {
+      const live = document.body.classList.contains("is-hero") || performance.now() < (this.stageTrackUntil ?? 0);
+      if (!live || !this.globe) {
+        this.stageTracking = false;
+        return;
+      }
+      const d = this.globe.discOnScreen();
+      const box = hero.getBoundingClientRect();
+      const x = Math.round(d.x - box.left);
+      const y = Math.round(d.y - box.top);
+      const r = Math.round(d.r);
+      const key = `${x}|${y}|${r}`;
+      if (key !== this.stageKey) {
+        this.stageKey = key;
+        hero.style.setProperty("--disc-x", `${x}px`);
+        hero.style.setProperty("--disc-y", `${y}px`);
+        hero.style.setProperty("--disc-r", `${r}px`);
+      }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  /**
+   * The loading screen: the mark, a verse about serving, and the bar.
+   *
+   * The bar is paced rather than raw. The textures can land in well under a
+   * second on a warm cache, and a bar that fills in three jumps and a screen
+   * that is gone before the verse on it has been read make the one quiet
+   * moment on the page feel like a flicker. So what is drawn is the real
+   * progress, but never ahead of a steady clock that takes BOOT_MIN_MS to
+   * run, eased as it goes; and done() waits for the drawn bar, not the load.
+   */
   #boot() {
+    const BOOT_MIN_MS = 4200;
     const fill = h("div", { class: "boot__fill" });
-    const label = h("div", { class: "boot__label", text: "gathering the network" });
+    const verse = pickVerse();
+    const words = h("p", { class: "boot__verse" });
+    const ref = h("div", { class: "boot__ref" });
+    const quote = h("figure", { class: "boot__quote" }, words, ref);
     const veil = h(
       "div",
       { class: "boot" },
@@ -284,22 +461,58 @@ export class App {
         "div",
         { class: "boot__inner" },
         h("span", { class: "boot__mark brand__name", text: "Terra" }),
-        label,
+        quote,
         h("div", { class: "boot__bar" }, fill),
       ),
     );
     document.body.appendChild(veil);
+    // The words arrive when their text does — YouVersion's if it answers
+    // quickly, the bundled KJV if not — never as a swap mid-read.
+    verseText(verse).then(({ text, version }) => {
+      words.textContent = text;
+      ref.textContent = `${verse.ref} · ${version}`;
+      quote.classList.add("is-in");
+    });
+
+    const t0 = performance.now();
+    let real = 0;
+    let shown = 0;
+    let raf = 0;
+    let finish = null;
+    const tick = (now) => {
+      const clock = Math.min((now - t0) / BOOT_MIN_MS, 1);
+      // Ease-out on the clock: it moves off briskly and settles into the end.
+      const paced = 1 - Math.pow(1 - clock, 2.2);
+      const goal = Math.min(real, paced);
+      shown += (goal - shown) * 0.12;
+      if (goal - shown < 0.002) shown = goal;
+      fill.style.width = `${(shown * 100).toFixed(2)}%`;
+      if (finish && shown >= 0.999) {
+        const done = finish;
+        finish = null;
+        // A beat on the full bar, then the screen goes.
+        setTimeout(() => {
+          veil.classList.add("is-done");
+          done();
+          setTimeout(() => veil.remove(), 1200);
+        }, 320);
+        return;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
     return {
       progress(p) {
-        fill.style.width = `${Math.round(clamp(p, 0, 1) * 100)}%`;
+        real = Math.max(real, clamp(p, 0, 1) * 0.94);
       },
+      /** Resolves as the screen starts to leave. */
       done() {
-        // Let the bar be seen reaching the end before the screen leaves.
-        fill.style.width = "100%";
-        setTimeout(() => veil.classList.add("is-done"), 200);
-        setTimeout(() => veil.remove(), 1200);
+        real = 1;
+        return new Promise((resolve) => (finish = resolve));
       },
       fail(err) {
+        cancelAnimationFrame(raf);
         clear(veil);
         add(veil, [
           h(
@@ -326,7 +539,12 @@ export class App {
       const action = trigger.dataset.action;
       if (action === "reset-view") {
         e.preventDefault();
-        this.globe?.reset();
+        if (PHONE.matches && this.globe) {
+          // Out to the whole planet over wherever you are, rather than back
+          // to the page's opening longitude: the Earth button in a map app.
+          const c = this.globe.controls;
+          this.globe.flyTo({ lat: clamp(c.lat, -30, 40), lon: c.lon, dist: PHONE_DIST, ms: 1100 });
+        } else this.globe?.reset();
         this.#deselect();
         this.setView("globe");
       } else if (action === "zoom-in") this.globe?.zoomBy(0.62);
@@ -340,6 +558,10 @@ export class App {
       else if (action === "about") this.setView("about");
       else if (action === "cycle-theme") this.#theme(this.theme === "light" ? "dark" : "light");
       else if (action === "menu") this.#menu(trigger);
+      else if (action === "open-board") this.setView(this.board.open ? "globe" : "needs");
+      else if (action === "join") this.#join();
+      else if (action === "near-me") this.#nearMe();
+      else if (action === "toggle-filters") this.#toggleFilters();
     });
 
     this.el.nav.addEventListener("click", (e) => {
@@ -359,6 +581,10 @@ export class App {
     search.addEventListener("focus", () => this.#renderSuggest());
     search.addEventListener("blur", () => setTimeout(() => this.#hideSuggest(), 140));
     search.addEventListener("keydown", (e) => this.#suggestKeys(e));
+    document.getElementById("searchGo")?.addEventListener("click", () => {
+      if (search.value.trim()) this.#submitSearch();
+      else search.focus();
+    });
     this.el.clearSearch.addEventListener("click", () => {
       search.value = "";
       this.query.text = "";
@@ -404,11 +630,15 @@ export class App {
       items: [
         { label: "About this map", note: "How the globe is drawn", icon: menuIcons.info, run: () => this.setView("about") },
         { label: "Open needs board", icon: menuIcons.board, kbd: "B", run: () => this.setView("needs") },
-        {
-          label: this.panel.open ? "Hide the side panel" : "Show the side panel",
-          icon: menuIcons.panel,
-          run: () => this.panel.setOpen(!this.panel.open),
-        },
+        // On a phone there is no side panel, only the sheet a pin brings up;
+        // what stands in for the rail's summary is the network in that sheet.
+        PHONE.matches
+          ? { label: "Network summary", note: "Every open need, in figures", icon: menuIcons.panel, run: () => { this.panel.showNetwork(); this.panel.render(this.query); this.sheet.setDetent("half"); } }
+          : {
+              label: this.panel.open ? "Hide the side panel" : "Show the side panel",
+              icon: menuIcons.panel,
+              run: () => this.panel.setOpen(!this.panel.open),
+            },
         // SANDBOX START — the temporary Style Sandbox's menu entry; present only
         // while src/sandbox/style/ exists (see main.js and REMOVAL.md there).
         ...(window.terraStyleEditor
@@ -451,8 +681,10 @@ export class App {
     // The icon is the whole control (the sun or moon swaps in CSS), so the
     // words live in its label, and a toast would only repeat what just changed.
     const next = name === "light" ? "Switch to dark mode" : "Switch to light mode";
-    this.el.themeBtn?.setAttribute("aria-label", next);
-    this.el.themeBtn?.setAttribute("title", next);
+    for (const btn of document.querySelectorAll(".theme-toggle")) {
+      btn.setAttribute("aria-label", next);
+      btn.setAttribute("title", next);
+    }
     this.globe?.setTheme(name);
   }
 
@@ -559,7 +791,9 @@ export class App {
       }
     }
     this.linked = this.session ? await api.linkedAccounts().catch(() => []) : [];
+    this.unseen = 0;
     this.#renderAccount();
+    this.#watchApplications();
 
     if (!this.session) return;
     if (!quiet) this.toast(`Signed in as ${this.profile?.full_name || this.session.user.email}`);
@@ -621,11 +855,73 @@ export class App {
         const n = this.net.needById(id);
         if (n) this.openNeed(n, { fly: true });
       },
+      // Back to the list once saved, so the new state — live, or held for
+      // review — is the first thing seen.
+      onEdit: (n) => this.editNeed(n, { after: () => this.openDashboard() }),
+    });
+  }
+
+  /** Who applied to which need, and what they sent; see applications.js. */
+  openApplications() {
+    if (!this.session) return this.gate.open("signin");
+    applicationsModal(this.modals, {
+      load: () => api.ministryDashboard(),
+      onSeen: (needId, userId) => {
+        this.unseen = Math.max(0, this.unseen - 1);
+        this.#renderAccount();
+        api.markApplicationSeen(needId, userId).catch((e) => console.warn("[terra] could not mark seen", e));
+      },
+    });
+  }
+
+  /**
+   * Keeps the count on the account chip current while a ministry is signed
+   * in: on sign-in, every minute the tab is in view, and whenever it comes
+   * back into view. A rise after the first look gets a toast as well.
+   */
+  #watchApplications() {
+    clearInterval(this.unseenTimer);
+    this.unseenTimer = null;
+    if (!this.session || this.profile?.role !== "ministry" || !this.ministry) return;
+    let first = true;
+    const check = async () => {
+      if (document.hidden || this.profile?.role !== "ministry") return;
+      const n = await api.unseenApplications().catch(() => null);
+      if (n == null || n === this.unseen) return (first = false);
+      if (!first && n > this.unseen) this.toast(n - this.unseen === 1 ? "Someone just applied to one of your needs." : `${n - this.unseen} new applications.`);
+      first = false;
+      this.unseen = n;
+      this.#renderAccount();
+    };
+    check();
+    this.unseenTimer = setInterval(check, 60000);
+    if (!this.unseenWake) {
+      this.unseenWake = () => this.unseenTimer && !document.hidden && check();
+      document.addEventListener("visibilitychange", this.unseenWake);
+    }
+  }
+
+  /**
+   * Edits one of the signed-in ministry's own needs: the post form, filled in,
+   * saved through the same check a new post goes through.
+   */
+  async editNeed(need, { after } = {}) {
+    if (!api.isConfigured || !this.session) return this.gate?.open("signin");
+    if (!this.ministry) this.ministry = await api.myMinistry();
+    if (!this.ministry) return;
+    postNeedForm(this.modals, {
+      ministry: this.ministry,
+      need,
+      onPosted: async () => {
+        await this.reloadNetwork();
+        after?.();
+      },
     });
   }
 
   /** The chip in the top bar: sign in, or who you are. */
   #renderAccount() {
+    this.#renderPhoneAccount();
     const slot = this.el.acct ?? (this.el.acct = h("span"));
     if (!slot.isConnected) {
       this.el.nav.parentElement.querySelector(".topbar__actions")?.prepend(slot);
@@ -646,8 +942,94 @@ export class App {
         picture ? h("img", { class: "acct__pic", src: picture, alt: "" }) : null,
         h("span", { class: "acct__name", text: isMinistry ? name : name.split(" ")[0] }),
         this.linked?.length ? h("span", { class: "acct__role", text: isMinistry ? "Ministry" : "Personal" }) : null,
+        isMinistry && this.unseen ? h("span", { class: "acct__badge", "aria-label": `${this.unseen} new applications`, text: badge(this.unseen) }) : null,
       ),
     );
+  }
+
+  /**
+   * The phone's two account affordances: a round picture inside the search
+   * field (or a person, to sign in), and the dock's third button, which is
+   * Join until there is someone to join and then goes to what is theirs.
+   */
+  #renderPhoneAccount() {
+    const me = document.getElementById("searchMe");
+    const join = document.getElementById("dockJoin");
+    const isMinistry = this.profile?.role === "ministry";
+    if (join) {
+      const label = !this.session ? "Join" : isMinistry ? "Yours" : "For you";
+      join.querySelector("span").textContent = label;
+      join.setAttribute("aria-label", !this.session ? "Create an account" : isMinistry ? "Your needs" : "Suggested for you");
+    }
+    if (!me) return;
+    clear(me);
+    if (!api.isConfigured) return;
+    if (!this.session) {
+      me.appendChild(
+        h("button", { class: "search__me-btn", "data-action": "sign-in", "aria-label": "Sign in" },
+          svg("0 0 20 20", '<circle cx="10" cy="7.2" r="3.2"/><path d="M3.8 16.6c.8-3.2 3.2-4.9 6.2-4.9s5.4 1.7 6.2 4.9"/>'),
+        ),
+      );
+      return;
+    }
+    const name = (isMinistry && this.ministry?.name) || this.profile?.full_name || this.session.user.email || "You";
+    const picture = isMinistry ? this.ministry?.logo : this.profile?.avatar_url;
+    me.appendChild(
+      h("button", { class: "search__me-btn is-signed", "data-action": "account", "aria-label": `Account: ${name}` },
+        picture ? h("img", { src: picture, alt: "" }) : h("span", { text: name.trim().charAt(0).toUpperCase() }),
+      ),
+    );
+    if (isMinistry && this.unseen) me.appendChild(h("span", { class: "acct__badge acct__badge--float", text: badge(this.unseen) }));
+  }
+
+  /** The dock's Join: an account if there is none, otherwise what is theirs. */
+  #join() {
+    if (!api.isConfigured) return this.toast("Accounts need the live site — this is the demo.");
+    if (!this.session) return this.gate?.open("signup");
+    if (this.profile?.role === "ministry") return this.ministry ? this.openDashboard() : this.openMinistrySetup();
+    this.openSuggestions();
+  }
+
+  /** Flies to the phone's own position, at region height. */
+  #nearMe() {
+    if (!navigator.geolocation) return this.toast("This browser cannot share its location.");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => this.globe?.focus({ lat: pos.coords.latitude, lon: pos.coords.longitude }, { zoom: 0.5 }),
+      () => this.toast("Location is off for this site."),
+      { maximumAge: 600000, timeout: 8000 },
+    );
+  }
+
+  /** The filter chips are a row you call up on a phone, not a fixture. */
+  #toggleFilters(open = !document.body.classList.contains("filters-open")) {
+    document.body.classList.toggle("filters-open", open);
+    document.getElementById("filtersBtn")?.setAttribute("aria-pressed", String(open));
+    this.syncReserved();
+  }
+
+  /**
+   * On a phone, raises the globe into the room left above the sheet, so the
+   * city a pin was tapped on stays in sight instead of going under the card
+   * that describes it. Centred in the gap between the search field and the
+   * sheet's top edge.
+   */
+  #syncLift() {
+    if (!this.globe) return;
+    // The stage holds the planet low while the landing screen is up, and
+    // follows the window: the rim is a share of its height.
+    if (document.body.classList.contains("is-hero") && !PHONE.matches) {
+      const stage = stageFrame();
+      stageCss(stage);
+      this.globe.setShift(stage.shift, { instant: true });
+      return this.globe.setLift(stage.lift, { instant: true });
+    }
+    const open = PHONE.matches && this.panel.open && !this.board.open;
+    if (!open) return this.globe.setLift(0);
+    const H = window.innerHeight;
+    const top = document.querySelector(".findbar")?.getBoundingClientRect().bottom ?? 0;
+    const sheet = Math.min(this.sheetPx ?? H * 0.5, H * 0.6);
+    const mid = (top + H - sheet) / 2;
+    this.globe.setLift(clamp(0.5 - mid / H, 0, 0.3));
   }
 
   #accountMenu(anchor) {
@@ -666,6 +1048,13 @@ export class App {
         !this.linked?.length && isMinistry && { label: "Create your personal account", note: "Serve as yourself, linked to this ministry", icon: menuIcons.panel, run: () => this.startLink("volunteer") },
         !this.linked?.length && !isMinistry && { label: "Set up a ministry account", note: "Linked to this one", icon: menuIcons.panel, run: () => this.startLink("ministry") },
         null,
+        isMinistry && this.ministry && {
+          label: "Applications",
+          note: this.unseen ? `${plural(this.unseen, "new application")}` : "Who applied, and what they sent",
+          icon: menuIcons.inbox,
+          badge: this.unseen ? badge(this.unseen) : null,
+          run: () => this.openApplications(),
+        },
         isMinistry && this.ministry && { label: "Your needs", note: "Posts and who responded", icon: menuIcons.board, run: () => this.openDashboard() },
         { label: "Your calls", note: "Upcoming video calls", icon: menuIcons.board, run: () => this.openMeetings() },
         !isMinistry && { label: "Suggested for you", note: "Matched to your answers", icon: menuIcons.board, run: () => this.openSuggestions() },
@@ -685,7 +1074,7 @@ export class App {
           run: () => this.saveAvatar(null),
         },
         null,
-        { label: "Sign out", icon: menuIcons.trash, run: async () => { await api.signOut(); this.session = null; this.profile = null; this.ministry = null; this.#renderAccount(); this.toast("Signed out."); } },
+        { label: "Sign out", icon: menuIcons.trash, run: async () => { await api.signOut(); this.session = null; this.profile = null; this.ministry = null; this.unseen = 0; this.#watchApplications(); this.#renderAccount(); this.toast("Signed out."); } },
       ].filter((x) => x !== false),
     });
   }
@@ -912,7 +1301,12 @@ export class App {
       openNeed: (need) => this.openNeed(need, { fly: true }),
       clearFilters: () => this.clearFilters(),
       focusMinistry: (m) => this.globe?.focus(m, { zoom: 1 }),
-      layoutChanged: () => setTimeout(() => this.syncReserved(), 480),
+      layoutChanged: () => {
+        // On a phone the sheet's close button means "done with this place".
+        if (PHONE.matches && !this.panel.open && this.selected) this.#deselect();
+        this.#syncLift();
+        setTimeout(() => this.syncReserved(), 480);
+      },
     };
   }
 
@@ -932,6 +1326,7 @@ export class App {
       },
       boardToggled: (open) => {
         document.body.classList.toggle("board-open", open);
+        this.#syncLift();
         this.#syncCovered();
         setTimeout(() => this.syncReserved(), 560);
         this.el.hint.style.opacity = open ? 0 : this.hintOpacity ?? 1;
@@ -946,6 +1341,7 @@ export class App {
     this.globe?.select(full.id);
     this.globe?.setSpin(false);
     this.panel.showMinistry(full);
+    if (PHONE.matches) this.sheet.setDetent("half");
     // All the way in: choosing a ministry is choosing a city, not a region.
     if (fly) this.globe?.focus(full, { zoom: 1 });
     this.#renderCrumbs();
@@ -976,11 +1372,13 @@ export class App {
         if (m) this.openMinistry(m, { fly: true });
       },
       onSchedule: api.isConfigured ? (n) => this.openSchedule(n) : null,
+      // Only on the ministry's own needs.
+      onEdit: this.ministry && fresh.ministry === this.ministry.id ? (n) => this.editNeed(n) : null,
     }, { side: !!m });
   }
 
   /**
-   * The application behind "Pick this up". Written to the browser either way,
+   * The application behind "Serve". Written to the browser either way,
    * and to the database as well when there is somebody to attribute it to: a
    * signed-out visitor can still answer and share links, just not upload.
    */
@@ -1092,13 +1490,10 @@ export class App {
     push(document.querySelector(".topbar"), 2);
     push(document.querySelector(".crumbs"), 4);
     push(document.querySelector(".search"));
-    // The headline now stands in front of the disc, so the ground under it is
-    // spoken for: a pin there would be half-hidden behind a letterform. Both
-    // boxes hug their text — the container is wider than either line.
-    if (document.body.classList.contains("is-hero")) {
-      push(document.querySelector(".hero__title"), 0);
-      push(document.querySelector(".hero__sub"), 0);
-    }
+    // The headline's ground is spoken for: a pin there would be half-hidden
+    // behind a letterform. Both boxes hug their text — the container is
+    // wider than either line.
+    if (document.body.classList.contains("is-hero")) push(document.querySelector(".hero__title"), 0);
     // The filter row is a full-width flex container with its chips centred,
     // so its bounding box reserves ground the chips never occupy — enough of
     // it, at the whole-globe view, to swallow the pins either side of them.
@@ -1106,6 +1501,8 @@ export class App {
     push(document.querySelector(".dial"));
     push(document.querySelector(".hint"), 3);
     push(this.el.grabber, 4);
+    push(document.querySelector(".dock"), 4);
+    for (const fab of document.querySelectorAll(".fabs .fab")) push(fab, 4);
     if (this.panel.open) push(this.el.panel);
     if (this.board.open) push(this.el.sheet);
     this.globe?.setReserved(rects);
@@ -1121,7 +1518,15 @@ export class App {
     this.selected = null;
     this.globe?.select(null);
     this.globe?.setSpin(true);
-    this.panel.showNetwork();
+    if (PHONE.matches) {
+      // The sheet goes away with the place; the network summary is one tap
+      // away on the dock, and on a phone the map is the summary.
+      this.panel.mode = "network";
+      this.panel.ministry = null;
+      if (this.panel.open) this.panel.setOpen(false);
+    } else {
+      this.panel.showNetwork();
+    }
     this.panel.render(this.query);
     this.#renderCrumbs();
   }

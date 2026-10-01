@@ -141,8 +141,10 @@ function inkFor(theme) {
 /* ---------------------------------------------------------------- painter */
 
 export class VectorPainter {
-  constructor(store) {
+  constructor(store, { budget = TEXEL_BUDGET } = {}) {
     this.store = store;
+    /** Texels a window may hold; a phone asks for fewer (see Globe). */
+    this.budget = budget;
     this.lines = document.createElement("canvas");
     this.mask = document.createElement("canvas");
     this.lines.width = this.mask.width = MIN_SIDE;
@@ -209,12 +211,22 @@ export class VectorPainter {
     return pxPerDeg > 34 ? "10m" : "50m";
   }
 
-  needsRepaint(bounds, pxPerDeg, centre) {
+  /**
+   * `loose` is the test for the middle of a gesture on a phone: repaint only
+   * once the window is plainly wrong — magnified past twice its density, or
+   * the centre a fifth of the way to its edge. Each repaint there is a
+   * rasterisation and two full-canvas uploads, which is exactly the frame a
+   * pinch drops; a line a little soft for half a second is not.
+   */
+  needsRepaint(bounds, pxPerDeg, centre, { loose = false, quality = 1 } = {}) {
     if (!this.painted) return true;
     // paintedDensity is the density actually rasterised, so a coarse paint
     // taken during motion still reads as out of date once the camera settles.
-    const ratio = pxPerDeg / (this.paintedDensity || 1e-6);
-    if (ratio > 1.4 || ratio < 0.45) return true;
+    // Mid-gesture it is measured against the coarse density a motion paint
+    // would use — against full density every motion paint read as 2.5 times
+    // too soft the moment it landed, and repainted itself every 110ms.
+    const ratio = (pxPerDeg * quality) / (this.paintedDensity || 1e-6);
+    if (loose ? ratio > 2.2 || ratio < 0.4 : ratio > 1.4 || ratio < 0.45) return true;
     if (boundsContain(this.painted, bounds)) return false;
 
     /*
@@ -239,7 +251,8 @@ export class VectorPainter {
     if (!centre || !this.paintedCentre) return true;
     const dLon = Math.abs(wrapDelta(this.paintedCentre.lon, centre.lon));
     const dLat = Math.abs(centre.lat - this.paintedCentre.lat);
-    return dLon > this.painted.lonSpan * RECENTRE_AT || dLat > this.painted.latSpan * RECENTRE_AT;
+    const at = loose ? RECENTRE_AT * 2.5 : RECENTRE_AT;
+    return dLon > this.painted.lonSpan * at || dLat > this.painted.latSpan * at;
   }
 
   /**
@@ -292,13 +305,13 @@ export class VectorPainter {
       w = MAX_SIDE;
       win = recentre(win, w / (density * cosLat), win.latSpan, lonMid, latMid);
     }
-    if (w * h > TEXEL_BUDGET) {
-      const fitW = TEXEL_BUDGET / h;
+    if (w * h > this.budget) {
+      const fitW = this.budget / h;
       if (fitW >= MIN_SIDE) {
         w = fitW;
       } else {
         w = MIN_SIDE;
-        h = TEXEL_BUDGET / MIN_SIDE;
+        h = this.budget / MIN_SIDE;
       }
       win = recentre(win, w / (density * cosLat), h / density, lonMid, latMid);
     }

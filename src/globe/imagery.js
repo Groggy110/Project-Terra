@@ -101,7 +101,34 @@ const STORE_MAX = 6000;
 const STORE_NAME = "terra-tiles-v1";
 /** Requests in flight. Enough to fill a window in one round trip, not so many
  *  that a fast drag queues fifty dead fetches ahead of the ones that matter. */
-const MAX_INFLIGHT = 16;
+const MAX_INFLIGHT = 20;
+/**
+ * How many levels above the window the backstop sits. Before a single sharp
+ * tile is asked for, every slot with nothing this close above it gets the
+ * tile two levels up — a sixteenth as many requests — so the whole view is
+ * covered, soft, within one round trip, and the sharp tiles then resolve over
+ * imagery instead of over holes. It is also all that is fetched while the
+ * distance is changing: cheap enough to stream through a fly-in, and it is
+ * what makes the zoom read as the ground coming into focus rather than as a
+ * grid of squares filling in after the camera stops.
+ */
+const BACKSTOP = 2;
+/**
+ * A tile fades over what it replaces instead of appearing. Long enough that
+ * a slot sharpening reads as focus, short enough that a window resolving from
+ * the centre out is done by the time the eye gets to its edge.
+ */
+const FADE_MS = 240;
+/** Slots re-uploaded per frame while fading; the rest wait a frame. */
+const FADE_UPLOADS = 24;
+/**
+ * A phone fades in steps rather than continuously. Continuous is a slot
+ * re-sent on every frame of its fade — fifteen uploads per tile, a hundred
+ * megabytes for a city window — and a phone's upload bandwidth is the frame
+ * budget a pinch is spent from. Three steps read as the same soft arrival.
+ */
+const HANDHELD_STEPS = [0.4, 0.75, 1];
+const HANDHELD_UPLOADS = 8;
 /** How far up the quadtree to look for something to draw while a tile loads. */
 const ANCESTORS = 6;
 /**
@@ -213,6 +240,13 @@ export class ImageryLayer {
     /** 0 while nothing has been drawn; the fade in globe.js multiplies it. */
     this.coverage = 0;
 
+    /**
+     * The mosaic's largest side. A phone's window at two texels a point fits
+     * in 2048 on both axes; letting it grow to 4096 there only buys a canvas
+     * four times the size to re-send whenever the window moves.
+     */
+    this.handheld = matchMedia("(pointer: coarse) and (max-width: 1000px)").matches;
+    this.maxSide = this.handheld ? 2048 : MAX_SIDE;
     this.cache = new Map();
     this.cacheMax = Math.max(64, Math.floor(DECODED_BUDGET / (this.source?.tile || 256) ** 2 / 4));
     /** Cache Storage, opened once; null where there is none (plain http, some private windows). */
@@ -232,10 +266,37 @@ export class ImageryLayer {
      * frame of a flight — only permission for one more pass.
      */
     this.pending = false;
+    /** Whether the last pass that could fetch was a backstop-only one. */
+    this.pendingCoarse = false;
     this.stats = { tiles: 0, z: 0, requests: 0, stored: 0, failed: 0, size: "0x0" };
+    /**
+     * Per slot of the current rectangle, how many levels up the quadtree the
+     * ground drawn in it came from: 0 exact, ANCESTORS + 1 nothing yet. A tile
+     * landing only touches the slots it improves on.
+     */
+    this.slots = new Uint8Array(0);
+    /** slot index -> { t0, from }: slots mid-fade, redrawn every frame. */
+    this.fades = new Map();
+    /** Set by attach(); without it every change is a whole-canvas upload. */
+    this.renderer = null;
+    /** One slot's worth of canvas, for uploading a slot on its own. */
+    this.scratch = document.createElement("canvas");
+    this.scratch.width = this.scratch.height = this.source?.tile || 256;
+    this.sctx = this.scratch.getContext("2d", { alpha: true });
+  }
+
+  /**
+   * Hands the layer the renderer, so a tile landing can go to the GPU as that
+   * one tile rather than as the whole mosaic. A city window on a phone is an
+   * 18MB canvas; re-sending all of it for each 256KB tile is what made the
+   * imagery arrive in visible, stuttering steps.
+   */
+  attach(renderer) {
+    this.renderer = renderer;
   }
 
   dispose() {
+    this.fades.clear();
     clearTimeout(this.notify);
     this.notify = 0;
     this.texture.dispose();
@@ -245,12 +306,12 @@ export class ImageryLayer {
   }
 
   /**
-   * Marks the canvas out of date and asks for a redraw — at most once per
-   * COALESCE_MS, and always at least once more after the last tile, because
-   * the timer is scheduled by the same call that sets the flag.
+   * Asks the globe for a pass — at most once per COALESCE_MS, and always at
+   * least once more after the last tile. It no longer marks the canvas dirty:
+   * a landing tile is drawn into its own slots by #arrived and fades in from
+   * frame(), so nothing here recomposites the window.
    */
   #touch() {
-    this.dirty = true;
     if (this.notify) return;
     this.notify = setTimeout(() => {
       this.notify = 0;
@@ -283,6 +344,7 @@ export class ImageryLayer {
       // and re-asking for it on every recomposite is a request storm.
       this.#remember(id, img);
       if (!img) this.stats.failed++;
+      else this.#arrived(z, x, y);
       this.#drain();
       this.#touch();
     };
@@ -382,6 +444,148 @@ export class ImageryLayer {
     return null;
   }
 
+  /** The ancestor `d` levels up, cropped to one slot, if it is in memory. */
+  #pickAt(z, x, y, d) {
+    if (d > ANCESTORS || z - d < 0) return null;
+    const img = this.cache.get(`${z - d}/${x >> d}/${y >> d}`);
+    if (!img) return null;
+    const s = 1 << d;
+    const sub = (img.naturalWidth || img.width) / s;
+    return { img, sx: (x % s) * sub, sy: (y % s) * sub, ss: sub };
+  }
+
+  /** Slot index to tile coordinates in the current rectangle. */
+  #slotTile(i) {
+    const r = this.rect;
+    const tx = i % r.nx;
+    const ty = (i - tx) / r.nx;
+    return { tx, ty, x: (((r.x0 + tx) % r.n) + r.n) % r.n, y: r.y0 + ty };
+  }
+
+  /**
+   * A tile has landed. Every slot of the window it improves on starts a fade
+   * from whatever that slot was showing; frame() does the drawing. A slot
+   * already fading keeps the ground it started from, so a coarse tile and
+   * then a sharp one over the same slot read as one continuous sharpening.
+   */
+  #arrived(z, x, y) {
+    const r = this.rect;
+    if (!r) return;
+    const d = r.z - z;
+    if (d < 0 || d > ANCESTORS) return;
+    const now = performance.now();
+    let changed = false;
+    for (let i = 0; i < this.slots.length; i++) {
+      if (this.slots[i] <= d) continue;
+      const t = this.#slotTile(i);
+      if (t.x >> d !== x || t.y >> d !== y) continue;
+      const running = this.fades.get(i);
+      this.fades.set(i, { t0: now, from: running ? running.from : this.slots[i] });
+      this.slots[i] = d;
+      changed = true;
+    }
+    if (!changed) return;
+    this.#count();
+  }
+
+  /** Coverage and the exact-tile tally, from the slot table. */
+  #count() {
+    let drawn = 0;
+    let exact = 0;
+    for (const v of this.slots) {
+      if (v <= ANCESTORS) drawn++;
+      if (v === 0) exact++;
+    }
+    this.coverage = drawn / this.slots.length;
+    this.stats.exact = `${exact}/${this.slots.length}`;
+    return exact;
+  }
+
+  /** Paints one slot: the ground it had, and the ground it is getting at `a`. */
+  #paintSlot(i, from, a) {
+    const side = this.source.tile;
+    const t = this.#slotTile(i);
+    const dx = t.tx * side;
+    const dy = t.ty * side;
+    const ctx = this.ctx;
+    ctx.clearRect(dx, dy, side, side);
+    const z = this.rect.z;
+    const under = from <= ANCESTORS ? this.#pickAt(z, t.x, t.y, from) : null;
+    const over = this.#pickAt(z, t.x, t.y, this.slots[i]);
+    if (under && a < 1) ctx.drawImage(under.img, under.sx, under.sy, under.ss, under.ss, dx, dy, side, side);
+    if (over) {
+      ctx.globalAlpha = a;
+      ctx.drawImage(over.img, over.sx, over.sy, over.ss, over.ss, dx, dy, side, side);
+      ctx.globalAlpha = 1;
+    }
+    return { dx, dy };
+  }
+
+  /** The texture's GL handle, once three has uploaded the current canvas. */
+  #gpu() {
+    const r = this.renderer;
+    if (!r) return null;
+    const p = r.properties.get(this.texture);
+    if (!p.__webglTexture || p.__version !== this.texture.version) return null;
+    return p.__webglTexture;
+  }
+
+  /** Sends one slot of the canvas to the texture that already holds the rest. */
+  #uploadSlot(tex, dx, dy) {
+    const side = this.source.tile;
+    const gl = this.renderer.getContext();
+    this.sctx.clearRect(0, 0, side, side);
+    this.sctx.drawImage(this.canvas, dx, dy, side, side, 0, 0, side, side);
+    // Through three's state tracker, so its idea of what is bound stays true.
+    this.renderer.state.bindTexture(gl.TEXTURE_2D, tex);
+    // The same unpack state three uploads this texture with (see the
+    // constructor): no flip, straight alpha, no colour conversion.
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    if (gl.UNPACK_ROW_LENGTH) {
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+      gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    }
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, dx, dy, gl.RGBA, gl.UNSIGNED_BYTE, this.scratch);
+  }
+
+  /**
+   * Advances the fades, once per frame before the draw. Each fading slot is
+   * repainted into the canvas and sent up on its own; if the canvas has not
+   * been uploaded yet (a window that moved this frame) the slots are painted
+   * and ride along with that whole upload instead. Returns true while
+   * anything is still fading.
+   */
+  frame(now = performance.now()) {
+    if (!this.fades.size || !this.rect) return false;
+    const tex = this.#gpu();
+    const steps = this.handheld ? HANDHELD_STEPS : null;
+    const cap = this.handheld ? HANDHELD_UPLOADS : FADE_UPLOADS;
+    let sent = 0;
+    for (const [i, f] of this.fades) {
+      if (tex && sent >= cap) break;
+      const k = Math.min((now - f.t0) / FADE_MS, 1);
+      let a = k * k * (3 - 2 * k);
+      if (steps) {
+        // The highest step reached; nothing to send until the next one.
+        let stage = -1;
+        while (stage + 1 < steps.length && a >= steps[stage + 1] - 1e-6) stage++;
+        if (stage < 0 || stage === f.stage) continue;
+        f.stage = stage;
+        a = steps[stage];
+      }
+      const { dx, dy } = this.#paintSlot(i, f.from, a);
+      if (tex) this.#uploadSlot(tex, dx, dy);
+      sent++;
+      if (a >= 1) this.fades.delete(i);
+    }
+    if (!tex) this.texture.needsUpdate = true;
+    return this.fades.size > 0;
+  }
+
   /* -------------------------------------------------------------- compose */
 
   /**
@@ -419,11 +623,33 @@ export class ImageryLayer {
       const y1 = clamp(Math.ceil(mBot * n) - 1, 0, n - 1);
       const ny = y1 - y0 + 1;
       const side = this.source.tile;
-      if (nx * ny <= TILE_BUDGET && nx * side <= MAX_SIDE && ny * side <= MAX_SIDE) {
+      if (nx * ny <= TILE_BUDGET && nx * side <= this.maxSide && ny * side <= this.maxSide) {
         return { z, x0, y0, nx, ny, n };
       }
     }
     return null;
+  }
+
+  /** Whether the current window is within a level of `rect` and covers it. */
+  #serves(rect) {
+    const cur = this.rect;
+    if (Math.abs(cur.z - rect.z) > 1) return false;
+    const span = (r) => [r.x0 / r.n, (r.x0 + r.nx) / r.n, r.y0 / r.n, (r.y0 + r.ny) / r.n];
+    const [a0, a1, b0, b1] = span(cur);
+    const [c0, c1, d0, d1] = span(rect);
+    // The ask is padded (globe.js asks for 1.18 of the view), so a window a
+    // little short of it still covers everything on screen.
+    const sx = (c1 - c0) * 0.08;
+    const sy = (d1 - d0) * 0.08;
+    const whole = cur.nx >= cur.n;
+    let u0 = c0;
+    // Longitude wraps: bring the ask into the window's turn of the world.
+    while (u0 < a0 - 0.5) u0 += 1;
+    while (u0 > a0 + 0.5) u0 -= 1;
+    const u1 = u0 + (c1 - c0);
+    const inX = whole || (u0 >= a0 - sx && u1 <= a1 + sx);
+    const inY = d0 >= b0 - sy && d1 <= b1 + sy;
+    return inX && inY;
   }
 
   static same(a, b) {
@@ -433,14 +659,39 @@ export class ImageryLayer {
   /**
    * Brings the canvas up to date for the ground on screen. Returns true when
    * the texture changed, which is the caller's cue to redraw.
+   *
+   * `fetch: false` asks for nothing; `coarse` asks only for the backstop
+   * level, which is what the globe does while the distance is changing.
    */
-  update({ bounds, pxPerDeg, centre, fetch = true, force = false } = {}) {
+  update({ bounds, pxPerDeg, centre, fetch = true, coarse = false, force = false, lazy = false } = {}) {
     if (!this.enabled) return false;
-    const rect = this.#rectFor(bounds, pxPerDeg, centre);
+    let rect = this.#rectFor(bounds, pxPerDeg, centre);
     if (!rect) return false;
 
+    // Mid-gesture, the window only moves once the one on the GPU has plainly
+    // stopped serving: a level out, or no longer over the ground asked for.
+    // Moving it is a whole-canvas upload, which is the frame a pinch drops.
+    // Otherwise it stays, the view is a little soft or a little sharp for a
+    // moment, and the move happens once the hand comes off.
+    if (lazy && this.rect && !this.dirty && !force && this.#serves(rect)) return false;
+    // And when it has to move mid-gesture, it moves further than asked: half
+    // again the ground, a level softer, so the same canvas keeps serving
+    // through the rest of the pinch instead of being re-sent at every level.
+    // The sharp window comes once the camera stops (the settle pass).
+    if (lazy) {
+      const k = 1.5;
+      const wide = {
+        lonMin: bounds.lonMin - (bounds.lonSpan * (k - 1)) / 2,
+        lonSpan: Math.min(bounds.lonSpan * k, 360),
+        latMin: Math.max(bounds.latMin - (bounds.latSpan * (k - 1)) / 2, -90),
+        latSpan: Math.min(bounds.latSpan * k, 180),
+      };
+      rect = this.#rectFor(wide, pxPerDeg * 0.5, centre) ?? rect;
+    }
+
     const moved = !ImageryLayer.same(rect, this.rect);
-    if (!moved && !this.dirty && !force && !(fetch && this.pending)) return false;
+    const wantsFetch = fetch && (this.pending || this.pendingCoarse !== coarse);
+    if (!moved && !this.dirty && !force && !wantsFetch) return false;
     // Whatever was queued was queued for ground that is no longer on screen.
     // Ten in flight will finish; the rest would arrive for a view nobody is
     // looking at any more, ahead of the tiles for the one they are.
@@ -449,54 +700,80 @@ export class ImageryLayer {
     const side = this.source.tile;
     const w = rect.nx * side;
     const h = rect.ny * side;
-    if (this.canvas.width !== w || this.canvas.height !== h) {
-      this.canvas.width = w;
-      this.canvas.height = h;
-      this.ctx.imageSmoothingQuality = "high";
-      // WebGL2 gives a texture immutable storage on first upload, so a resized
-      // canvas can never change the allocation it already has — the GPU would
-      // keep showing the first window's pixels. Drop it and let three make a
-      // new one. (Same trap the vector painter documents.)
-      this.texture.dispose();
-    }
-
-    // The canvas is addressed geographically, so once the window moves every
-    // slot in it means different ground and none of the old pixels are worth
-    // keeping. Cleared to transparent rather than to a colour: see above.
-    if (moved) this.ctx.clearRect(0, 0, w, h);
-
-    let drawn = 0;
-    let exact = 0;
-    for (let ty = 0; ty < rect.ny; ty++) {
-      for (let tx = 0; tx < rect.nx; tx++) {
-        const x = (((rect.x0 + tx) % rect.n) + rect.n) % rect.n;   // wraps at 180
-        const y = rect.y0 + ty;
-        const hit = this.#pick(rect.z, x, y);
-        if (hit) {
-          this.ctx.drawImage(hit.img, hit.sx, hit.sy, hit.ss, hit.ss, tx * side, ty * side, side, side);
-          drawn++;
-          if (hit.exact) exact++;
-        }
-        if (!hit?.exact && fetch) this.#request(rect.z, x, y);
-      }
-    }
-
-    this.pending = !fetch && exact < rect.nx * rect.ny;
-
     const total = rect.nx * rect.ny;
-    this.window.set(rect.x0 / rect.n, rect.y0 / rect.n, rect.nx / rect.n, rect.ny / rect.n);
-    this.texture.needsUpdate = true;
-    this.rect = rect;
-    this.dirty = false;
-    this.coverage = drawn / total;
+    let changed = false;
+
+    if (moved || this.dirty || force) {
+      if (this.canvas.width !== w || this.canvas.height !== h) {
+        this.canvas.width = w;
+        this.canvas.height = h;
+        this.ctx.imageSmoothingQuality = "high";
+        // WebGL2 gives a texture immutable storage on first upload, so a
+        // resized canvas can never change the allocation it already has — the
+        // GPU would keep showing the first window's pixels. Drop it and let
+        // three make a new one. (Same trap the vector painter documents.)
+        this.texture.dispose();
+      }
+      // The canvas is addressed geographically, so once the window moves
+      // every slot in it means different ground and none of the old pixels
+      // are worth keeping. Cleared to transparent rather than to a colour:
+      // see the constructor.
+      this.ctx.clearRect(0, 0, w, h);
+      this.rect = rect;
+      this.slots = new Uint8Array(total).fill(ANCESTORS + 1);
+      this.fades.clear();
+      for (let i = 0; i < total; i++) {
+        const t = this.#slotTile(i);
+        const hit = this.#pick(rect.z, t.x, t.y);
+        if (!hit) continue;
+        this.ctx.drawImage(hit.img, hit.sx, hit.sy, hit.ss, hit.ss, t.tx * side, t.ty * side, side, side);
+        this.slots[i] = Math.round(Math.log2((hit.img.naturalWidth || hit.img.width) / hit.ss));
+      }
+      this.window.set(rect.x0 / rect.n, rect.y0 / rect.n, rect.nx / rect.n, rect.ny / rect.n);
+      this.texture.needsUpdate = true;
+      this.dirty = false;
+      changed = true;
+    }
+
+    const exact = this.#count();
+
+    if (fetch) this.#requestWindow(rect, centre, coarse);
+    this.pending = (!fetch || coarse) && exact < total;
+    this.pendingCoarse = fetch ? coarse : this.pendingCoarse;
+
     this.stats = {
       ...this.stats,
       tiles: total,
       z: rect.z,
-      exact: `${exact}/${total}`,
       size: `${w}x${h}`,
     };
-    return true;
+    return changed;
+  }
+
+  /**
+   * Asks for what the window is missing, in the order it should arrive: the
+   * backstop first, so every slot has *something* within one round trip, then
+   * the sharp tiles from the centre of the view outward — the place being
+   * looked at resolves first, and the filling-in spreads from it instead of
+   * sweeping down the screen in rows.
+   */
+  #requestWindow(rect, centre, coarse) {
+    const cu = ((((centre?.lon ?? 0) + 180) / 360) * rect.n - rect.x0 + rect.n) % rect.n;
+    const cm = mercN(centre?.lat ?? 0) * rect.n - rect.y0;
+    const order = [];
+    for (let i = 0; i < this.slots.length; i++) {
+      if (this.slots[i] === 0) continue;
+      const t = this.#slotTile(i);
+      order.push({ i, t, dist: Math.hypot(t.tx + 0.5 - cu, t.ty + 0.5 - cm) });
+    }
+    order.sort((a, b) => a.dist - b.dist);
+    const up = Math.min(BACKSTOP, rect.z);
+    if (up > 0) {
+      for (const { i, t } of order) {
+        if (this.slots[i] > up) this.#request(rect.z - up, t.x >> up, t.y >> up);
+      }
+    }
+    if (coarse) return;
+    for (const { t } of order) this.#request(rect.z, t.x, t.y);
   }
 }
-

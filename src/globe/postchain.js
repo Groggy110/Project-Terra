@@ -24,6 +24,7 @@ import {
   Scene,
   ShaderMaterial,
   Vector2,
+  Vector3,
   WebGLRenderTarget,
 } from "three";
 
@@ -65,7 +66,10 @@ uniform sampler2D tBloomA;
 uniform sampler2D tBloomB;
 uniform float uBloom;
 uniform float uCA;
+uniform vec3 uDisc;   // the planet on screen: centre in uv, radius in uv heights
+uniform float uAspect;
 uniform float uFxaa;
+uniform float uSharpen;
 uniform vec2 uTexel;
 varying vec2 vUv;
 
@@ -90,10 +94,54 @@ vec4 fxaa(vec2 uv) {
   return (lB < lMin || lB > lMax) ? A : B;
 }
 
+/*
+ * A light unsharp mask over the planet's face: the imagery is magnified on a
+ * large screen close in, and a touch of local contrast is what reads as
+ * resolution. Held to the disc and eased off well before the limb, where it
+ * would ring against the black, and clamped to the neighbourhood so it can
+ * crisp an edge but never overshoot into a halo.
+ */
+vec4 sharpen(vec4 c, vec2 uv) {
+  if (uSharpen <= 0.0 || uDisc.z <= 0.0) return c;
+  vec2 rel = uv - uDisc.xy;
+  rel.x *= uAspect;
+  float d = length(rel) / uDisc.z;
+  float k = uSharpen * (1.0 - smoothstep(0.9, 0.985, d));
+  if (k <= 0.0) return c;
+  vec3 n = texture2D(tBase, uv + vec2(0.0, uTexel.y)).rgb;
+  vec3 s = texture2D(tBase, uv - vec2(0.0, uTexel.y)).rgb;
+  vec3 e = texture2D(tBase, uv + vec2(uTexel.x, 0.0)).rgb;
+  vec3 w = texture2D(tBase, uv - vec2(uTexel.x, 0.0)).rgb;
+  vec3 lo = min(min(n, s), min(e, w));
+  vec3 hi = max(max(n, s), max(e, w));
+  vec3 sharp = c.rgb + (c.rgb * 4.0 - (n + s + e + w)) * k;
+  c.rgb = clamp(sharp, min(lo, c.rgb), max(hi, c.rgb));
+  return c;
+}
+
 void main() {
   vec4 base = uFxaa > 0.5 ? fxaa(vUv) : texture2D(tBase, vUv);
+  base = sharpen(base, vUv);
   if (uCA > 0.0) {
+    // Radial from the planet's centre and gathered at its limb, the way a
+    // lens fringes the edge of a bright disc: nothing over the middle of the
+    // world, the full split across the rim, easing off into the sky beyond.
     vec2 off = (vUv - 0.5) * uCA;
+    if (uDisc.z > 0.0) {
+      vec2 rel = vUv - uDisc.xy;
+      rel.x *= uAspect;
+      float len = length(rel);
+      float d = len / uDisc.z;
+      vec2 dir = len > 1e-5 ? rel / len : vec2(0.0);
+      dir.x /= uAspect;
+      // A band at the limb only: on the landing stage almost everything on
+      // screen is the upper cap, so a ramp from the middle out smeared the
+      // whole visible world. Measured in pixels of the rim, not a share of
+      // the radius, so a big disc gets the same crisp band as a small one.
+      float px = (1.0 - d) * uDisc.z / max(uTexel.y, 1e-6);
+      float k = (1.0 - smoothstep(0.0, 70.0, px)) * (1.0 - 0.8 * smoothstep(1.0, 1.25, d));
+      off = dir * uCA * k;
+    }
     base.r = texture2D(tBase, vUv + off).r;
     base.b = texture2D(tBase, vUv - off).b;
   }
@@ -126,7 +174,7 @@ export class PostChain {
   /** Whether any effect needs the render-target path this frame. */
   get active() {
     const p = STYLE.post;
-    return p.bloom.enabled || p.chromatic.enabled || p.aa !== "msaa";
+    return p.bloom.enabled || p.chromatic.enabled || (p.sharpen.enabled && p.sharpen.amount > 0) || p.aa !== "msaa";
   }
 
   #build() {
@@ -145,7 +193,10 @@ export class PostChain {
         tBloomB: { value: null },
         uBloom: { value: 0 },
         uCA: { value: 0 },
+        uDisc: { value: new Vector3() },
+        uAspect: { value: 1 },
         uFxaa: { value: 0 },
+      uSharpen: { value: 0 },
         uTexel: { value: new Vector2() },
       },
       true,
@@ -209,7 +260,15 @@ export class PostChain {
     }
     c.tBase.value = this.rt.texture;
     c.uCA.value = p.chromatic.enabled ? p.chromatic.amount : 0;
+    // The disc, from CSS pixels (y down) to uv (y up). Without one the
+    // aberration falls back to radial from the middle of the screen.
+    const disc = this.disc;
+    const view = this.view;
+    if (disc && view?.w && view?.h) c.uDisc.value.set(disc.x / view.w, 1 - disc.y / view.h, disc.r / view.h);
+    else c.uDisc.value.set(0, 0, 0);
+    c.uAspect.value = w / Math.max(h, 1);
     c.uFxaa.value = p.aa === "fxaa" ? 1 : 0;
+    c.uSharpen.value = p.sharpen.enabled ? p.sharpen.amount : 0;
     c.uTexel.value.set(1 / w, 1 / h);
     this.#draw(this.composite, null);
   }
