@@ -60,6 +60,12 @@ export class LabelLayer {
     this.selected = null;
     this.dimmed = new Set();
     this.reserved = [];
+    this.user = null;
+  }
+
+  /** Where the viewer is, drawn as a blue dot; null removes it. */
+  setUser(here) {
+    this.user = here;
   }
 
   setData({ ministries = [], places = [], countries = [] }) {
@@ -138,6 +144,17 @@ export class LabelLayer {
     const cz = -cc * Math.sin(cLo);
     const cosCity = Math.cos(cap * 0.9 * DEG);
     const cosCountry = Math.cos(cap * 0.8 * DEG);
+
+    // ---- you are here ----
+    // Drawn whatever else is crowding the spot, and claimed first so a city
+    // name never sits on top of it.
+    if (this.user) {
+      const p = projectPoint(this.user.lat, this.user.lon, camera, width, height, this.projection);
+      if (p.visible && inView(p)) {
+        this.#claim(p.x - 9, p.y - 9, 18, 18, true);
+        this.#me(p, ppd);
+      }
+    }
 
     // ---- ministries first: they are the point of the map ----
     // Every pin asks for its city plate; one that will not fit falls back to
@@ -335,6 +352,30 @@ export class LabelLayer {
     el.classList.toggle("is-urgent", m.urgentNeeds > 0);
     el.classList.toggle("is-active", active);
     write(node, "zIndex", active ? "30" : "20");
+  }
+
+  #me(p, ppd) {
+    const node = this.#node("me", () => {
+      const el = document.createElement("div");
+      el.className = "mark me";
+      el.setAttribute("role", "img");
+      el.setAttribute("aria-label", "Your location");
+      const ring = document.createElement("span");
+      ring.className = "me__accuracy";
+      const dot = document.createElement("span");
+      dot.className = "me__dot";
+      el.append(ring, dot);
+      return el;
+    });
+    node.el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
+    write(node, "opacity", clamp(p.edge, 0, 1).toFixed(2));
+    // The accuracy circle, at its true size on the ground: a degree of
+    // latitude is 111 km. Hidden until it is bigger than the dot, and capped
+    // so a city-wide guess does not paint the region blue.
+    const r = ((this.user.accuracy ?? 0) / 111320) * ppd;
+    write(node, "--acc", `${Math.min(r, 160).toFixed(0)}px`);
+    node.el.classList.toggle("has-accuracy", r > 12);
+    write(node, "zIndex", "40");
   }
 
   #place(key, name, p, cls, opacity, tick = false) {

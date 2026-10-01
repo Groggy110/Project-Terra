@@ -9,9 +9,10 @@
  * Two kinds of group:
  *
  *   shared      renderer, camera, motion, lighting, globe, grade, post,
- *               markers, labels — one value whatever the theme
- *   per theme   themes.dark / themes.light — the palette, the lamp and the
- *               sky, which are the whole difference between the two looks
+ *               markers, labels
+ *   themes.dark the palette, the lamp and the sky. There is one theme; the
+ *               light one was removed, and the key stays so exported
+ *               settings files keep their shape
  *
  * The grade is authored in gamma space with colour management off (see
  * earth.js), so every colour here is literally the value a shader multiplies.
@@ -282,7 +283,9 @@ export const STYLE = {
         // Streamed tiles, brought back to Blue Marble's footing before the land
         // grade runs over both. Net: gamma 1.0, saturation 1.05, gain 1.0 —
         // the imagery as published.
-        detail: { gamma: 2.0, sat: 0.65, gain: 0.88, lift: 0.0, sea: 0.5 },
+        // shadowGamma is the same curve at black, on land: it keeps forest
+        // from crushing to nothing (see the shader).
+        detail: { gamma: 2.0, shadowGamma: 1.1, sat: 0.65, gain: 0.88, lift: 0.0, sea: 0.5 },
         landTint: "#ffffff",
         landTintAmt: 0.25,
         emissive: "#517aa4",
@@ -340,106 +343,6 @@ export const STYLE = {
         countryBg: "#f5f5f5",
         countryBgAlpha: 0,
         countryColor: "#eaf1fa",
-      },
-    },
-
-    /**
-     * Light: the same lamp, overhead, with enough fill under it that nothing
-     * goes black. A form sitting on paper cannot also have a globe with a
-     * brooding shadow gathering at the bottom of it.
-     */
-    light: {
-      background: {
-        mode: "radial",
-        page: "#f4f8fc",
-        solid: "#f4f8fc",
-        linear: { top: "#fbfcfe", bottom: "#e7edf4", angle: 180 },
-        // Off-white, a touch brighter behind the globe and cooling toward the
-        // edges — the daylight counterpart of the night sky.
-        radial: { center: "#fbfcfe", mid: "#f3f6fa", edge: "#e7edf4", midStop: 45, width: 70, height: 80, x: 50, y: 48 },
-        pattern: "dots",
-        stars: { source: "texture", count: 1400, radius: 0.7, color: "#ffffff", seed: 7, opacity: 0.85, size: 1024, drift: 0, twinkle: 0, twinkleSpeed: 4 },
-        // A faint dot grid that fades out before it reaches the disc.
-        dots: { color: "#142640", alpha: 0.13, size: 1, spacing: 24, opacity: 0.8, fadeInner: 32, fadeOuter: 78 },
-        grain: { enabled: true, opacity: 0.035, size: 420 },
-      },
-      light: {
-        // Straight up the screen, tipped a little toward the viewer.
-        sunAzimuth: 0,
-        sunElevation: 76.1028,
-        sunMix: 0.7,
-        ambient: 0.56,
-        termWidth: 0.62,
-        termGamma: 1.15,
-        night: "#96afc9",
-        spec: 0.26,
-      },
-      surface: {
-        ocean: { deep: "#224c76", mid: "#2c6597", shelf: "#4b92c0" },
-        land: { gamma: 0.56, sat: 1.3, gain: 1.03, lift: 0.015 },
-        relief: 4.9,
-        snow: "#f6f9fd",
-        snowAmt: 0.88,
-        facet: { amount: 0.85, scale: 26, tilt: 0.34, flat: 0.5, edge: 0.07, edgeInk: 0.2 },
-        // Nearly all of the land curve comes back out — a shade less than in
-        // the night preset, because this page is paper.
-        detail: { gamma: 1.6, sat: 0.81, gain: 1.01, lift: 0.0, sea: 0.4 },
-        landTint: "#ffffff",
-        landTintAmt: 0,
-        emissive: "#96afc9",
-        emissiveIntensity: 0,
-        emissiveNightOnly: true,
-      },
-      atmosphere: {
-        enabled: true,
-        color: "#d6e7f8",
-        // The haze held to a bright rim at the limb rather than a veil over
-        // the disc.
-        fresnel: 0.68,
-        fresnelPow: 3.6,
-        rimBase: 0.58,
-        halo: { inner: "#e6f2fc", outer: "#c6def5", strength: 1, spread: 0.08, topBias: 0.7, falloff: 0.8, bloom: 0.3, bloomSpread: 0.38, rimPower: 3.2, spillPower: 1.7 },
-      },
-      // `real` swaps the synthetic sheet for NASA's Blue Marble cloud composite
-      // once it has streamed in — a real day's weather, at `realOpacity`.
-      // realLo/Hi are where its grey floor ends and where it is solid cloud.
-      clouds: {
-        tint: "#ffffff", shadow: "#d0deec", opacity: 0.27, sunMix: 0.45, lo: 0.43, hi: 0.96, gamma: 1.0, fade: 0,
-        real: 1, realOpacity: 0.72, realLo: 0.22, realHi: 0.88,
-      },
-      lines: {
-        coast: { color: "#ffffff", width: 1.05, alpha: 0.82 },
-        borders: { color: "#384e68", width: 0.85, alpha: 0.4 },
-        rivers: { color: "#6c9ec9", width: 0.8, alpha: 0.6 },
-        lakeEdge: { color: "#ffffff", width: 0.8, alpha: 0.6 },
-      },
-      markers: {
-        urgent: "#c0362b",
-        normal: "#d26e66",
-        rimColor: "#ffffff",
-        rimAlpha: 0.95,
-        shadowColor: "#102a4a",
-        shadowAlpha: 0.3,
-        shadowBlur: 3,
-        activeRimColor: "#ffffff",
-        activeShadowColor: "#102a4a",
-        activeShadowAlpha: 0.4,
-        glowColor: "#c0362b",
-        hoverColor: "#e04a3d",
-        activeColor: "#8f1f17",
-        pulseColor: "#c0362b",
-      },
-      labels: {
-        chipBg: "#ffffff",
-        chipBgAlpha: 0.95,
-        chipHoverBg: "#ffffff",
-        chipColor: "#0e1726",
-        placeColor: "#f4f7fb",
-        placeHalo: "#08101c",
-        placeHaloAlpha: 0.72,
-        countryBg: "#ffffff",
-        countryBgAlpha: 0.91,
-        countryColor: "#0e1726",
       },
     },
   },

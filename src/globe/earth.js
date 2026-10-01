@@ -123,6 +123,7 @@ export function createEarth(
     uDetailWindow: { value: detailWindow ?? new Vector4(0, 0, 1, 1) },
     uDetailMix: { value: 0 },
     uDetailGamma: { value: 1.5 },
+    uDetailShadowGamma: { value: 1.5 },
     uDetailSat: { value: 0.8 },
     uDetailGain: { value: 1 },
     uDetailLift: { value: 0 },
@@ -365,6 +366,7 @@ export function applyTheme(t, shared, earth, clouds, halo) {
   u.uFacetEdge.value = sf.facet.edge;
   u.uFacetEdgeInk.value = sf.facet.edgeInk;
   u.uDetailGamma.value = sf.detail.gamma;
+  u.uDetailShadowGamma.value = sf.detail.shadowGamma ?? sf.detail.gamma;
   u.uDetailSat.value = sf.detail.sat;
   u.uDetailGain.value = sf.detail.gain;
   u.uDetailLift.value = sf.detail.lift;

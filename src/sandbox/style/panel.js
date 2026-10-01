@@ -68,7 +68,7 @@ export class StylePanel {
   }
 
   get theme() {
-    return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+    return "dark";
   }
 
   get globe() {
@@ -80,10 +80,6 @@ export class StylePanel {
     this.#build();
     this.#bindKeys();
     this.#bindFineDrag();
-    this.themeWatch = new MutationObserver(() => {
-      if (this.builtFor !== this.theme) this.#rebuild();
-    });
-    this.themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     // A scene arriving is a whole new STYLE under the same controls: show
     // it, and start the undo history over, since undoing into the other
     // scene's look would make no sense.
@@ -200,12 +196,6 @@ export class StylePanel {
       this.sceneCtrl.keep = true;
       this.sceneCtrl.onChange((v) => this.#goScene(v));
     }
-
-    const theme = t.add(this.ui, "theme", { Dark: "dark", Light: "light" }).name("Editing theme");
-    theme.keep = true;
-    theme.onChange((v) => {
-      if (v !== this.theme) document.querySelector('[data-action="cycle-theme"]')?.click();
-    });
 
     this.abCtrl = t.add(this.ui, "ab").name("A/B: show original");
     this.abCtrl.keep = true;
@@ -581,6 +571,7 @@ export class StylePanel {
 
     const de = this.#folder(f, "Streamed imagery grade", [[...T, "surface", "detail"]]);
     c.num(de, sf.detail, "gamma", 0.2, 3, 0.01, "Gamma");
+    c.num(de, sf.detail, "shadowGamma", 0.2, 3, 0.01, "Gamma in the shadows (land)");
     c.num(de, sf.detail, "sat", 0, 2, 0.01, "Saturation");
     c.num(de, sf.detail, "gain", 0, 2, 0.01, "Gain");
     c.num(de, sf.detail, "lift", -0.2, 0.3, 0.001, "Lift");

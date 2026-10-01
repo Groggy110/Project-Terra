@@ -185,6 +185,7 @@ export const menuIcons = {
   panel: () => opt('<rect x="2.2" y="3" width="11.6" height="10" rx="1.8"/><path d="M10 3v10"/>'),
   theme: () => opt('<circle cx="8" cy="8" r="5.6"/><path d="M8 2.4a5.6 5.6 0 0 0 0 11.2z" class="ico__fill"/>'),
   reset: () => opt('<path d="M13.2 6.9A4.9 4.9 0 1 0 13.6 10"/><path d="M13.6 3.8v3.2h-3.2"/>'),
+  locate: () => opt('<path d="M13.4 2.6 2.6 7.1l4.5 1.8 1.8 4.5Z"/>'),
   inbox: () => opt('<path d="M2.4 9.2 4 3.6h8l1.6 5.6v3.2H2.4z"/><path d="M2.4 9.2h3.4l.8 1.4h2.8l.8-1.4h3.4"/>'),
   trash: () => opt('<path d="M3.4 4.6h9.2M6.4 4.6V3.4h3.2v1.2M4.6 4.6l.7 8h5.4l.7-8"/>'),
 };

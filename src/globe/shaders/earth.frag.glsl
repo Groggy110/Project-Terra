@@ -18,6 +18,7 @@ uniform float uDetailMix;   // 0 off, 1 imagery fully in charge of the land
 // a tile back to the base's footing *before* that grade, so one set of land
 // controls still governs the look and the two never read as two maps.
 uniform float uDetailGamma;
+uniform float uDetailShadowGamma; // the gamma at black, easing to uDetailGamma by mid-grey (land only)
 uniform float uDetailSat;
 uniform float uDetailGain;
 uniform float uDetailLift;
@@ -219,7 +220,24 @@ void main() {
     vec4 tile = texture2D(uDetail, clamp(duv, 0.0, 1.0));
     inDetail *= tile.a;
     detail = mix(vec3(dot(tile.rgb, LUMA)), tile.rgb, uDetailSat);
-    detail = pow(max(detail, vec3(0.0)), vec3(uDetailGamma)) * uDetailGain + uDetailLift;
+    // The gamma that brings the tiles to Blue Marble's footing squares the
+    // values, and the land grade after it takes a little more off the
+    // bottom: together they put anything under a fifth of full brightness at
+    // black. Bright ground - desert, rock, city - is untouched by that, but
+    // rainforest photographs at a tenth to a fifth, so the Amazon, the Congo
+    // and the Caribbean's green islands went out entirely once the tiles came
+    // in. On land the brightness follows a gentler gamma in the shadows, back
+    // to the full one by mid-grey, so only those regions change. The colour
+    // is mostly the gentler curve's, with a quarter of the full curve's
+    // scaled up to the new brightness: the first alone turns forest grey,
+    // the second alone turns it a flat neon green.
+    vec3 full = pow(max(detail, vec3(0.0)), vec3(uDetailGamma));
+    float dL = max(dot(detail, LUMA), 0.0);
+    float dG = mix(uDetailShadowGamma, uDetailGamma, smoothstep(0.0, 0.5, dL));
+    vec3 soft = pow(max(detail, vec3(0.0)), vec3(dG));
+    vec3 kept = full * (dot(soft, LUMA) / max(dot(full, LUMA), 1e-4));
+    vec3 toe = min(mix(soft, kept, 0.25), vec3(1.0));
+    detail = mix(full, toe, mask) * uDetailGain + uDetailLift;
     // Land, and - once you are close enough - water too. See uDetailWater at
     // the ocean mix below for why the styled sea has to let go at the end.
     base = mix(base, detail, inDetail * max(mask, uDetailWater));

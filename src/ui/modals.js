@@ -588,7 +588,7 @@ export function pickUpModal(layer, need, { canUpload, onSignIn, onSubmit }) {
 
     /* submit */
     const error = h("span", { class: "modal__note", style: { color: "var(--urgent)" } });
-    const send = h("button", { class: "btn btn--accent" }, "Send to " + need.ministryName);
+    const send = h("button", { class: "btn btn--accent" }, "Send application");
     for (const el of [why, quals]) {
       el.addEventListener("input", () => {
         el.removeAttribute("aria-invalid");
@@ -616,7 +616,7 @@ export function pickUpModal(layer, need, { canUpload, onSignIn, onSubmit }) {
       } catch (e) {
         error.textContent = e.message || "Something went wrong. Please try again.";
         send.disabled = false;
-        send.textContent = "Send to " + need.ministryName;
+        send.textContent = "Send application";
       }
     });
 

@@ -119,7 +119,6 @@ export class App {
       search: document.getElementById("searchInput"),
       clearSearch: document.getElementById("searchClear"),
       suggest: document.getElementById("suggest"),
-      themeBtn: document.getElementById("themeBtn"),
       chrome: document.querySelector(".chrome"),
     };
 
@@ -179,8 +178,6 @@ export class App {
       enterLanding();
     }
     this.panel.setOpen(false);
-    // Every visit opens on the night globe; the toggle lasts for the visit.
-    this.#theme("dark");
     this.#bindChrome();
     this.#bindKeys();
 
@@ -206,7 +203,7 @@ export class App {
     try {
       this.globe.setMinistries(this.net.ministries);
       await this.globe.start();
-      this.globe.setTheme(this.theme);
+      this.#resumeLocation();
       this.globe.setMinistries(this.net.ministries);
       this.#renderHeroCount();
       this.#initCredit();
@@ -556,7 +553,6 @@ export class App {
       else if (action === "account") this.#accountMenu(trigger);
       else if (action === "suggested") this.openSuggestions();
       else if (action === "about") this.setView("about");
-      else if (action === "cycle-theme") this.#theme(this.theme === "light" ? "dark" : "light");
       else if (action === "menu") this.#menu(trigger);
       else if (action === "open-board") this.setView(this.board.open ? "globe" : "needs");
       else if (action === "join") this.#join();
@@ -617,13 +613,11 @@ export class App {
         this.globe?.reset();
         this.#deselect();
       } else if (e.key.toLowerCase() === "b") this.setView(this.board.open ? "globe" : "needs");
-      else if (e.key.toLowerCase() === "t") this.#theme(this.theme === "light" ? "dark" : "light");
     });
   }
 
   #menu(anchor) {
     const saved = store.interestCount + store.posted.length;
-    const dark = this.theme === "light";
     openPop({
       anchor,
       parent: this.el.chrome,
@@ -653,12 +647,7 @@ export class App {
           : []),
         // SANDBOX END
         null,
-        {
-          label: `Switch to ${dark ? "dark" : "light"} mode`,
-          icon: menuIcons.theme,
-          kbd: "T",
-          run: () => this.#theme(dark ? "dark" : "light"),
-        },
+        { label: "Show where I am", note: "A blue dot at your location", icon: menuIcons.locate, run: () => this.#nearMe() },
         { label: "Reset the view", icon: menuIcons.reset, kbd: "R", run: () => this.globe?.reset() },
         null,
         {
@@ -673,19 +662,6 @@ export class App {
         },
       ],
     });
-  }
-
-  #theme(name) {
-    this.theme = name;
-    document.documentElement.dataset.theme = name;
-    // The icon is the whole control (the sun or moon swaps in CSS), so the
-    // words live in its label, and a toast would only repeat what just changed.
-    const next = name === "light" ? "Switch to dark mode" : "Switch to light mode";
-    for (const btn of document.querySelectorAll(".theme-toggle")) {
-      btn.setAttribute("aria-label", next);
-      btn.setAttribute("title", next);
-    }
-    this.globe?.setTheme(name);
   }
 
   /* ---------------------------------------------------------------- views */
@@ -990,14 +966,68 @@ export class App {
     this.openSuggestions();
   }
 
-  /** Flies to the phone's own position, at region height. */
+  /**
+   * Flies to where you are, at region height, and puts a blue dot there that
+   * follows you for the rest of the visit. The first press asks the browser;
+   * after that the dot is kept current by watchPosition.
+   */
   #nearMe() {
     if (!navigator.geolocation) return this.toast("This browser cannot share its location.");
+    this.#leaveHero();
+    if (this.here) return this.#flyHere();
+    for (const b of document.querySelectorAll('[data-action="near-me"]')) b.classList.add("is-busy");
     navigator.geolocation.getCurrentPosition(
-      (pos) => this.globe?.focus({ lat: pos.coords.latitude, lon: pos.coords.longitude }, { zoom: 0.5 }),
-      () => this.toast("Location is off for this site."),
-      { maximumAge: 600000, timeout: 8000 },
+      (pos) => {
+        this.#setHere(pos);
+        this.#flyHere();
+        this.#watchHere();
+      },
+      (err) => {
+        for (const b of document.querySelectorAll('[data-action="near-me"]')) b.classList.remove("is-busy");
+        this.toast(err.code === err.PERMISSION_DENIED ? "Location is off for this site. Allow it in your browser's settings." : "Could not find where you are just now.");
+      },
+      { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 },
     );
+  }
+
+  #flyHere() {
+    this.globe?.focus({ lat: this.here.lat, lon: this.here.lon }, { zoom: 0.5 });
+  }
+
+  #setHere(pos) {
+    this.here = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy };
+    this.globe?.setUserLocation(this.here);
+    for (const b of document.querySelectorAll('[data-action="near-me"]')) {
+      b.classList.remove("is-busy");
+      b.classList.add("is-on");
+    }
+  }
+
+  #watchHere() {
+    if (this.hereWatch != null) return;
+    this.hereWatch = navigator.geolocation.watchPosition(
+      (pos) => this.#setHere(pos),
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 30000 },
+    );
+  }
+
+  /**
+   * Someone who has already let the site see their location gets the dot back
+   * on the next visit without pressing anything — but no flight: where the
+   * globe opens is still the landing's to decide.
+   */
+  async #resumeLocation() {
+    try {
+      const state = await navigator.permissions?.query({ name: "geolocation" });
+      if (state?.state !== "granted") return;
+      navigator.geolocation.getCurrentPosition((pos) => {
+        this.#setHere(pos);
+        this.#watchHere();
+      }, () => {}, { maximumAge: 300000, timeout: 10000 });
+    } catch {
+      // Safari before 16 has no permissions API; the button still works.
+    }
   }
 
   /** The filter chips are a row you call up on a phone, not a fixture. */
@@ -1300,7 +1330,6 @@ export class App {
       openBoard: () => this.setView("needs"),
       openNeed: (need) => this.openNeed(need, { fly: true }),
       clearFilters: () => this.clearFilters(),
-      focusMinistry: (m) => this.globe?.focus(m, { zoom: 1 }),
       layoutChanged: () => {
         // On a phone the sheet's close button means "done with this place".
         if (PHONE.matches && !this.panel.open && this.selected) this.#deselect();

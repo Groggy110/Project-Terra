@@ -355,7 +355,7 @@ export class Globe {
     const load = (url) =>
       new Promise((resolve, reject) => loader.load(url, resolve, undefined, () => reject(new Error(url))));
 
-    // The photographic cloud sheet (STYLE.themes.light.clouds.real). Nearly two
+    // The photographic cloud sheet (STYLE.themes.dark.clouds.real). Nearly two
     // megabytes, and nothing needs it to draw, so it is not on the loading
     // bar: it streams alongside and fades in when it lands (see #tick).
     const realClouds = load("/textures/clouds-real.jpg").catch(() => null);
@@ -646,6 +646,12 @@ export class Globe {
       places: this.places || [],
       countries: this.countries || [],
     });
+    this.dirty = true;
+  }
+
+  /** The viewer's own position, `{ lat, lon, accuracy }`, or null to hide the dot. */
+  setUserLocation(here) {
+    this.labels.setUser(here);
     this.dirty = true;
   }
 

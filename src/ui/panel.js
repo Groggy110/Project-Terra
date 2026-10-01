@@ -168,14 +168,9 @@ export class Panel {
     );
     body.appendChild(kv);
 
-    const foot = h(
-      "div",
-      { class: "panel__foot" },
-      h("button", { class: "btn btn--accent", onclick: () => this.on.focusMinistry(m) }, "Fly here"),
-      h("button", { class: "btn btn--soft", onclick: () => this.on.postNeed(m.id) }, "Post a need"),
-    );
-
-    this.root.append(this.#head(m.name, { back: true }), body, foot);
+    // No footer: the globe has already flown here, and posting is the
+    // ministry's own business, from its account menu.
+    this.root.append(this.#head(m.name, { back: true }), body);
   }
 }
 

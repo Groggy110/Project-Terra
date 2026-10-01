@@ -129,7 +129,7 @@ export class VectorStore {
  * dark theme's ink is a faint turquoise.
  */
 function inkFor(theme) {
-  const lines = (STYLE.themes[theme] || STYLE.themes.light).lines;
+  const lines = (STYLE.themes[theme] || STYLE.themes.dark).lines;
   const out = {};
   for (const [key, s] of Object.entries(lines)) {
     const n = parseInt(s.color.slice(1), 16);
@@ -184,7 +184,7 @@ export class VectorPainter {
     this.paintedDensity = 0;
     this.paintedQuality = 0;
     this.scale = "50m";
-    this.theme = "light";
+    this.theme = "dark";
     this.stats = { paints: 0, lastMs: 0, size: "0x0", features: 0 };
   }
 
@@ -260,7 +260,7 @@ export class VectorPainter {
    * foreshortened edge, so finer data there would cost time for pixels no one
    * can resolve. Repainted only when the theme changes.
    */
-  repaintBase(theme = "light") {
+  repaintBase(theme = "dark") {
     const set = this.store.get("50m");
     if (!set || this.baseTheme === theme) return false;
     const view = {
@@ -282,7 +282,7 @@ export class VectorPainter {
    * exceeds the budget the window narrows - longitude first, since longitude
    * is what the limb crushes - rather than dropping resolution.
    */
-  repaint(bounds, pxPerDeg, { theme = "light", quality = 1, pad = 1.28, centre } = {}) {
+  repaint(bounds, pxPerDeg, { theme = "dark", quality = 1, pad = 1.28, centre } = {}) {
     const scale = VectorPainter.scaleFor(pxPerDeg);
     const set = this.store.get(scale) || this.store.get("50m");
     if (!set) return false;

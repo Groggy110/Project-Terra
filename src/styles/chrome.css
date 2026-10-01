@@ -42,21 +42,7 @@ body.is-live .chrome {
 }
 
 :root {
-  --fade-floor: var(--paper);
-}
-
-:root[data-theme="dark"] {
   --fade-floor: #000;
-}
-
-/* By day the floor is paper, and a full-strength wash of it reads as mist
-   over the planet rather than ground under the bar: half as much. */
-:root:not([data-theme="dark"]) .chrome::before {
-  height: 36vh;
-}
-
-:root:not([data-theme="dark"]) body.is-hero.hero-in .chrome::before {
-  opacity: 0.6;
 }
 
 body.is-hero.hero-in .chrome::before {
@@ -190,8 +176,10 @@ body.is-hero.hero-in .chrome::before {
   transition: color 0.18s;
 }
 
-.nav__item:hover {
-  color: var(--ink-2);
+@media (hover: hover) {
+  .nav__item:hover {
+    color: var(--ink-2);
+  }
 }
 
 .nav__item.is-active {
@@ -264,7 +252,7 @@ body.is-hero .hint {
   color: #4d6d99;
 }
 
-:root[data-theme="dark"] .crumbs__item:last-child {
+:root .crumbs__item:last-child {
   color: #7ba3d8;
 }
 
@@ -332,7 +320,7 @@ body.is-hero .search input {
     0 38px 80px -30px rgba(16, 42, 74, 0.34);
 }
 
-:root[data-theme="dark"] body.is-hero .search input {
+:root body.is-hero .search input {
   border-color: var(--line-2);
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.4),
@@ -1008,11 +996,13 @@ body.is-hero .chip__btn {
   transition: background 0.18s, border-color 0.18s, color 0.18s, translate 0.3s var(--ease-out), box-shadow 0.3s var(--ease);
 }
 
-body.is-hero .chip__btn:hover {
-  background: var(--surface);
-  border-color: var(--line-2);
-  translate: 0 -1px;
-  box-shadow: var(--shadow-1), 0 8px 18px -10px color-mix(in srgb, var(--accent) 45%, transparent);
+@media (hover: hover) {
+  body.is-hero .chip__btn:hover {
+    background: var(--surface);
+    border-color: var(--line-2);
+    translate: 0 -1px;
+    box-shadow: var(--shadow-1), 0 8px 18px -10px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
 }
 
 .chip {
@@ -1036,18 +1026,16 @@ body.is-hero .chip__btn:hover {
   transition: background 0.18s, border-color 0.18s, color 0.18s;
 }
 
-:root[data-theme="dark"] .chip__btn {
+:root .chip__btn {
   background: rgba(24, 34, 47, 0.66);
   border-color: rgba(150, 185, 230, 0.12);
 }
 
-.chip__btn:hover {
-  background: rgba(255, 255, 255, 0.86);
-  border-color: var(--line-2);
-}
-
-:root[data-theme="dark"] .chip__btn:hover {
-  background: rgba(30, 42, 58, 0.88);
+@media (hover: hover) {
+  .chip__btn:hover {
+    background: rgba(30, 42, 58, 0.88);
+    border-color: var(--line-2);
+  }
 }
 
 .chip.is-open .chip__btn,
@@ -1305,7 +1293,7 @@ body.is-hero .grabber {
   animation: toast-in 0.3s var(--ease-out);
 }
 
-:root[data-theme="dark"] .toast {
+:root .toast {
   background: #e8eff8;
   color: #0e1726;
 }
@@ -1957,7 +1945,11 @@ body.is-hero .suggest {
     /* Ends short of the round controls, so a chip scrolled sideways never
        slides under the button that closes the row. */
     right: calc(var(--edge) + var(--safe-r) + var(--fab) + 8px);
-    padding-right: 0;
+    /* The row is cut where the buttons begin, so it fades there rather than
+       slicing a chip in half; the end padding lets the last chip scroll
+       clear of the fade. */
+    padding-right: 26px;
+    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
     opacity: 0;
     pointer-events: none;
     translate: 0 8px;
@@ -2122,4 +2114,18 @@ body.is-hero .suggest {
   font-size: 11px;
   font-weight: 680;
   font-variant-numeric: tabular-nums;
+}
+
+/* Find me, on the phone's round button and the desktop's: filled in once the
+   dot is on the map, breathing while the browser is still looking. */
+[data-action="near-me"].is-on svg path {
+  fill: currentColor;
+}
+
+[data-action="near-me"].is-busy svg {
+  animation: locate-busy 1s ease-in-out infinite alternate;
+}
+
+@keyframes locate-busy {
+  to { opacity: 0.35; }
 }

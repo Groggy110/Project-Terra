@@ -402,3 +402,63 @@ body.is-live .overlay {
 body.is-hero .overlay .place {
   visibility: hidden;
 }
+
+/* ---------- you are here ---------- */
+
+/* The blue dot everyone knows from a maps app: white-rimmed, a soft pulse
+   round it, and the accuracy circle at its true size on the ground once it
+   is bigger than the dot. Not a target: a click on it is a click on the
+   globe. */
+.me {
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+
+.me__dot,
+.me__dot::after,
+.me__accuracy {
+  position: absolute;
+  left: 0;
+  top: 0;
+  translate: -50% -50%;
+  border-radius: 50%;
+}
+
+.me__dot {
+  width: 15px;
+  height: 15px;
+  background: #2f8cff;
+  box-shadow: 0 0 0 2.5px #fff, 0 1px 6px 2px rgba(0, 0, 0, 0.45);
+}
+
+.me__dot::after {
+  content: "";
+  left: 50%;
+  top: 50%;
+  width: 15px;
+  height: 15px;
+  background: rgba(47, 140, 255, 0.45);
+  animation: me-pulse 2.2s ease-out infinite;
+}
+
+.me__accuracy {
+  display: none;
+  width: calc(var(--acc, 0px) * 2);
+  height: calc(var(--acc, 0px) * 2);
+  background: rgba(47, 140, 255, 0.14);
+  border: 1px solid rgba(47, 140, 255, 0.4);
+}
+
+.me.has-accuracy .me__accuracy {
+  display: block;
+}
+
+@keyframes me-pulse {
+  from { scale: 1; opacity: 0.9; }
+  to { scale: 3.2; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .me__dot::after { animation: none; opacity: 0; }
+}

@@ -122,7 +122,7 @@ body.board-open .panel {
   border: 1px solid var(--line);
 }
 
-:root[data-theme="dark"] .stat {
+:root .stat {
   background: color-mix(in srgb, var(--surface-sunk) 60%, transparent);
 }
 
@@ -297,7 +297,8 @@ body.board-open .panel {
 .kv__k {
   color: var(--muted);
   flex: none;
-  width: 88px;
+  min-width: 88px;
+  white-space: nowrap;
 }
 
 .kv__v {

@@ -108,6 +108,11 @@ export class PanelSheet {
     let vel = 0;
     let active = false;
     let fromBody = false;
+    // A press that starts on a card or a button is a tap until it travels;
+    // only then does it become the sheet's drag (and the tap is cancelled).
+    let armed = false;
+    let dragged = false;
+    const SLOP = 7;
 
     const body = () => this.root.querySelector(".panel__body");
 
@@ -118,18 +123,37 @@ export class PanelSheet {
       // A drag inside the list is the sheet's only when the list has nowhere
       // left to scroll up to.
       if (fromBody && !(this.detent !== "full" || b.scrollTop <= 0)) return;
-      if (e.target.closest("button, a, input, select, textarea")) return;
+      if (e.target.closest("input, select, textarea")) return;
 
       active = true;
+      // Need cards are buttons, and they fill most of the list: refusing a
+      // drag that starts on one left only the gaps between them to scroll by.
+      armed = !!e.target.closest("button, a");
+      dragged = false;
       startY = lastY = e.clientY;
       lastT = e.timeStamp;
       vel = 0;
       startH = parseFloat(getComputedStyle(this.root).getPropertyValue("--sheet-h")) || this.#heights()[this.detent];
-      this.root.classList.add("is-dragging");
-      document.body.classList.add("sheet-dragging");
+      if (!armed) begin();
       window.addEventListener("pointermove", move, { passive: false });
       window.addEventListener("pointerup", up);
       window.addEventListener("pointercancel", up);
+    };
+
+    const begin = (y = startY) => {
+      // Measured from where the drag took over, so the sheet does not jump
+      // by the distance a tap is allowed to wander.
+      startY = lastY = y;
+      armed = false;
+      dragged = true;
+      this.root.classList.add("is-dragging");
+      document.body.classList.add("sheet-dragging");
+    };
+
+    // The click that a drag ending on a card would otherwise deliver.
+    const swallow = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
     };
 
     /**
@@ -154,6 +178,11 @@ export class PanelSheet {
     const move = (e) => {
       if (!active) return;
       const dy = e.clientY - startY;
+      if (armed) {
+        if (Math.abs(dy) < SLOP) return;
+        begin(e.clientY);
+        return;
+      }
       // Dragging down from inside the list only takes over once it is at the
       // top; past that the list would have scrolled, so let it.
       const b = body();
@@ -178,6 +207,9 @@ export class PanelSheet {
 
     const up = () => {
       if (!active) return;
+      if (!dragged) return release();
+      window.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 400);
       const now = parseFloat(getComputedStyle(this.root).getPropertyValue("--sheet-h"));
       const hs = this.#heights();
       const order = ["peek", "half", "full"];

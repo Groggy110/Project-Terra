@@ -137,17 +137,15 @@ const block = (selector, vars) =>
 function optionalRules(S) {
   const m = S.markers;
   const out = [];
-  for (const [scope, t] of [[":root", S.themes.light], [':root[data-theme="dark"]', S.themes.dark]]) {
-    const tm = t.markers;
-    if (m.hoverColorOn) out.push(`${scope} .pin:hover .pin__dot { background: ${tm.hoverColor}; }`);
-    if (m.activeColorOn) out.push(`${scope} .pin.is-active .pin__dot { background: ${tm.activeColor}; }`);
-    if (m.pulse.mode !== "off") {
-      const sel = m.pulse.mode === "urgent" ? ".pin.is-urgent .pin__dot::after" : ".pin .pin__dot::after";
-      out.push(
-        `${scope} ${sel} { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; ` +
-          `box-shadow: 0 0 0 1.5px ${tm.pulseColor}; animation: terra-pin-pulse ${m.pulse.speed}s ease-out infinite; }`,
-      );
-    }
+  const tm = S.themes.dark.markers;
+  if (m.hoverColorOn) out.push(`:root .pin:hover .pin__dot { background: ${tm.hoverColor}; }`);
+  if (m.activeColorOn) out.push(`:root .pin.is-active .pin__dot { background: ${tm.activeColor}; }`);
+  if (m.pulse.mode !== "off") {
+    const sel = m.pulse.mode === "urgent" ? ".pin.is-urgent .pin__dot::after" : ".pin .pin__dot::after";
+    out.push(
+      `:root ${sel} { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; ` +
+        `box-shadow: 0 0 0 1.5px ${tm.pulseColor}; animation: terra-pin-pulse ${m.pulse.speed}s ease-out infinite; }`,
+    );
   }
   if (m.pulse.mode !== "off") {
     out.push(`@keyframes terra-pin-pulse { from { scale: 1; opacity: 0.9; } to { scale: ${m.pulse.size}; opacity: 0; } }`);
@@ -158,8 +156,7 @@ function optionalRules(S) {
 /** The whole generated stylesheet for a STYLE. */
 export function styleCss(S) {
   return [
-    block(":root", { ...sharedVars(S), ...themeVars(S.themes.light, S) }),
-    block(':root[data-theme="dark"]', themeVars(S.themes.dark, S)),
+    block(":root", { ...sharedVars(S), ...themeVars(S.themes.dark, S) }),
     ...optionalRules(S),
   ].join("\n\n");
 }
