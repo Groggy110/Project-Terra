@@ -60,7 +60,7 @@ export const LANDING = {
  * is Asia rather than the Arctic: Southeast Asia and the Philippines, a
  * little west of centre so the drift carries them across.
  */
-export const STAGE = { rim: 0.47, minRim: 300, maxSize: 3, scale: 0.94, x: 0, spin: 0.7, rise: 0.12, home: { lat: -22, lon: 106 } };
+export const STAGE = { rim: 0.47, minRim: 300, maxSize: 3, scale: 0.94, x: 0, spin: 1.4, rise: 0.1, home: { lat: -22, lon: 106 } };
 
 /**
  * Stepping off the stage: the planet comes up to the centre on the camera's
@@ -80,7 +80,7 @@ export const STAGE_EXIT = { ms: 2600, dist: 3.05, turn: 14 };
  * much of the blue inside "anywhere." is kept, the rest going to the sky's
  * colour: under 1 lets the outline stand out.
  */
-export const HEADLINE = { size: 1, raise: 0, fade: 0.63, glow: 0, stroke: 0.61, aura: 0.37, fill: 0.74 };
+export const HEADLINE = { size: 0.98, raise: 10, fade: 0.78, glow: 0.34, stroke: 0.73, aura: 0.26, fill: 0.21 };
 
 /** The shipped values of the three above, for the editor's resets. */
 export const LANDING_DEFAULTS = structuredClone({ stage: STAGE, exit: STAGE_EXIT, headline: HEADLINE });
