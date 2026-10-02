@@ -154,6 +154,66 @@ button {
   }
 }
 
+/* The far sky, under the star sheet's own stars: a finer dust of stars on
+   a tile of its own (/textures/stardust.png), turning very slowly against the
+   sheet so the field has depth, and a few soft clouds of colour — violet,
+   blue, a trace of rose — with the faint band of a galaxy across them. All
+   of it barely there: detail for the eye that looks, never a picture
+   competing with the planet. The same on the landing page and the working
+   view. */
+.paper__galaxy {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.paper__galaxy::before,
+.paper__galaxy::after {
+  content: "";
+  position: absolute;
+}
+
+/* The nebula and the galaxy's band. */
+.paper__galaxy::before {
+  inset: 0;
+  background:
+    radial-gradient(42% 34% at 16% 20%, rgb(118 92 230 / 0.16), transparent 72%),
+    radial-gradient(36% 30% at 86% 26%, rgb(52 118 230 / 0.14), transparent 72%),
+    radial-gradient(30% 24% at 64% 6%, rgb(214 110 200 / 0.07), transparent 70%),
+    radial-gradient(40% 30% at 92% 78%, rgb(70 90 210 / 0.08), transparent 72%),
+    linear-gradient(
+      118deg,
+      transparent 30%,
+      rgb(150 170 255 / 0.035) 42%,
+      rgb(190 200 255 / 0.06) 50%,
+      rgb(150 170 255 / 0.035) 58%,
+      transparent 70%
+    );
+  mix-blend-mode: screen;
+  opacity: 0.85;
+}
+
+/* The dust: twice the window, so the slow turn never shows an edge. */
+.paper__galaxy::after {
+  inset: -50%;
+  background: url("/textures/stardust.png") 0 0 / 640px 640px repeat;
+  opacity: 0.38;
+  animation: galaxy-turn 600s linear infinite;
+}
+
+@keyframes galaxy-turn {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paper__galaxy::after {
+    animation: none;
+  }
+}
+
 /* Grain is a property of paper, and over a night sky it is only noise — so
    the dark theme leaves it out. (It once stood in for the rim light bleeding
    off the top of the limb; the halo shader's spill does that now, anchored

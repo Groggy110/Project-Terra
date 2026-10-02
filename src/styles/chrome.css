@@ -113,37 +113,32 @@ body.is-hero.hero-in .chrome::before {
   min-width: 0;
 }
 
-/* Set in a serif to answer the wordmark under the globe in the supplied
-   lockup, rather than reproducing that wordmark as a picture: it is navy, and
-   navy is invisible against this theme's sky. As text it takes --ink and is
-   legible in both themes, stays crisp at any zoom, and is still selectable
-   and readable to a screen reader. */
-.brand__name {
-  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
-  font-size: 19px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  color: var(--ink);
-  /* The wordmark stands alone, underlined in the blue of the headline's
-     "anywhere." — the one mark the brand carries. */
-  position: relative;
-  padding-bottom: 3px;
+/* The logo: the planet's rim with the star rising over it, and the
+   wordmark under them. A transparent picture, white with its own glow, so it
+   sits straight on the sky; small, as a mark in a corner should be. */
+.brand__logo {
+  display: block;
+  height: 30px;
+  width: auto;
+  margin: -2px 0 -2px -2px;
+  user-select: none;
+  -webkit-user-drag: none;
+  transition: filter 0.3s var(--ease);
 }
 
-.brand__name::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--brand-blue);
+.brand:hover .brand__logo {
+  filter: brightness(1.12) drop-shadow(0 0 10px rgb(120 170 255 / 0.35));
 }
 
+/* A hairline rather than a slash: a slash belongs between words, and the
+   name is a picture now. */
 .brand__sep {
-  color: var(--faint);
-  font-size: 15px;
+  width: 1px;
+  height: 22px;
+  margin: 0 4px 0 2px;
+  background: var(--line-2);
+  font-size: 0;
+  color: transparent;
 }
 
 .brand__product {
@@ -1443,8 +1438,8 @@ body.is-hero .grabber {
     display: none;
   }
 
-  .brand__name {
-    font-size: 17.5px;
+  .brand__logo {
+    height: 28px;
   }
 
   .topbar {

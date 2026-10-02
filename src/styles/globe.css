@@ -281,9 +281,10 @@ body.is-live .overlay {
 /* The wordmark, breathing while the world loads; the bar underneath is the
    honest progress indicator. */
 .boot__mark {
-  display: inline-block;
+  display: block;
+  width: min(160px, 42vw);
+  height: auto;
   margin: 0 auto 20px;
-  font-size: 30px;
   animation: boot-breathe 2.8s var(--ease) infinite;
 }
 

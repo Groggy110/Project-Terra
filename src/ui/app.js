@@ -468,7 +468,7 @@ export class App {
       h(
         "div",
         { class: "boot__inner" },
-        h("span", { class: "boot__mark brand__name", text: "Terra" }),
+        h("img", { class: "boot__mark", src: "/brand/terra-logo-480.png", alt: "Terra", width: 480, height: 248 }),
         quote,
         h("div", { class: "boot__bar" }, fill),
       ),

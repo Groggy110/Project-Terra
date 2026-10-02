@@ -39,6 +39,8 @@
     <link rel="apple-touch-startup-image" href="/splash/splash-1194x834@2x-landscape.png" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" />
     <link rel="apple-touch-startup-image" href="/splash/splash-1024x1366@2x-portrait.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
     <link rel="apple-touch-startup-image" href="/splash/splash-1366x1024@2x-landscape.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" />
+    <!-- The loading screen's mark: fetched first, so it is there on the first frame. -->
+    <link rel="preload" as="image" href="/brand/terra-logo-480.png" />
     <link rel="stylesheet" href="/src/styles/base.css" />
     <link rel="stylesheet" href="/src/styles/chrome.css" />
     <link rel="stylesheet" href="/src/styles/globe.css" />
@@ -50,7 +52,7 @@
   </head>
   <body>
     <!-- watercolour ground, painted behind everything -->
-    <div class="paper" aria-hidden="true"></div>
+    <div class="paper" aria-hidden="true"><div class="paper__galaxy"></div></div>
 
     <!-- hero stands in front of the globe and retires once you engage with it -->
     <div class="hero" id="hero" aria-hidden="true">
@@ -73,7 +75,7 @@
     <div class="chrome">
       <header class="topbar">
         <a class="brand" href="#" data-action="reset-view" title="Back to the whole globe">
-          <span class="brand__name">Terra</span>
+          <img class="brand__logo" src="/brand/terra-logo-480.png" alt="Terra" width="480" height="248" />
           <span class="brand__sep">/</span>
           <span class="brand__product">Online help for ministries</span>
         </a>

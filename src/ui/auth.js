@@ -47,7 +47,7 @@ export class AuthGate {
       h(
         "div",
         { class: "brand gate__brand", "aria-hidden": "true" },
-        h("span", { class: "brand__name", text: "Terra" }),
+        h("img", { class: "brand__logo", src: "/brand/terra-logo-480.png", alt: "Terra", width: 480, height: 248 }),
       ),
       this.card,
     );
