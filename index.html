@@ -31,6 +31,31 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Terra" />
+    <!-- Installed iOS apps size the page as if the status bar still took a
+         strip off the top, so with black-translucent the page ends that far
+         short of the bottom and the home-indicator area shows bare. Measure
+         the shortfall against the screen and, when there is one, base.css
+         stretches the app to the true height (--app-h). Inline and first, so
+         the first frame is already the right size. -->
+    <script>
+      (function () {
+        var root = document.documentElement;
+        var standalone = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
+        if (!standalone || !screen.height) return;
+        function fit() {
+          var landscape = innerWidth > innerHeight;
+          var full = landscape ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+          var gap = full - innerHeight;
+          var on = gap > 0 && gap <= 120 && Math.abs(innerWidth - (landscape ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height))) < 2;
+          root.classList.toggle("fill-screen", on);
+          if (on) root.style.setProperty("--app-h", full + "px");
+          else root.style.removeProperty("--app-h");
+        }
+        fit();
+        addEventListener("resize", fit);
+        addEventListener("orientationchange", function () { setTimeout(fit, 120); });
+      })();
+    </script>
     <link rel="apple-touch-startup-image" href="/splash/splash-440x956@3x-portrait.png" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
     <link rel="apple-touch-startup-image" href="/splash/splash-956x440@3x-landscape.png" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape)" />
     <link rel="apple-touch-startup-image" href="/splash/splash-430x932@3x-portrait.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />

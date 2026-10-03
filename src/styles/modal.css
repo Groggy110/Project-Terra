@@ -1075,7 +1075,7 @@ a.work__item:hover { border-color: var(--accent); }
     top: auto;
     bottom: 0;
     width: 100% !important;
-    max-height: calc(100dvh - var(--safe-t) - 12px);
+    max-height: calc(var(--app-h, 100dvh) - var(--safe-t) - 12px);
     translate: 0 0;
     border-radius: 22px 22px 0 0;
     border-bottom: 0;

@@ -23,6 +23,8 @@
  *     which reads as a dead gesture.
  */
 
+import { viewH } from "./dom.js";
+
 /** Phone portrait. In landscape the panel is a rail again, so this stands down. */
 const PHONE = "(max-width: 720px)";
 
@@ -33,13 +35,16 @@ const PHONE = "(max-width: 720px)";
  * tall the bottom of this particular phone is.
  */
 const PEEK_PX = 220;
+/** Let go this far below the peek (or flick down from it) and the sheet closes. */
+const DISMISS_PX = 70;
 const HALF = 0.54;
 const FULL = 0.88;
 
 export class PanelSheet {
-  constructor(root, { onDetent } = {}) {
+  constructor(root, { onDetent, onDismiss } = {}) {
     this.root = root;
     this.onDetent = onDetent;
+    this.onDismiss = onDismiss;
     // Opens at a peek: the globe is the page, and a sheet that starts at half
     // height hands a map app's main view over to a list nobody asked for yet.
     this.detent = "peek";
@@ -53,7 +58,7 @@ export class PanelSheet {
 
   /** Heights in pixels for each detent, at the current viewport. */
   #heights() {
-    const h = window.innerHeight;
+    const h = viewH();
     return { peek: PEEK_PX, half: Math.round(h * HALF), full: Math.round(h * FULL) };
   }
 
@@ -89,6 +94,23 @@ export class PanelSheet {
     document.body.classList.toggle("sheet-full", name === "full");
     if (!animate) requestAnimationFrame(() => this.root.classList.remove("is-dragging"));
     this.onDetent?.(name, px);
+  }
+
+  /**
+   * Slides the sheet out from wherever the thumb left it, then quietly resets
+   * it to a peek so the next time it opens it does not come back at the
+   * height of an abandoned drag.
+   */
+  #dismiss() {
+    this.detent = "peek";
+    this.onDismiss();
+    setTimeout(() => {
+      if (!this.root.classList.contains("is-out")) return;
+      this.root.classList.add("is-dragging");
+      this.root.style.setProperty("--sheet-h", `${PEEK_PX}px`);
+      this.#lift(PEEK_PX);
+      requestAnimationFrame(() => this.root.classList.remove("is-dragging"));
+    }, 460);
   }
 
   /**
@@ -216,6 +238,13 @@ export class PanelSheet {
       let idx = order.indexOf(
         order.reduce((best, k) => (Math.abs(hs[k] - now) < Math.abs(hs[best] - now) ? k : best), "half"),
       );
+      // Pulled all the way down: the same as the close button. Either let go
+      // well below the peek, or flicked down from somewhere at or under it.
+      if (this.onDismiss && (now < hs.peek - DISMISS_PX || (vel > 0.45 && now <= hs.peek + 12))) {
+        release();
+        this.#dismiss();
+        return;
+      }
       // A flick overrides proximity — see the note at the top of the file.
       if (vel < -0.45) idx = Math.min(idx + 1, 2);
       else if (vel > 0.45) idx = Math.max(idx - 1, 0);

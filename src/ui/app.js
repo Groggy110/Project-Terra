@@ -12,7 +12,7 @@ import { dashboardModal } from "./dashboard.js";
 import { applicationsModal } from "./applications.js";
 import { Panel } from "./panel.js";
 import { PanelSheet } from "./sheet.js";
-import { add, clear, h, icons, plural, svg } from "./dom.js";
+import { add, clear, h, icons, plural, svg, viewH } from "./dom.js";
 import { openPop, menuIcons } from "./pop.js";
 import { store } from "./store.js";
 import { REVISION } from "three";
@@ -54,7 +54,7 @@ const PHONE_DIST = 3.35;
 /** The camera for the stage at this window size. */
 function stageFrame() {
   const W = window.innerWidth;
-  const H = window.innerHeight;
+  const H = viewH();
   const rim = Math.max(STAGE.rim, STAGE.minRim / H);
   // A circle centred on the window's middle line, touching `rim` at the top
   // and passing through (0, H) and (W, H): with a = H - rim, the radius is
@@ -152,6 +152,8 @@ export class App {
         this.syncReserved();
         this.#syncCovered();
       },
+      // Dragged off the bottom of the screen: the same as its close button.
+      onDismiss: () => this.panel.setOpen(false),
     });
     this.filtersUi = new Filters(this.el.filters, {
       net: this.net,
@@ -1066,7 +1068,7 @@ export class App {
     }
     const open = PHONE.matches && this.panel.open && !this.board.open;
     if (!open) return this.globe.setLift(0);
-    const H = window.innerHeight;
+    const H = viewH();
     const top = document.querySelector(".findbar")?.getBoundingClientRect().bottom ?? 0;
     const sheet = Math.min(this.sheetPx ?? H * 0.5, H * 0.6);
     const mid = (top + H - sheet) / 2;

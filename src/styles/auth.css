@@ -575,7 +575,7 @@
 
   .gate__card {
     width: 100%;
-    max-height: calc(100dvh - var(--safe-t) - 16px);
+    max-height: calc(var(--app-h, 100dvh) - var(--safe-t) - 16px);
     border-radius: 22px 22px 0 0;
     border-bottom: 0;
     translate: 0 40px;

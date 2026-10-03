@@ -4,7 +4,7 @@
  * keeps them on screen, tells them when they are scrolled out, and drives the
  * app menu's keyboard model.
  */
-import { h, svg } from "./dom.js";
+import { h, svg, viewH } from "./dom.js";
 
 const MARGIN = 12;
 
@@ -61,9 +61,9 @@ export function clampMenu(menu, anchor) {
     menu.classList.remove("is-above");
     list.style.removeProperty("max-height");
     const chrome = menu.offsetHeight - list.offsetHeight;
-    const cap = Math.min(340, window.innerHeight * 0.46);
+    const cap = Math.min(340, viewH() * 0.46);
     const need = Math.min(cap, list.scrollHeight);
-    const below = window.innerHeight - a.bottom - 9 - chrome - MARGIN;
+    const below = viewH() - a.bottom - 9 - chrome - MARGIN;
     const above = a.top - 9 - chrome - MARGIN;
     const up = below < need && above > below;
     menu.classList.toggle("is-above", up);
