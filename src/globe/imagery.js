@@ -129,6 +129,8 @@ const FADE_UPLOADS = 24;
  */
 const HANDHELD_STEPS = [0.4, 0.75, 1];
 const HANDHELD_UPLOADS = 8;
+/** Slots of the window whose four children are fetched ahead; see #prefetch. */
+const PREFETCH_SLOTS = 9;
 /** How far up the quadtree to look for something to draw while a tile loads. */
 const ANCESTORS = 6;
 /**
@@ -241,12 +243,16 @@ export class ImageryLayer {
     this.coverage = 0;
 
     /**
-     * The mosaic's largest side. A phone's window at two texels a point fits
-     * in 2048 on both axes; letting it grow to 4096 there only buys a canvas
-     * four times the size to re-send whenever the window moves.
+     * The mosaic's largest side, the same on a phone. A portrait phone at two
+     * texels a point is about 2000 pixels tall before the pad and the snap to
+     * whole tiles, so a 2048 cap there dropped every regional window a level —
+     * the ground drawn at half the sharpness the screen could show. The tall
+     * side is the only one that grows; the canvas stays narrow.
      */
     this.handheld = matchMedia("(pointer: coarse) and (max-width: 1000px)").matches;
-    this.maxSide = this.handheld ? 2048 : MAX_SIDE;
+    this.maxSide = MAX_SIDE;
+    /** Next-level tiles fetched ahead for the current window; see #prefetch. */
+    this.ahead = null;
     this.cache = new Map();
     this.cacheMax = Math.max(64, Math.floor(DECODED_BUDGET / (this.source?.tile || 256) ** 2 / 4));
     /** Cache Storage, opened once; null where there is none (plain http, some private windows). */
@@ -404,6 +410,32 @@ export class ImageryLayer {
     while (this.queue.length && this.inflight.size < MAX_INFLIGHT) {
       const [z, x, y] = this.queue.shift().split("/").map(Number);
       this.#request(z, x, y);
+    }
+    if (!this.inflight.size && !this.queue.length) this.#prefetch();
+  }
+
+  /**
+   * Once the window is whole and the network is idle, the level below it for
+   * the middle of the view — where a pinch goes in. Into memory only: those
+   * tiles are not drawn until the window steps down to them, and then they
+   * are there on the first frame instead of a round trip later.
+   */
+  #prefetch() {
+    const r = this.rect;
+    if (!r || this.ahead === r || r.z >= this.source.maxZoom || !this.slots.every((v) => v === 0)) return;
+    this.ahead = r;
+    const cx = (r.nx - 1) / 2;
+    const cy = (r.ny - 1) / 2;
+    const reach = Math.max(1, Math.min(r.nx, r.ny) / 3);
+    const order = [];
+    for (let i = 0; i < this.slots.length; i++) {
+      const t = this.#slotTile(i);
+      const dist = Math.hypot(t.tx - cx, t.ty - cy);
+      if (dist <= reach) order.push({ t, dist });
+    }
+    order.sort((a, b) => a.dist - b.dist);
+    for (const { t } of order.slice(0, PREFETCH_SLOTS)) {
+      for (let k = 0; k < 4; k++) this.#request(r.z + 1, t.x * 2 + (k & 1), t.y * 2 + (k >> 1));
     }
   }
 
@@ -598,7 +630,9 @@ export class ImageryLayer {
    */
   #zoomFor(pxPerDeg, lat) {
     const want = (pxPerDeg * Math.cos(clamp(lat, -MERC_LIMIT, MERC_LIMIT) * DEG) * 360) / this.source.tile;
-    return clamp(Math.round(Math.log2(Math.max(want, 1))), 0, this.source.maxZoom);
+    // Rounded with a lean toward the sharper level: plain rounding lets a
+    // texel cover up to 1.4 pixels, which reads as soft on a retina screen.
+    return clamp(Math.round(Math.log2(Math.max(want, 1)) + 0.2), 0, this.source.maxZoom);
   }
 
   /**

@@ -43,7 +43,7 @@ import {
 } from "./earth.js";
 import { paintNightLights } from "./nightlights.js";
 import { PostChain } from "./postchain.js";
-import { clamp, DEG, latLonToVec3, lerp, smoothstep, viewBounds, visibleCapRadius, visibleExtent } from "./geo.js";
+import { clamp, DEG, latLonToVec3, lerp, smoothstep, vec3ToLatLon, viewBounds, visibleCapRadius, visibleExtent, wrapDelta } from "./geo.js";
 import { GlobeControls, distForZoom, zoomLevel } from "./controls.js";
 import { ImageryLayer } from "./imagery.js";
 import { pickResolution, RES_STEPS, RES_WINDOW, RES_HOLD_MS } from "./resolution.js";
@@ -120,8 +120,31 @@ const DETAIL_IN = [0.25, 0.44];
 const DETAIL_ARM = 0.2;
 /** Time constant of the fade. Long: imagery should arrive, not appear. */
 const DETAIL_TAU = 0.28;
+/** Latitude past which the tile window stops; see #screenBounds. */
+const TILE_LAT = 75;
+/** Cosine of the steepest view onto the ground the tile window covers (~63°). */
+const TILE_FACING = 0.45;
 /** Floor between tile windows while the camera is moving. */
 const DETAIL_MOTION_MS = 260;
+/**
+ * The other way in: by magnification rather than by zoom. Blue Marble is about
+ * seven kilometres a texel, so it only looks crisp while it is shrunk — once
+ * a texel of it covers more than half a screen pixel the ground goes soft,
+ * whatever the zoom reads. On a phone at dpr 2 that is well before DETAIL_IN,
+ * which is the softness a regional view had. Measured in screen pixels per
+ * base texel; armed a little before it shows. The whole disc stays painted.
+ */
+const DETAIL_MAG = [0.45, 0.85];
+const DETAIL_MAG_ARM = 0.35;
+/** Texels round the equator of the painted base, 4K and 8K. */
+const BASE_TEXELS = { sd: 5400, hd: 8192 };
+/**
+ * How long after the last touch the globe is redrawn at full resolution.
+ * The scaler's reduced resolution is for keeping a gesture smooth; once the
+ * hand is off there is nothing to keep up with, and a still picture drawn
+ * soft is just a soft picture.
+ */
+const REST_SHARP_MS = 220;
 
 
 /**
@@ -191,6 +214,9 @@ export class Globe {
     const coarse = window.matchMedia?.("(hover: none) and (pointer: coarse)").matches;
     this.res = coarse && this.dpr > 1 ? 0.85 : 1;
     this.resAt = 0;
+    /** Drawing at full resolution because nothing is moving; see REST_SHARP_MS. */
+    this.atRest = false;
+    this.busyAt = 0;
     this.frames = [];
     /** Until when one-off work is held back; see quiet(). */
     this.quietUntil = 0;
@@ -621,7 +647,7 @@ export class Globe {
     const dpr = drawDpr();
     if (dpr !== this.dpr) {
       this.dpr = dpr;
-      this.renderer.setPixelRatio(this.dpr * this.res);
+      this.renderer.setPixelRatio(this.dpr * this.#drawRes());
       this.renderer.setSize(this.size.w, this.size.h, false);
       if (this.painter) this.painter.painted = null;
     }
@@ -773,7 +799,7 @@ export class Globe {
     // window it would step the landing down to 70% or 55% — is exactly the
     // sharpness the stage is for. It starts measuring once the stage is left
     // (detailHeld is released with it).
-    if (this.detailHeld || this.#quiet(performance.now())) {
+    if (this.detailHeld || this.#quiet(performance.now()) || this.atRest) {
       this.frames.length = 0;
       return false;
     }
@@ -789,7 +815,7 @@ export class Globe {
     this.frames.length = 0;
     // Reallocating the drawing buffer costs a frame of its own.
     this.skipSample = true;
-    this.renderer.setPixelRatio(this.dpr * this.res);
+    this.renderer.setPixelRatio(this.dpr * this.#drawRes());
     this.renderer.setSize(this.size.w, this.size.h, false);
     // The vector window is painted at one texel per drawing-buffer pixel, so
     // it has to be told. The tile layer deliberately is not: its zoom is a
@@ -1034,13 +1060,50 @@ export class Globe {
 
   /* --------------------------------------------------------------- render */
 
+  /** The resolution the buffer is drawn at: the scaler's, or full at rest. */
+  #drawRes() {
+    return this.atRest ? 1 : this.res;
+  }
+
+  /**
+   * Full resolution when nothing is being moved by hand or by a flight, the
+   * scaler's figure while something is. The idle drift counts as rest: it is
+   * a fraction of a degree a second, and the scaler's softness is for a thumb.
+   */
+  #syncRest(rest) {
+    if (rest === this.atRest) return;
+    const before = this.#drawRes();
+    this.atRest = rest;
+    if (this.#drawRes() === before) return;
+    this.skipSample = true;
+    this.frames.length = 0;
+    this.renderer.setPixelRatio(this.dpr * this.#drawRes());
+    this.renderer.setSize(this.size.w, this.size.h, false);
+    // Coming to rest, the vector window is repainted at the sharper buffer.
+    // Going the other way it is not: a window with more texels than the
+    // buffer is still correct, and a repaint there is the frame a pinch drops.
+    if (rest) this.painter.painted = null;
+    this.dirty = true;
+  }
+
+  /**
+   * How much the tile imagery is wanted, 0 to 1: by zoom, as it always was,
+   * or by how far the painted base is being magnified, whichever asks more.
+   */
+  #detailNeed(z, arm = false) {
+    const texels = this.hd ? BASE_TEXELS.hd : BASE_TEXELS.sd;
+    const mag = (this.controls.pxPerDeg * Math.min(this.dpr, 2) * 360) / texels;
+    if (arm) return z >= DETAIL_ARM || mag >= DETAIL_MAG_ARM;
+    return Math.max(smoothstep(DETAIL_IN[0], DETAIL_IN[1], z), smoothstep(DETAIL_MAG[0], DETAIL_MAG[1], mag));
+  }
+
   #resize() {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     if (w === this.size.w && h === this.size.h) return;
     this.size = { w, h };
     this.dpr = drawDpr();
-    this.renderer.setPixelRatio(this.dpr * this.res);
+    this.renderer.setPixelRatio(this.dpr * this.#drawRes());
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(h, 1);
     this.#applyShift();
@@ -1056,9 +1119,71 @@ export class Globe {
     return { cap, bounds: viewBounds(this.controls.lat, this.controls.lon, extent, 1.02) };
   }
 
+  /**
+   * The ground actually on screen, found by casting a grid of rays through
+   * the frame onto the sphere — for the tile window, which pays for every
+   * degree it is given.
+   *
+   * viewBounds models the view as an ellipse round the camera's centre, which
+   * is right for the whole disc and wrong for a tall phone looking at
+   * northern latitudes: the ellipse's top corners reach far enough north that
+   * a degree of arc there is more than the cosine allows, it gives up and
+   * returns the whole width of the world, and the tile budget is spent
+   * on 360 degrees of longitude nobody can see — a whole level softer than
+   * the screen. The lift and shift are in the projection, so the rays see
+   * the planet exactly where it is drawn.
+   *
+   * So is the band along a visible limb (TILE_FACING). The polar caps are
+   * left to the painted base too (TILE_LAT). A pole in frame
+   * is every longitude at once, and one Mercator rectangle that has to hold
+   * all of them is a level or two softer over everything else on screen —
+   * for sea ice seen edge-on at the rim.
+   */
+  #screenBounds() {
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    const o = cam.position;
+    const oo = o.lengthSq();
+    const dir = this.#ray ?? (this.#ray = new Vector3());
+    const p = this.#rayHit ?? (this.#rayHit = new Vector3());
+    const c = vec3ToLatLon(o);
+    let latMin = 90;
+    let latMax = -90;
+    let dMin = 180;
+    let dMax = -180;
+    const N = 12;
+    for (let i = 0; i <= N; i++) {
+      for (let j = 0; j <= N; j++) {
+        dir.set((i / N) * 2 - 1, (j / N) * 2 - 1, 0.5).unproject(cam).sub(o).normalize();
+        const b = o.dot(dir);
+        const disc = b * b - (oo - 1);
+        // Sky, or ground seen nearly edge-on toward the rim: squeezed to a
+        // sliver on screen, where the painted base is already as sharp as it
+        // can look. Counting it is what dragged the window round the far side
+        // of the planet whenever the limb was in frame.
+        if (disc < 0) continue;
+        p.copy(dir).multiplyScalar(-b - Math.sqrt(disc)).add(o);
+        if (-dir.dot(p) < TILE_FACING) continue;
+        const g = vec3ToLatLon(p);
+        latMin = Math.min(latMin, Math.max(g.lat, -TILE_LAT));
+        latMax = Math.max(latMax, Math.min(g.lat, TILE_LAT));
+        if (Math.abs(g.lat) > TILE_LAT) continue;
+        const d = wrapDelta(c.lon, g.lon);
+        dMin = Math.min(dMin, d);
+        dMax = Math.max(dMax, d);
+      }
+    }
+    if (dMin > dMax || latMin > latMax) return viewBounds(c.lat, c.lon, visibleExtent(this.controls.camDist, cam.fov, cam.aspect), 1.02);
+    if (dMax - dMin >= 359) return { lonMin: -180, lonSpan: 360, latMin, latSpan: latMax - latMin };
+    return { lonMin: c.lon + dMin, lonSpan: dMax - dMin, latMin, latSpan: latMax - latMin };
+  }
+
+  #ray = null;
+  #rayHit = null;
+
   #serviceVectors(immediate = false) {
     const { bounds } = this.#bounds();
-    const ppd = this.controls.pxPerDeg * this.dpr * this.res;
+    const ppd = this.controls.pxPerDeg * this.dpr * this.#drawRes();
     const centre = { lat: this.controls.lat, lon: this.controls.lon };
 
     // Pull the finer set in as soon as it would show, then keep drawing with
@@ -1127,7 +1252,7 @@ export class Globe {
    * shows it — by the time the fade begins the first window is already there.
    */
   #serviceImagery(z, immediate = false) {
-    if (!this.imagery.enabled || z < DETAIL_ARM) return;
+    if (!this.imagery.enabled || !this.#detailNeed(z, true)) return;
     const now = performance.now();
     // Nothing on the landing stage, which shows the painted planet only, and
     // nothing during the flight off it (see quiet()): a tile window arriving
@@ -1149,7 +1274,7 @@ export class Globe {
     const zooming = Math.abs(dist - this.tileDist) > dist * 0.004;
     this.tileDist = dist;
 
-    const { bounds } = this.#bounds();
+    const bounds = this.#screenBounds();
     // One pad, whether the camera is moving or not. The vector painter can
     // afford a wider window during motion because it rasterises what it
     // already has in memory; here a wider window means a different tile
@@ -1298,6 +1423,11 @@ export class Globe {
       this.idleFrames++;
       this.settleTimer += dt * 1000;
     }
+    const drifting = this.controls.spinning && !this.controls.dragging;
+    const c0 = this.controls;
+    const zoomEasing = Math.abs(c0.target.dist - c0.dist) > c0.dist * 1e-4;
+    if (c0.dragging || c0.pointers?.size || c0.flight || zoomEasing || (moved && !drifting) || this.stageOut) this.busyAt = now;
+    this.#syncRest(now - this.busyAt > REST_SHARP_MS);
 
     // The sheet is a fair-weather cloud layer: it thins as you come in so the
     // ground stays readable, and drifts slowly enough to notice only if you
@@ -1351,7 +1481,7 @@ export class Globe {
       // Coverage only gates the *start*: past a tile or two the canvas carries
       // its own presence in its alpha, so the fade does not have to wait for a
       // window to be complete before it will show any of it.
-      ? smoothstep(DETAIL_IN[0], DETAIL_IN[1], z) * smoothstep(0.0, 0.25, this.imagery.coverage)
+      ? this.#detailNeed(z) * smoothstep(0.0, 0.25, this.imagery.coverage)
       : 0;
     this.detailMix += (wanted - this.detailMix) * (1 - Math.exp(-dt / DETAIL_TAU));
     if (Math.abs(wanted - this.detailMix) > 0.002) this.dirty = true;
