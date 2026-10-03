@@ -85,20 +85,6 @@ body {
   margin: 0;
 }
 
-/* The installed-app fix (index.html measures it). The body becomes the box
-   every fixed layer is placed against — layout containment makes it their
-   containing block — and that box is the whole screen rather than the short
-   viewport iOS reports, so the globe, the dock and the sheet reach the
-   bottom edge and sit on the home-indicator inset as they do in Safari. */
-html.fill-screen body {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--app-h);
-  contain: layout;
-}
-
 body {
   font-family: var(--sans);
   font-size: 15px;

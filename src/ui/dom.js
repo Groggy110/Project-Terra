@@ -81,8 +81,5 @@ export function since(dateStr, now = Date.now()) {
 
 export const joinDot = (...parts) => parts.filter(Boolean).join(" · ");
 
-/**
- * The app's height. Normally the window's; in an installed iOS app that
- * reports a short window, the stretched body's (see index.html, base.css).
- */
+/** The app's height: the body's, which is the window's. */
 export const viewH = () => document.body?.clientHeight || window.innerHeight;

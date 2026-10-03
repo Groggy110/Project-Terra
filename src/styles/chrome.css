@@ -282,7 +282,7 @@ body.is-hero .findbar {
      off the foot of the window. It stays put when focused: its suggestions
      open upward, over the planet, and --find-top tells the list how much
      room there is above it. */
-  --find-top: calc(var(--app-h, 100vh) - var(--safe-b) - 110px - clamp(52px, 10vh, 110px));
+  --find-top: calc(100vh - var(--safe-b) - 110px - clamp(52px, 10vh, 110px));
   top: var(--find-top);
   left: calc(50% - min(430px, 50vw - var(--edge) - var(--safe-l)));
   right: calc(50% - min(430px, 50vw - var(--edge) - var(--safe-r)));
@@ -2066,7 +2066,7 @@ body.is-hero .suggest {
     translate: none;
     width: auto;
     min-width: 0;
-    max-height: calc(var(--app-h, 100dvh) - var(--safe-t) - 32px);
+    max-height: calc(100dvh - var(--safe-t) - 32px);
     overflow-y: auto;
     overscroll-behavior: contain;
     z-index: 59;
