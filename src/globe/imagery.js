@@ -251,10 +251,16 @@ export class ImageryLayer {
      */
     this.handheld = matchMedia("(pointer: coarse) and (max-width: 1000px)").matches;
     this.maxSide = MAX_SIDE;
+    /** Pixels the mosaic may hold: 3072 x 4096 on a phone (48MB), unbounded otherwise. */
+    this.maxArea = this.handheld ? 3072 * 4096 : Infinity;
     /** Next-level tiles fetched ahead for the current window; see #prefetch. */
     this.ahead = null;
     this.cache = new Map();
-    this.cacheMax = Math.max(64, Math.floor(DECODED_BUDGET / (this.source?.tile || 256) ** 2 / 4));
+    // A phone gets a third of it. Decoded tiles, the mosaic and the vector
+    // canvases all come out of the same few hundred megabytes iOS allows a
+    // page, and when it runs short it is the land mask that comes back blank.
+    const decoded = this.handheld ? DECODED_BUDGET / 3 : DECODED_BUDGET;
+    this.cacheMax = Math.max(64, Math.floor(decoded / (this.source?.tile || 256) ** 2 / 4));
     /** Cache Storage, opened once; null where there is none (plain http, some private windows). */
     this.store = this.enabled ? openStore() : Promise.resolve(null);
     this.storeCount = -1;
@@ -657,7 +663,7 @@ export class ImageryLayer {
       const y1 = clamp(Math.ceil(mBot * n) - 1, 0, n - 1);
       const ny = y1 - y0 + 1;
       const side = this.source.tile;
-      if (nx * ny <= TILE_BUDGET && nx * side <= this.maxSide && ny * side <= this.maxSide) {
+      if (nx * ny <= TILE_BUDGET && nx * side <= this.maxSide && ny * side <= this.maxSide && nx * ny * side * side <= this.maxArea) {
         return { z, x0, y0, nx, ny, n };
       }
     }

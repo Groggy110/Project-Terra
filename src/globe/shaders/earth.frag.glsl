@@ -190,7 +190,25 @@ void main() {
   vec4 ink = texture2DGradEXT(uBaseInk, uv, ddx, ddy);
   if (inWin > 0.002) {
     vec2 c = clamp(wuv, 0.0, 1.0);
-    mask = mix(mask, texture2D(uMask, c).r, inWin);
+    float fine = texture2D(uMask, c).r;
+    // The fine mask is a 2D canvas, and a phone can take a canvas's pixels
+    // away under memory pressure and hand it back blank — which reads as
+    // "all water", and the continents go the colour of the sea. Where the
+    // raster says solid land for a texel and a half all round, there is no
+    // coastline for the fine mask to refine, so it is land whatever the
+    // canvas says. Only land is guarded: forcing water would sink every
+    // island smaller than the raster can see. A lake that small reads as
+    // land here and shows as water in the imagery over it.
+    vec2 o = uAuxTexel * 1.5;
+    float solid = min(
+      min(mask, texture2DGradEXT(uAux, uv + vec2(o.x, 0.0), ddx, ddy).g),
+      min(
+        min(texture2DGradEXT(uAux, uv - vec2(o.x, 0.0), ddx, ddy).g, texture2DGradEXT(uAux, uv + vec2(0.0, o.y), ddx, ddy).g),
+        texture2DGradEXT(uAux, uv - vec2(0.0, o.y), ddx, ddy).g
+      )
+    );
+    fine = max(fine, smoothstep(0.9, 0.99, solid));
+    mask = mix(mask, fine, inWin);
     ink = mix(ink, texture2D(uLines, c), inWin);
   }
 
