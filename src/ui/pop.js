@@ -5,6 +5,7 @@
  * app menu's keyboard model.
  */
 import { h, svg, viewH } from "./dom.js";
+import { pullToClose } from "./swipe.js";
 
 const MARGIN = 12;
 
@@ -20,13 +21,15 @@ export const PHONE = window.matchMedia("(max-width: 720px)");
  * element it was built in: a chip menu lives inside the filter row, which
  * scrolls sideways and so clips anything that hangs out of it. The scrim
  * takes the tap that would otherwise land on the globe; the menus' own
- * click-outside handlers do the closing.
+ * click-outside handlers do the closing. `onClose` is how the sheet closes
+ * itself when it is pulled down by its top edge (swipe.js).
  */
-export function asSheet(menu) {
+export function asSheet(menu, onClose) {
   const scrim = h("div", { class: "pop-scrim" });
   menu.classList.add("is-sheet");
   document.body.append(scrim, menu);
   menu.scrim = scrim;
+  if (onClose) pullToClose(menu, { onClose, scrim });
   return menu;
 }
 
@@ -131,7 +134,7 @@ export function openPop({ anchor, items, parent = document.body, id = "appMenu" 
   }
 
   if (PHONE.matches) {
-    asSheet(menu);
+    asSheet(menu, close);
   } else {
     parent.appendChild(menu);
     // Right-aligned to the button, then pulled back inside the window.

@@ -2116,6 +2116,28 @@ body.is-hero .suggest {
     font-size: 10.5px;
   }
 
+  /* The handle: the top strip of the sheet pulls it down (swipe.js). */
+  .pop.is-sheet {
+    padding-top: 22px;
+  }
+
+  .pop.is-sheet::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    translate: -50% 0;
+    width: 40px;
+    height: 5px;
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--ink) 24%, transparent);
+    pointer-events: none;
+  }
+
+  .pop.is-sheet.is-dragging {
+    animation: none;
+  }
+
   .pop.is-sheet .pop__list {
     max-height: min(58dvh, 480px) !important;
   }

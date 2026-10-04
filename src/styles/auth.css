@@ -72,6 +72,11 @@
 
 /* ---------- the card ---------- */
 
+/* The sheet's handle, phone only (modal.css draws .modal__grab). */
+.gate__grab {
+  display: none;
+}
+
 .gate__card {
   position: relative;
   isolation: isolate;
@@ -580,6 +585,10 @@
     border-bottom: 0;
     translate: 0 40px;
     scale: 1;
+  }
+
+  .gate__grab {
+    display: block;
   }
 
   .gate__body {

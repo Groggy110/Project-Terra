@@ -11,6 +11,7 @@
  * instead of leaving someone staring at a form that looked like it worked.
  */
 import { h, add, clear, icons, svg } from "./dom.js";
+import { pullToClose } from "./swipe.js";
 import { signIn, signUp, sendMagicLink } from "../lib/api.js";
 
 const ENVELOPE = '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="m3.8 7 7.1 5.3a2 2 0 0 0 2.2 0L20.2 7"/>';
@@ -52,6 +53,9 @@ export class AuthGate {
       this.card,
     );
     document.body.appendChild(this.el);
+    // On a phone the card is a bottom sheet, and pulls down like the rest.
+    this.card.prepend(h("div", { class: "modal__grab gate__grab", "aria-hidden": "true" }));
+    pullToClose(this.card, { onClose: () => this.skip(), scrim: this.el.querySelector(".gate__scrim") });
 
     this.onKey = (e) => {
       if (e.key === "Escape" && this.isOpen) this.skip();

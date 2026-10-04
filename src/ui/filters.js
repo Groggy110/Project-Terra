@@ -174,7 +174,7 @@ export class Filters {
 
     chip.el.classList.add("is-open");
     chip.btn.setAttribute("aria-expanded", "true");
-    if (PHONE.matches) asSheet(menu);
+    if (PHONE.matches) asSheet(menu, () => this.#closeMenus());
     else chip.el.appendChild(menu);
     chip.menu = menu;
     chip.rows = rows;
