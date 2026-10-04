@@ -66,7 +66,7 @@ function layout({ title, preheader, heading, paragraphs, button, code, note }) {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
 
 <tr><td align="center" bgcolor="#020814" style="background:#020814;background-image:linear-gradient(180deg,#001a38 0%,#020814 100%);border-radius:22px 22px 0 0;padding:34px 24px 28px;">
-<a href="${SITE}" style="text-decoration:none;"><img src="${LOGO}" width="184" height="95" alt="Terra" style="display:block;width:184px;height:auto;border:0;outline:none;color:#ffffff;font-size:22px;letter-spacing:0.3em;"></a>
+<a href="${SITE}" style="text-decoration:none;"><img src="${LOGO}" width="184" height="95" alt="T E R R A" style="display:block;width:184px;height:auto;border:0;outline:none;color:#dfe9ff;font-family:${FONT};font-size:26px;font-weight:300;line-height:95px;letter-spacing:0.32em;text-align:center;"></a>
 </td></tr>
 
 <tr><td bgcolor="#ffffff" style="background:#ffffff;border-radius:0 0 22px 22px;padding:38px 38px 30px;">
