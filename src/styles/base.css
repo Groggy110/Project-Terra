@@ -89,7 +89,10 @@ body {
   font-family: var(--sans);
   font-size: 15px;
   color: var(--body);
-  background: var(--surface-soft);
+  /* The sky's top colour, not a surface: an installed iPhone app paints its
+     status bar, round the Dynamic Island, with the page's background, and
+     anything else reads as a grey band across the top of the sky. */
+  background: var(--bg-top, #001a38);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;

@@ -88,6 +88,9 @@ function themeVars(t, shared) {
   return {
     "--paper": b.page,
     "--bg-fill": backgroundFill(b),
+    // The sky's top edge, for the page behind everything — which is what
+    // iOS paints the home-screen app's status bar with.
+    "--bg-top": b.mode === "linear" ? b.linear.top : b.mode === "radial" ? b.radial.edge : b.mode === "transparent" ? b.page : b.solid,
     ...pattern(b),
     "--bg-grain-content": b.grain.enabled ? '""' : "none",
     "--bg-grain-opacity": b.grain.opacity,

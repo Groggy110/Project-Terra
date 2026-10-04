@@ -1946,6 +1946,12 @@ body.is-hero .suggest {
     color: var(--accent);
   }
 
+  /* No filter control on a phone: the round button beside the dock is gone,
+     and "Fly to where you are" drops down into its place. */
+  .fab[data-action="toggle-filters"] {
+    display: none;
+  }
+
   .fab[aria-pressed="true"] {
     color: #fff;
     background: var(--accent);
