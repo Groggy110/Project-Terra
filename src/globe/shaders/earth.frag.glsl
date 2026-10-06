@@ -77,6 +77,7 @@ uniform float uGridSpacing;     // degrees
 uniform float uGridWidth;       // pixels
 uniform sampler2D uNightTex;    // city lights, equirectangular
 uniform vec3 uNightLights;      // colour x intensity, 0 off
+uniform float uNightDay;        // how much of them shows on the lit side too, 0..1
 
 uniform float uDebug;   // 0 off; see globe.debug()
 
@@ -407,7 +408,13 @@ void main() {
   col += uEmissive * mix(1.0, 1.0 - day, uEmissiveNight);
   if (dot(uNightLights, vec3(1.0)) > 0.001) {
     float city = texture2DGradEXT(uNightTex, uv, ddx, ddy).r;
-    col += uNightLights * city * (1.0 - day) * mask * (1.0 - inDetail * 0.5);
+    // On the dark side always; on the lit side as far as uNightDay asks — the
+    // landing look keeps the cities burning on a sunlit planet, which is a
+    // picture and not a model. Added as light that fades as the ground under
+    // it brightens, so a lit city glows rather than whiting out the land.
+    float when = mix(1.0 - day, 1.0, uNightDay);
+    vec3 glow = uNightLights * city * when * mask * (1.0 - inDetail * 0.5);
+    col += glow * (1.0 - clamp(col, 0.0, 1.0) * 0.35);
   }
 
   vec3 H = normalize(L + V);

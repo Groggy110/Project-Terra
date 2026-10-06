@@ -123,7 +123,7 @@ export const STYLE = {
     /** Latitude/longitude grid drawn on the surface. */
     graticule: { enabled: false, color: "#ffffff", opacity: 0.09, spacing: 12.5, width: 1.25 },
     /** City lights on the night side, painted from places.json by population. */
-    nightLights: { enabled: true, color: "#623c04", intensity: 2.2, size: 0.5 },
+    nightLights: { enabled: true, color: "#623c04", intensity: 2.2, size: 0.5, day: 0 },
     clouds: {
       enabled: true,
       /** Shell height above the ground, in earth radii. */

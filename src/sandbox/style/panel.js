@@ -565,6 +565,7 @@ export class StylePanel {
     gc.color(nl, g.nightLights, "color", "Colour");
     gc.num(nl, g.nightLights, "intensity", 0, 4, 0.01, "Intensity");
     gc.num(nl, g.nightLights, "size", 0.5, 6, 0.1, "Glow size");
+    gc.num(nl, g.nightLights, "day", 0, 1, 0.01, "On the lit side");
 
     const gr = this.#folder(f, "Graticule (grid)", [["globe", "graticule"]]);
     gc.bool(gr, g.graticule, "enabled", "On");

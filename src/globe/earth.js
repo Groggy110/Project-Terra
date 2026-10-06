@@ -113,6 +113,7 @@ export function createEarth(
     uGridWidth: { value: 1 },
     uNightTex: { value: BLACK },
     uNightLights: { value: new Vector3() },
+    uNightDay: { value: 0 },
     uBase: { value: base },
     uAux: { value: aux },
     uLines: { value: lines },
@@ -382,6 +383,7 @@ export function applyTheme(t, shared, earth, clouds, halo) {
   u.uGridSpacing.value = Math.max(gs.graticule.spacing, 0.5);
   u.uGridWidth.value = gs.graticule.width;
   scaled(gs.nightLights.color, gs.nightLights.enabled ? gs.nightLights.intensity : 0, u.uNightLights.value);
+  u.uNightDay.value = gs.nightLights.day ?? 0;
 
   // Lights and fog (shared with the clouds by reference).
   const e = earth.effects;
