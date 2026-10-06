@@ -66,8 +66,22 @@
     <link rel="stylesheet" href="/src/styles/auth.css" />
     <link rel="stylesheet" href="/src/styles/forms.css" />
     <link rel="stylesheet" href="/src/styles/ask.css" />
+    <link rel="stylesheet" href="/src/styles/glass.css" />
   </head>
   <body>
+    <!-- The edge of the glass word ("anywhere.", base.css .hero__stroke): the
+         letters' silhouette grown a little and cut back a little, leaving a
+         clean ring. A text-stroke would trace every overlapping contour in
+         the font and draw them inside the clear letters. -->
+    <svg width="0" height="0" aria-hidden="true" style="position: absolute">
+      <filter id="glass-rim" x="-5%" y="-25%" width="110%" height="150%" color-interpolation-filters="sRGB">
+        <feMorphology in="SourceAlpha" operator="dilate" radius="0.85" result="grown" />
+        <feMorphology in="SourceAlpha" operator="erode" radius="0.7" result="shrunk" />
+        <feComposite in="grown" in2="shrunk" operator="out" result="ring" />
+        <feFlood flood-color="#ecf4ff" flood-opacity="0.95" />
+        <feComposite in2="ring" operator="in" />
+      </filter>
+    </svg>
     <!-- watercolour ground, painted behind everything -->
     <div class="paper" aria-hidden="true"><div class="paper__galaxy"></div></div>
 

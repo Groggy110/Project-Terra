@@ -1,0 +1,145 @@
+/* Dark liquid glass: one material for every bar and control that floats over
+   the planet.
+
+   Loaded last, and it only ever sets the surface — fill, edge, light, blur —
+   never size or position, so each component keeps its own layout and its own
+   hover light (chrome.css). The material, back to front:
+
+     the blur     what is behind is softened and a little more saturated, so
+                  the globe's colour comes through the pane rather than grey
+     the tint     a deep, mostly-clear blue-black
+     the sheen    a faint top-lit gradient, brightest at the top edge
+     the edge     a hairline of cool light, and a brighter specular line along
+                  the top where the pane catches the lamp
+
+   Restraint is the point: it should read as glass on a second look, not
+   announce itself on the first. The accent buttons get the same light on
+   their blue, so they read as the same material, coloured. */
+
+:root {
+  --glass-tint: rgb(9 14 25 / 0.56);
+  --glass-tint-strong: rgb(9 14 25 / 0.72);
+  --glass-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.08) 0%, rgb(255 255 255 / 0.018) 48%, rgb(255 255 255 / 0.03) 100%);
+  --glass-edge: rgb(205 225 255 / 0.13);
+  --glass-light:
+    inset 0 1px 0 rgb(255 255 255 / 0.15),
+    inset 0 -1px 0 rgb(255 255 255 / 0.035);
+  --glass-drop: 0 1px 2px rgb(0 0 0 / 0.3), 0 14px 34px -16px rgb(0 0 0 / 0.8);
+  --glass-blur: blur(22px) saturate(1.8);
+}
+
+/* ---- the small things you press ---- */
+
+html:root body :is(.btn--ghost, .chip__btn, .dial__btn, .grabber, .fab, .ask__new) {
+  background: var(--glass-sheen), var(--glass-tint);
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-light), var(--glass-drop);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+html:root body :is(.btn--ghost, .chip__btn, .dial__btn, .grabber, .fab):hover {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.12) 0%, rgb(255 255 255 / 0.03) 52%, rgb(255 255 255 / 0.05) 100%), var(--glass-tint);
+  border-color: rgb(205 225 255 / 0.22);
+}
+
+/* A chip with a choice in it keeps its accent, lit the same way. */
+html:root body .chip.is-set .chip__btn,
+html:root body .chip__btn[aria-pressed="true"] {
+  background: var(--glass-sheen), color-mix(in srgb, var(--accent) 26%, rgb(9 14 25 / 0.6));
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* ---- labels that sit on the glass ---- */
+
+html:root body :is(.hero__eyebrow, .credit) {
+  background: var(--glass-sheen), var(--glass-tint);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-light);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+/* ---- the find bar ----
+
+   The one large pane on the landing screen, so it carries the material most
+   clearly: a little more tint for the words in it, and a stronger top light. */
+html:root body .findbar .search input,
+html:root body.is-hero .findbar .search input {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.09) 0%, rgb(255 255 255 / 0.02) 50%, rgb(255 255 255 / 0.035) 100%), var(--glass-tint-strong);
+  border-color: rgb(205 225 255 / 0.16);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.17),
+    inset 0 -1px 0 rgb(255 255 255 / 0.04),
+    0 2px 6px rgb(0 0 0 / 0.25),
+    0 22px 50px -22px rgb(0 0 0 / 0.85);
+  -webkit-backdrop-filter: blur(26px) saturate(1.8);
+  backdrop-filter: blur(26px) saturate(1.8);
+}
+
+html:root body .findbar .search input:focus,
+html:root body.is-hero .findbar .search input:focus {
+  border-color: color-mix(in srgb, var(--accent) 50%, rgb(205 225 255 / 0.2));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.17),
+    inset 0 -1px 0 rgb(255 255 255 / 0.04),
+    0 0 0 3px var(--accent-ring),
+    0 22px 50px -22px rgb(0 0 0 / 0.85);
+}
+
+/* ---- the accent: the same glass, coloured ---- */
+
+html:root body :is(.btn--accent, .search__go, .ask__send) {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.26) 0%, rgb(255 255 255 / 0.06) 48%, rgb(255 255 255 / 0) 52%, rgb(255 255 255 / 0.08) 100%),
+    var(--accent);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.4),
+    inset 0 -1px 0 rgb(0 0 0 / 0.18),
+    0 6px 18px -6px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+html:root body :is(.btn--accent, .search__go, .ask__send):hover {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.32) 0%, rgb(255 255 255 / 0.08) 48%, rgb(255 255 255 / 0) 52%, rgb(255 255 255 / 0.1) 100%),
+    var(--accent-hover);
+}
+
+/* ---- the larger panes ---- */
+
+html:root body :is(.panel, .appmenu, .chip__menu, .suggest, .dock) {
+  background: var(--glass-sheen), var(--glass-tint-strong);
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-light), var(--shadow-2);
+  -webkit-backdrop-filter: blur(28px) saturate(1.7);
+  backdrop-filter: blur(28px) saturate(1.7);
+}
+
+/* The panel at its tallest, and the phone's menus, already take an opaque
+   surface where nothing behind them is worth the blur (panel.css,
+   chrome.css); they keep it. */
+html:root body .panel.is-sheet.is-full,
+html:root body .pop.is-sheet {
+  background: var(--glass-sheen), var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Cards inside a pane are a lighter pane of the same glass. */
+html:root body .panel .need,
+html:root body .panel .stat {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.05), rgb(255 255 255 / 0.015)), rgb(255 255 255 / 0.02);
+  border-color: rgb(205 225 255 / 0.1);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+html:root body .panel .need:hover {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.025)), rgb(255 255 255 / 0.03);
+  border-color: rgb(205 225 255 / 0.18);
+}
+
+html:root body .panel .btn--soft {
+  background: var(--glass-sheen), rgb(255 255 255 / 0.05);
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-light);
+}

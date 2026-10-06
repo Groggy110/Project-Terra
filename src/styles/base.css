@@ -514,30 +514,32 @@ body.hero-in .hero__eyebrow {
   }
 }
 
-/* The one word in colour — a light-to-brand blue running through it, so it
-   reads as lit rather than as a flat highlight, and taken partway down toward
-   the sky (--title-fill-pc, HEADLINE.fill) so the white outline stands out
-   round it. Toward the sky colour rather than see-through: under a
-   see-through fill the outline's own overlapping contours show inside the
-   letters. A narrow band of light sweeps through it now and then
-   (--sheen). The solid colour
-   stays as the fallback wherever text can't take a background. */
+/* The one word in glass. Its fill is mostly clear, so the sky and the rim of
+   the planet show through the letters, lit like a pane: bright along the top
+   edge where the light catches it, nearly clear through the middle, and a
+   cool blue bounce along the foot. The outline (.hero__stroke) is the edge
+   of the glass, and a narrow band of light sweeps through it now and then
+   (--sheen). The solid colour stays as the fallback wherever text can't take
+   a background. */
 .hero__mark {
   color: var(--brand-blue);
   background:
     linear-gradient(
         100deg,
         transparent 40%,
-        rgb(255 255 255 / 0.85) 50%,
+        rgb(255 255 255 / 0.8) 50%,
         transparent 60%
       )
       var(--sheen) 0 / 260% 100% no-repeat,
     linear-gradient(
-      100deg,
-      color-mix(in srgb, color-mix(in srgb, var(--brand-blue) 62%, #fff) var(--title-fill-pc, 74%), var(--paper)) 0%,
-      color-mix(in srgb, var(--brand-blue) var(--title-fill-pc, 74%), var(--paper)) 55%,
-      color-mix(in srgb, color-mix(in srgb, var(--brand-blue) 88%, #7b5cff) var(--title-fill-pc, 74%), var(--paper)) 100%
-    );
+      180deg,
+      rgb(255 255 255 / 0.4) 0%,
+      rgb(228 240 255 / 0.16) 28%,
+      rgb(176 208 255 / 0.05) 52%,
+      rgb(120 170 255 / 0.1) 78%,
+      rgb(150 196 255 / 0.32) 100%
+    ),
+    linear-gradient(100deg, rgb(120 170 255 / 0.1), rgb(150 128 255 / 0.12));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -603,14 +605,19 @@ body.hero-in .hero__mark {
 
 .hero__stroke::before {
   content: attr(data-text);
-  /* Twice the outline that shows: the word on top covers the inner half. */
-  -webkit-text-stroke: calc(var(--title-size) * 0.026 * var(--title-stroke, 1)) rgb(255 255 255 / 0.92);
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+  /* Solid letters, which the filter turns into their edge alone (#glass-rim
+     in index.html): a hairline ring at the silhouette, then the light round
+     it. Brighter at the top and foot, where a pane catches the light. */
+  -webkit-text-fill-color: #fff;
+  color: #fff;
   padding-right: 0.04em;
-  /* A tight white bloom, then a wider cool one that dies away fast. */
-  filter: drop-shadow(0 0 calc(var(--title-size) * 0.018) rgb(255 255 255 / 0.5))
-    drop-shadow(0 0 calc(var(--title-size) * 0.07) rgb(190 215 255 / 0.22));
+  opacity: min(1, calc(var(--title-stroke, 1) * 1.4));
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, rgb(0 0 0 / 0.6) 55%, #000 100%);
+  mask-image: linear-gradient(180deg, #000 0%, rgb(0 0 0 / 0.6) 55%, #000 100%);
+  filter: url(#glass-rim)
+    drop-shadow(0 0 calc(var(--title-size) * 0.012) rgb(255 255 255 / 0.5))
+    drop-shadow(0 0 calc(var(--title-size) * 0.05) rgb(110 160 255 / 0.4))
+    drop-shadow(0 0 calc(var(--title-size) * 0.12) rgb(90 140 255 / 0.18));
 }
 
 .hero__aura {
