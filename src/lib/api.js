@@ -580,3 +580,37 @@ export async function setNeedStatus(needId, status) {
   const { error } = await sb.from("needs").update({ status }).eq("id", needId);
   if (error) throw error;
 }
+
+/**
+ * Ask Terra (supabase/functions/ask-terra): a question in plain words, the
+ * conversation so far, and the needs the page is showing, as short records.
+ * Returns `{ reply, picks: [{ id, why }] }`; throws when the guide cannot be
+ * reached, and the caller falls back to the keyword search.
+ */
+export async function askTerra({ question, history = [], needs = [] }) {
+  const sb = requireSupabase();
+  const records = needs.map((n) => ({
+    id: n.id,
+    title: n.title,
+    type: n.type,
+    urgency: n.urgency,
+    people: n.people,
+    focus: n.focus,
+    remote: n.remote,
+    commitment: n.commitment,
+    skills: n.skills,
+    tags: n.tags,
+    detail: n.detail,
+    ministry: n.ministryName,
+    city: n.city,
+    country: n.country,
+    region: n.region,
+  }));
+  const { data, error } = await sb.functions.invoke("ask-terra", { body: { question, history, needs: records } });
+  if (error) {
+    const detail = await error.context?.json?.().catch(() => null);
+    throw new Error(detail?.error ?? error.message);
+  }
+  if (!data || typeof data.reply !== "string") throw new Error("no answer");
+  return { reply: data.reply, picks: Array.isArray(data.picks) ? data.picks : [] };
+}

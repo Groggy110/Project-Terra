@@ -12,6 +12,7 @@ import { dashboardModal } from "./dashboard.js";
 import { applicationsModal } from "./applications.js";
 import { Panel } from "./panel.js";
 import { PanelSheet } from "./sheet.js";
+import { AskPanel } from "./ask.js";
 import { add, clear, h, icons, plural, svg, viewH } from "./dom.js";
 import { openPop, menuIcons } from "./pop.js";
 import { store } from "./store.js";
@@ -102,7 +103,6 @@ export class App {
     this.query = emptyQuery();
     this.view = "globe";
     this.selected = null;
-    this.suggestCursor = -1;
 
     this.el = {
       canvas: document.getElementById("globe"),
@@ -126,6 +126,16 @@ export class App {
 
     this.modals = new ModalLayer(this.el.modals, { onToggle: () => this.#syncCovered() });
     this.panel = new Panel(this.el.panel, { net: this.net, on: this.#panelHandlers() });
+    this.ask = new AskPanel({
+      net: this.net,
+      ask: api.isConfigured ? (args) => api.askTerra(args) : null,
+      onOpenNeed: (need) => this.openNeed(need, { fly: true }),
+      onResults: (needs) => this.#askResults(needs),
+      onToggle: () => {
+        this.syncReserved();
+        setTimeout(() => this.syncReserved(), 360);
+      },
+    });
     // "Search skills, needs or ministries" is 44 characters and a
     // phone shows about 28 of them, so the field advertises itself with a
     // truncated word. Swapped rather than shrunk: 16px is the floor below
@@ -133,7 +143,7 @@ export class App {
     const narrow = window.matchMedia("(max-width: 720px)");
     const placeholder = () => {
       if (!this.el.search) return;
-      this.el.search.placeholder = narrow.matches ? "Search skills or needs" : "Search skills, needs or ministries";
+      this.el.search.placeholder = narrow.matches ? "Ask Terra anything" : "Ask Terra — “I have a free afternoon, what could I do?”";
     };
     narrow.addEventListener("change", placeholder);
     placeholder();
@@ -581,25 +591,20 @@ export class App {
     this.el.grabber.addEventListener("click", () => this.setView(this.board.open ? "globe" : "needs"));
 
     const search = this.el.search;
+    // Typing is just typing: nothing filters or drops down until Enter asks.
     search.addEventListener("input", () => {
-      this.query.text = search.value;
       this.el.clearSearch.hidden = !search.value;
-      this.#renderSuggest();
-      this.applyQuery();
     });
-    search.addEventListener("focus", () => this.#renderSuggest());
-    search.addEventListener("blur", () => setTimeout(() => this.#hideSuggest(), 140));
-    search.addEventListener("keydown", (e) => this.#suggestKeys(e));
-    document.getElementById("searchGo")?.addEventListener("click", () => {
-      if (search.value.trim()) this.#submitSearch();
-      else search.focus();
+    search.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this.#askFromBar();
+      } else if (e.key === "Escape") search.blur();
     });
+    document.getElementById("searchGo")?.addEventListener("click", () => this.#askFromBar());
     this.el.clearSearch.addEventListener("click", () => {
       search.value = "";
-      this.query.text = "";
       this.el.clearSearch.hidden = true;
-      this.#hideSuggest();
-      this.applyQuery();
       search.focus();
     });
   }
@@ -1198,142 +1203,63 @@ export class App {
     this.applyQuery();
   }
 
-  /* ----------------------------------------------------------- suggestions */
+  /* ------------------------------------------------------------ ask terra */
 
   /**
-   * The list under the search bar: the needs that match, best first, as you
-   * type — then a few other things the text could mean (a skill, a
-   * ministry, a filter). Enter with nothing highlighted submits the search:
-   * the page settles into the working view and the list stays open.
+   * Enter in the find bar: the question goes to Ask Terra (ask.js) rather than
+   * filtering as you type. From the landing screen it first settles into the
+   * working view, so the answer opens beside a globe that is ready to fly.
    */
-  #renderSuggest() {
-    const text = this.el.search.value.trim();
-    const box = this.el.suggest;
-    clear(box);
-    this.suggestRows = [];
-    this.suggestCursor = -1;
-    if (text.length < 2) {
-      box.hidden = true;
-      return;
-    }
-
-    const results = this.net.select(this.query);
-    const needRows = results.slice(0, 6).map((n) => ({ kind: "need", need: n }));
-    const others = this.net.suggest(text, 6).filter((r) => r.kind !== "need").slice(0, 4);
-    this.suggestRows = [...needRows, ...others];
-
-    const row = (r) => {
-      if (r.kind === "need") {
-        const n = r.need;
-        return h(
-          "button",
-          { class: "suggest__row result", onclick: () => this.#takeSuggestion(r) },
-          h("span", { class: `dot dot--${n.urgency}` }),
-          h("span", { class: "result__text" },
-            h("b", { text: n.title }),
-            h("small", { text: `${n.ministryName} · ${n.city}` }),
-          ),
-          h("span", { class: "result__meta", text: n.commitment || "" }),
-        );
-      }
-      return h(
-        "button",
-        { class: "suggest__row", onclick: () => this.#takeSuggestion(r) },
-        h("span", { class: "suggest__kind", text: r.kind }),
-        h("b", { text: r.label }),
-        h("span", { text: r.note }),
-      );
-    };
-
-    box.appendChild(
-      h("div", { class: "suggest__group ml" },
-        results.length ? `${results.length} open need${results.length === 1 ? "" : "s"}` : "No open needs match",
-      ),
-    );
-    needRows.forEach((r) => box.appendChild(row(r)));
-    if (results.length > needRows.length) {
-      box.appendChild(
-        h("button", { class: "suggest__more", onclick: () => { this.#hideSuggest(); this.setView("needs"); } },
-          `See all ${results.length} on the needs board →`),
-      );
-    }
-    if (others.length) {
-      box.appendChild(h("div", { class: "suggest__group ml", text: "Also try" }));
-      others.forEach((r) => box.appendChild(row(r)));
-    }
-    box.hidden = false;
-  }
-
-  /** Enter: take the search into the working view, results still showing. */
-  #submitSearch() {
+  #askFromBar() {
+    const search = this.el.search;
+    const text = search.value.trim();
+    if (!text) return search.focus();
     this.#leaveHero({ settle: true });
-    this.applyQuery();
-    this.#renderSuggest();
+    search.value = "";
+    this.el.clearSearch.hidden = true;
+    // Down goes the phone keyboard, which would otherwise cover the answer.
+    if (PHONE.matches) search.blur();
+    this.ask.submit(text);
   }
 
   #hideSuggest() {
     this.el.suggest.hidden = true;
   }
 
-  #suggestKeys(e) {
-    const rows = this.suggestRows || [];
-    if (e.key === "Escape") {
-      this.#hideSuggest();
-      return;
-    }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      if (this.suggestCursor >= 0 && rows[this.suggestCursor]) this.#takeSuggestion(rows[this.suggestCursor]);
-      else if (this.el.search.value.trim()) this.#submitSearch();
-      return;
-    }
-    if (!rows.length || this.el.suggest.hidden) return;
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      const dir = e.key === "ArrowDown" ? 1 : -1;
-      this.suggestCursor = (this.suggestCursor + dir + rows.length) % rows.length;
-      const items = [...this.el.suggest.querySelectorAll(".suggest__row")];
-      items.forEach((el, i) => el.classList.toggle("is-cursor", i === this.suggestCursor));
-      items[this.suggestCursor]?.scrollIntoView({ block: "nearest" });
-    }
+  /**
+   * The answer's needs on the globe: their pins stay lit and the rest of the
+   * network dims, and when they are all in one part of the world the camera
+   * goes there. `null` is the panel closing, which hands the globe back to
+   * the filters.
+   */
+  #askResults(needs) {
+    if (needs === null) return this.applyQuery();
+    if (!needs.length) return this.globe?.setDimmed(new Set());
+    const keep = new Set(needs.map((n) => n.ministry));
+    this.globe?.setDimmed(new Set(this.net.ministries.filter((m) => !keep.has(m.id)).map((m) => m.id)));
+
+    const places = [...keep].map((id) => this.net.ministryById.get(id)).filter(Boolean);
+    if (!places.length) return;
+    if (places.length === 1) return this.globe?.focus(places[0], { zoom: 0.5 });
+    // The centre of the pins on the sphere, and how far the farthest is from
+    // it: a cluster gets the camera, a scatter across continents does not.
+    const v = places.map((m) => {
+      const la = (m.lat * Math.PI) / 180;
+      const lo = (m.lon * Math.PI) / 180;
+      return [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
+    });
+    const c = v.reduce((a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], [0, 0, 0]);
+    const len = Math.hypot(...c) || 1;
+    const u = c.map((x) => x / len);
+    const spread = Math.max(...v.map((p) => Math.acos(Math.min(1, p[0] * u[0] + p[1] * u[1] + p[2] * u[2])))) * (180 / Math.PI);
+    if (spread > 32) return;
+    const centre = {
+      lat: (Math.asin(u[2]) * 180) / Math.PI,
+      lon: (Math.atan2(u[1], u[0]) * 180) / Math.PI,
+    };
+    this.globe?.focus(centre, { zoom: spread < 6 ? 0.48 : spread < 15 ? 0.36 : 0.24 });
   }
 
-  #takeSuggestion(row) {
-    if (!row) return;
-    this.#hideSuggest();
-    if (row.kind === "ministry") {
-      this.el.search.value = "";
-      this.query.text = "";
-      this.el.clearSearch.hidden = true;
-      this.applyQuery();
-      this.openMinistry(row.ministry, { fly: true });
-    } else if (row.kind === "need") {
-      this.openNeed(row.need, { fly: true });
-    } else if (row.kind === "skill") {
-      this.el.search.value = row.skill;
-      this.query.text = row.skill;
-      this.el.clearSearch.hidden = false;
-      this.applyQuery();
-    } else if (row.kind === "filter") {
-      // A matched vocabulary term goes straight into whichever chip owns it.
-      const target = this.#chipKeyFor(row.item.id);
-      if (target) {
-        this.query[target].add(row.item.id);
-        this.filtersUi.render();
-      }
-      this.el.search.value = "";
-      this.query.text = "";
-      this.el.clearSearch.hidden = true;
-      this.applyQuery();
-    }
-  }
-
-  #chipKeyFor(id) {
-    for (const group of this.filtersUi.groups) {
-      if (group.options.some((o) => o.id === id)) return group.key;
-    }
-    return null;
-  }
 
   /* --------------------------------------------------------------- events */
 
@@ -1546,6 +1472,7 @@ export class App {
     push(document.querySelector(".dock"), 4);
     for (const fab of document.querySelectorAll(".fabs .fab")) push(fab, 4);
     if (this.panel.open) push(this.el.panel);
+    if (this.ask?.open) push(this.ask.root);
     if (this.board.open) push(this.el.sheet);
     this.globe?.setReserved(rects);
     // A side card starts below the find bar, so it never covers the search or

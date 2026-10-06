@@ -1,0 +1,539 @@
+/* Ask Terra (src/ui/ask.js): the conversation down the left of the map.
+
+   Glass rather than a card: the globe stays visible through it, softened, so
+   the panel reads as something laid over the planet rather than a page beside
+   it. The material is three layers — a tinted veil from the surface colour, a
+   faint top-lit sheen, and an inner hairline catching the light along the top
+   edge — and the cards inside repeat it at a lower strength. */
+
+/* The column the panel takes, shared with the need card that opens beside it. */
+:root {
+  --ask-col: max(min(372px, calc(50vw - 300px)), 300px);
+}
+
+.ask {
+  position: fixed;
+  z-index: 6;
+  top: calc(112px + var(--safe-t));
+  bottom: calc(96px + var(--safe-b));
+  left: calc(var(--edge) + var(--safe-l));
+  width: var(--ask-col);
+  display: flex;
+  flex-direction: column;
+  border-radius: 26px;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.085) 0%, rgba(255, 255, 255, 0.015) 38%, rgba(255, 255, 255, 0) 100%),
+    color-mix(in srgb, var(--surface) 58%, transparent);
+  border: 1px solid rgba(190, 215, 255, 0.15);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.11),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.015),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 34px 90px -30px rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(28px) saturate(1.7);
+  -webkit-backdrop-filter: blur(28px) saturate(1.7);
+  color: var(--body);
+  opacity: 0;
+  translate: -18px 0;
+  transition: opacity 0.32s var(--ease), translate 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.ask.is-in {
+  opacity: 1;
+  translate: 0 0;
+}
+
+.ask[hidden] {
+  display: none;
+}
+
+/* A need opened from an answer stands in the next column over, not under the
+   panel it came from: the answer, the card and the place on the globe all in
+   view at once. */
+body.ask-open .modal.modal--side {
+  left: calc(var(--edge) + var(--safe-l) + var(--ask-col) + 14px);
+  /* Below the find bar and its filter row, which run across this column. */
+  top: calc(var(--find-bottom, 196px) + 14px);
+  width: min(var(--panel-w), calc(100vw - var(--ask-col) - var(--panel-w) - 4 * var(--edge) - 28px));
+  max-height: calc(100vh - var(--find-bottom, 196px) - 14px - 96px - var(--safe-b));
+}
+
+/* ---- head ---- */
+
+.ask__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 12px 10px 18px;
+  border-bottom: 1px solid rgba(190, 215, 255, 0.08);
+}
+
+.ask__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 620;
+  color: var(--ink);
+  text-align: left;
+  cursor: default;
+}
+
+.ask__spark {
+  width: 16px;
+  height: 16px;
+  fill: #ffcf7a;
+  filter: drop-shadow(0 0 6px rgba(255, 190, 90, 0.55));
+}
+
+.ask__count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ask__new {
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(190, 215, 255, 0.1);
+  transition: background 0.2s var(--ease);
+}
+
+.ask__new:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ask__x {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: var(--muted);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+.ask__x:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+}
+
+.ask__x svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+/* ---- thread ---- */
+
+.ask__thread {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 16px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  scroll-behavior: smooth;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 14px), transparent 100%);
+}
+
+.ask__hello {
+  margin: 2px 4px 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.ask__examples {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ask__example {
+  text-align: left;
+  padding: 11px 14px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(190, 215, 255, 0.1);
+  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+
+.ask__example:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(190, 215, 255, 0.2);
+}
+
+/* The visitor's words: a tinted bubble on the right, as in every messenger. */
+.ask__q {
+  align-self: flex-end;
+  max-width: 86%;
+  padding: 10px 14px;
+  border-radius: 18px 18px 6px 18px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #fff;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 78%, #fff 6%), var(--accent));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 6px 18px -8px color-mix(in srgb, var(--accent) 70%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.ask__a {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ask__reply {
+  margin: 0 4px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.ask__a--wait {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin: 0 4px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.ask__dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.ask__dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--brand-blue);
+  animation: ask-dot 1.1s ease-in-out infinite;
+}
+
+.ask__dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.ask__dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes ask-dot {
+  0%, 80%, 100% {
+    opacity: 0.25;
+    translate: 0 0;
+  }
+  40% {
+    opacity: 1;
+    translate: 0 -3px;
+  }
+}
+
+/* ---- result cards ---- */
+
+.ask__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ask__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 12px 14px 13px;
+  text-align: left;
+  border-radius: 16px;
+  background:
+    linear-gradient(170deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)),
+    rgba(10, 18, 32, 0.35);
+  border: 1px solid rgba(190, 215, 255, 0.11);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: background 0.22s var(--ease), border-color 0.22s var(--ease), translate 0.22s var(--ease), box-shadow 0.22s var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ask__card:hover {
+  translate: 0 -1px;
+  background:
+    linear-gradient(170deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03)),
+    rgba(10, 18, 32, 0.35);
+  border-color: rgba(190, 215, 255, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 10px 26px -14px rgba(0, 0, 0, 0.7);
+}
+
+.ask__card:active {
+  scale: 0.99;
+}
+
+.ask__card.is-active {
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.ask__card-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.ask__card-top .ml {
+  font-size: 10px;
+}
+
+.ask__tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--ongoing);
+  background: color-mix(in srgb, var(--ongoing) 14%, transparent);
+}
+
+.ask__fly {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--brand-blue);
+  opacity: 0;
+  translate: -4px 0;
+  transition: opacity 0.2s var(--ease), translate 0.2s var(--ease);
+}
+
+.ask__fly svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ask__card:hover .ask__fly,
+.ask__card.is-active .ask__fly,
+.ask__card:focus-visible .ask__fly {
+  opacity: 1;
+  translate: 0 0;
+}
+
+.ask__card-title {
+  font-size: 15px;
+  font-weight: 620;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.ask__card-where {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.ask__card-where svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.ask__why {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.ask__commit {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  color: var(--faint);
+}
+
+/* ---- composer ---- */
+
+.ask__composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 12px 12px;
+  padding: 5px 5px 5px 16px;
+  border-radius: 999px;
+  background: rgba(4, 10, 20, 0.45);
+  border: 1px solid rgba(190, 215, 255, 0.14);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+
+.ask__composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 0 3px var(--accent-ring);
+}
+
+.ask__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  border: 0;
+  outline: none;
+  background: none;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.ask__input::placeholder {
+  color: var(--faint);
+}
+
+.ask__send {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--accent);
+  transition: background 0.2s var(--ease), opacity 0.2s var(--ease);
+}
+
+.ask__send:hover {
+  background: var(--accent-hover);
+}
+
+.ask__send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ask__send svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- phone: a sheet up from the bottom ---- */
+
+@media (max-width: 720px) {
+  .ask {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: min(68dvh, 600px);
+    border-radius: 24px 24px 0 0;
+    border-bottom: 0;
+    padding-bottom: var(--safe-b);
+    translate: 0 40px;
+    transition: opacity 0.3s var(--ease), translate 0.42s cubic-bezier(0.32, 0.72, 0, 1), height 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+    background:
+      linear-gradient(165deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.015) 38%, rgba(255, 255, 255, 0) 100%),
+      color-mix(in srgb, var(--surface) 82%, transparent);
+  }
+
+  .ask.is-in {
+    translate: 0 0;
+  }
+
+  /* The handle; the top strip pulls the sheet down (swipe.js). */
+  .ask::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    left: 50%;
+    translate: -50% 0;
+    width: 40px;
+    height: 5px;
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--ink) 24%, transparent);
+    pointer-events: none;
+  }
+
+  .ask__head {
+    padding-top: 20px;
+  }
+
+  /* After a card is chosen the sheet folds into a bar under the find bar,
+     so the globe can be seen flying there and the ministry's own sheet has
+     the bottom of the screen; tapping the bar brings the answer back. */
+  .ask.is-min {
+    top: calc(var(--safe-t) + 74px);
+    bottom: auto;
+    left: 12px;
+    right: 12px;
+    height: auto;
+    padding-bottom: 0;
+    border-radius: 999px;
+    border-bottom: 1px solid rgba(190, 215, 255, 0.15);
+  }
+
+  .ask.is-min::before,
+  .ask.is-min .ask__new {
+    display: none;
+  }
+
+  .ask.is-min .ask__head {
+    padding: 6px 6px 6px 16px;
+    border-bottom: 0;
+  }
+
+  .ask.is-min .ask__thread,
+  .ask.is-min .ask__composer {
+    display: none;
+  }
+
+  .ask.is-min .ask__title {
+    cursor: pointer;
+  }
+
+  .ask__fly {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  .ask__input {
+    font-size: 16px;
+  }
+
+  /* The sheet takes the bottom of the screen; the dock and the round control
+     step out of its way as they do for the other sheets. */
+  body.ask-open .dock,
+  body.ask-open .fabs {
+    translate: 0 calc(100% + var(--dock-b) + 20px);
+    opacity: 0;
+    pointer-events: none;
+  }
+}
