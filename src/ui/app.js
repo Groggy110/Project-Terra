@@ -1472,7 +1472,12 @@ export class App {
     push(document.querySelector(".dock"), 4);
     for (const fab of document.querySelectorAll(".fabs .fab")) push(fab, 4);
     if (this.panel.open) push(this.el.panel);
-    if (this.ask?.open) push(this.ask.root);
+    // The conversation's window is clear: only its header and field are
+    // solid enough that a label under them would be lost.
+    if (this.ask?.open) {
+      push(this.ask.root.querySelector(".ask__head"));
+      push(this.ask.root.querySelector(".ask__composer"));
+    }
     if (this.board.open) push(this.el.sheet);
     this.globe?.setReserved(rects);
     // A side card starts below the find bar, so it never covers the search or
