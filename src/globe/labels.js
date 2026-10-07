@@ -532,6 +532,7 @@ export class LabelLayer {
       if (this.areaEl) {
         this.areaEl.svg.style.display = "none";
         this.areaEl.tag.style.display = "none";
+        this.areaEl.ring.style.display = "none";
       }
       return;
     }
@@ -547,19 +548,9 @@ export class LabelLayer {
       tag.className = "radius__tag";
       svg.append(fill, edge);
       this.root.prepend(svg, tag);
-      // The light that runs round the rim, as it runs round the buttons on
-      // hover: a tail, a body and a white head, three dashes on the same
-      // path travelling together (globe.css, .radius__comet). pathLength
-      // makes the dashes a share of the rim, so the comet is the same
-      // fraction of a one-mile circle as of a five-hundred-mile one.
-      const comet = ["tail", "body", "head"].map((part) => {
-        const c = document.createElementNS(NS, "path");
-        c.setAttribute("class", `radius__comet radius__comet--${part}`);
-        c.setAttribute("pathLength", "100");
-        svg.append(c);
-        return c;
-      });
-      this.areaEl = { svg, fill, edge, comet, tag, w: 0, h: 0 };
+      const ring = cometRing(NS);
+      svg.after(ring);
+      this.areaEl = { svg, fill, edge, ring, tag, w: 0, h: 0 };
     }
     const el = this.areaEl;
     el.svg.style.display = "";
@@ -585,6 +576,10 @@ export class LabelLayer {
     let whole = true;
     let top = null;
     let foot = null;
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
     for (let i = 0; i <= N; i++) {
       const b = (i / N) * 2 * Math.PI;
       const lat2 = Math.asin(sinLa * cosA + cosLa * sinA * Math.cos(b));
@@ -596,14 +591,27 @@ export class LabelLayer {
         continue;
       }
       d += `${pen ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+      if (p.x < x0) x0 = p.x;
+      if (p.x > x1) x1 = p.x;
+      if (p.y < y0) y0 = p.y;
+      if (p.y > y1) y1 = p.y;
       pen = true;
       if (i === 0) top = { x: p.x, y: p.y };
       else if (i === N / 2) foot = { x: p.x, y: p.y };
     }
     el.fill.setAttribute("d", whole ? `${d}Z` : "");
     el.edge.setAttribute("d", whole ? `${d}Z` : d);
-    // Only round a whole rim: on a broken one the comet would jump the gap.
-    for (const c of el.comet) c.setAttribute("d", whole ? `${d}Z` : "");
+    // Over the rim as drawn: the projected circle's box, which the comet's
+    // unit circle is stretched to. Only round a whole rim — on a broken one
+    // the light would run across the gap.
+    if (whole) {
+      el.ring.style.display = "";
+      el.ring.style.width = `${(x1 - x0).toFixed(1)}px`;
+      el.ring.style.height = `${(y1 - y0).toFixed(1)}px`;
+      el.ring.style.transform = `translate3d(${x0.toFixed(1)}px,${y0.toFixed(1)}px,0)`;
+    } else {
+      el.ring.style.display = "none";
+    }
 
     // The distance, written on the circle's northern edge — or its southern
     // one when the north runs up under the top of the screen, where the
@@ -637,6 +645,60 @@ export class LabelLayer {
     write(node, "opacity", clamp(opacity, 0, 1).toFixed(2));
     el.classList.add("is-in");
   }
+}
+
+/**
+ * The light that runs round the serve-locally rim: a bright white head and a
+ * trail behind it nearly the whole way round, growing fainter and thinner
+ * and bluer until it is gone just before the head comes round again — so the
+ * rim is drawn and fades and is drawn again. Built once, as short arcs on a
+ * unit circle, each with its own width and opacity (a gradient along a path
+ * is not something SVG or CSS can do); the widths are in screen pixels
+ * (non-scaling-stroke), so stretching the box to the rim as projected keeps
+ * the band the same thickness on a one-mile circle and a five-hundred-mile
+ * one. The group turns (globe.css, .radius__comet), and the box is placed
+ * over the rim each pass.
+ */
+function cometRing(NS) {
+  const box = document.createElement("span");
+  box.className = "radius__comet";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "-1 -1 2 2");
+  svg.setAttribute("preserveAspectRatio", "none");
+  const g = document.createElementNS(NS, "g");
+  g.setAttribute("class", "radius__comet-spin");
+  const N = 140;
+  const SPAN = (340 * Math.PI) / 180;
+  const head = -Math.PI / 2;
+  const pt = (a) => `${Math.cos(a).toFixed(5)} ${Math.sin(a).toFixed(5)}`;
+  const mix = (a, b, t) => Math.round(a + (b - a) * t);
+  // Drawn tail first, so each piece nearer the head lies over the one behind.
+  for (let i = N - 1; i >= 0; i--) {
+    const f0 = i / N;
+    const f1 = (i + 1) / N;
+    const k = 1 - (f0 + f1) / 2; // 1 at the head, 0 at the end of the trail
+    // A hair of overlap at each end, so the joins never show as seams.
+    const a0 = head - f0 * SPAN + 0.002;
+    const a1 = head - f1 * SPAN - 0.002;
+    const c = document.createElementNS(NS, "path");
+    c.setAttribute("d", `M${pt(a0)}A1 1 0 0 0 ${pt(a1)}`);
+    c.setAttribute("vector-effect", "non-scaling-stroke");
+    c.setAttribute("stroke-width", (0.4 + 3.4 * Math.pow(k, 1.5)).toFixed(2));
+    c.setAttribute("stroke-opacity", Math.pow(k, 1.35).toFixed(3));
+    // White at the head, into the rim's blue within the first sixth.
+    const t = Math.min(1, (1 - k) / 0.16);
+    c.setAttribute("stroke", `rgb(${mix(255, 74, t)} ${mix(255, 157, t)} ${mix(255, 255, t)})`);
+    g.append(c);
+  }
+  // The head: a round dot of light the same few pixels on any circle.
+  const glow = document.createElementNS(NS, "path");
+  glow.setAttribute("class", "radius__comet-head");
+  glow.setAttribute("d", "M0 -1L0.0001 -1");
+  glow.setAttribute("vector-effect", "non-scaling-stroke");
+  g.append(glow);
+  svg.append(g);
+  box.append(svg);
+  return box;
 }
 
 /**
