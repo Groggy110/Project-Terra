@@ -2789,3 +2789,12 @@ body.is-hero .suggest {
     animation: none;
   }
 }
+
+/* On the landing the filter chips sit along the foot of the page, centred
+   under the search bar; below this width their row reaches the corner the
+   tip is in. The globe view has its chips at the top, so it keeps the tip. */
+@media (max-width: 1340px) {
+  body.is-hero .tip {
+    display: none;
+  }
+}

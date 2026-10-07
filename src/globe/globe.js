@@ -795,7 +795,13 @@ export class Globe {
     // That depth is the camera's real altitude; a portrait screen stretches
     // the semantic one (controls.fitted), so it is asked for un-stretched.
     const dist = this.controls.unfitted(1 + depth);
-    this.controls.flyTo({ lat, lon, dist, ms: ms ?? clamp(800 + hop * 6, 800, 1800) });
+    const t = ms ?? clamp(800 + hop * 6, 800, 1800);
+    this.controls.flyTo({ lat, lon, dist, ms: t });
+    // The tiles wait for the landing, as the find bar's flight does: a tile
+    // window re-sent mid-flight is up to sixty-four megabytes through the GPU
+    // in one frame, the hitch in an otherwise even move. The ground they
+    // were going to fetch comes in the moment the camera stops (#quiet).
+    this.quiet(t);
   }
 
   /**
@@ -867,6 +873,8 @@ export class Globe {
       dist: Math.min(distForZoom(Math.max(zoom, from)), this.controls.target.dist),
       ms: ms ?? clamp(700 + hop * 6, 700, 1750),
     });
+    // Tiles after the landing, not during it; see frameArea.
+    this.quiet(ms ?? clamp(700 + hop * 6, 700, 1750));
   }
 
   flyTo(args) {
@@ -1005,7 +1013,9 @@ export class Globe {
     // window it would step the landing down to 70% or 55% — is exactly the
     // sharpness the stage is for. It starts measuring once the stage is left
     // (detailHeld is released with it).
-    if (this.detailHeld || this.#quiet(performance.now()) || this.atRest) {
+    // Nor while the style editor films a camera path: a step down mid-take
+    // is a visible softening in the recording.
+    if (this.detailHeld || this.filming || this.#quiet(performance.now()) || this.atRest) {
       this.frames.length = 0;
       return false;
     }
@@ -1105,15 +1115,7 @@ export class Globe {
     this.controls.spinFloor = spin;
     this.detailHeld = true;
     // Back to full resolution for the stage; see #autoRes.
-    if (this.res < 1) {
-      this.res = 1;
-      this.resAt = performance.now();
-      this.frames.length = 0;
-      this.skipSample = true;
-      this.renderer.setPixelRatio(this.dpr);
-      this.renderer.setSize(this.size.w, this.size.h, false);
-      this.painter.painted = null;
-    }
+    this.#fullRes();
     this.heroHome = home;
     this.heroDist = dist;
     this.controls.flyTo({ lat: home.lat, lon: home.lon, ms, silent: true, arc: 0, ease: "cubic" });
@@ -1162,6 +1164,34 @@ export class Globe {
       this.dirty = true;
     }
     return this.quietMove || now < this.quietUntil;
+  }
+
+  #fullRes() {
+    if (this.res >= 1) return;
+    this.res = 1;
+    this.resAt = performance.now();
+    this.frames.length = 0;
+    this.skipSample = true;
+    this.renderer.setPixelRatio(this.dpr);
+    this.renderer.setSize(this.size.w, this.size.h, false);
+    this.painter.painted = null;
+  }
+
+  /**
+   * The style editor's animation timeline films the globe: "live" while it
+   * plays in real time, "step" while it renders frame by frame. Either way
+   * the drawing buffer goes back to full resolution and stays there, and the
+   * tile imagery is fetched sharp through the move. null hands back.
+   */
+  setFilming(mode) {
+    this.filming = mode || null;
+    if (this.filming) this.#fullRes();
+    this.dirty = true;
+  }
+
+  /** Every tile the view asked for has landed and faded in. */
+  get filmSettled() {
+    return !this.imagery.enabled || this.detailHeld || this.imagery.idle;
   }
 
   /** Lets the tile imagery back in; see `detailHeld` in the constructor. */
@@ -1469,6 +1499,9 @@ export class Globe {
     // hitch. The tiles stream once the planet has landed and fade in on their
     // own long clock, so arriving a moment later costs nothing that shows.
     if (this.detailHeld || this.#quiet(now)) return;
+    // Filming (setFilming) wants the ground sharp on every frame of the move,
+    // not a level soft until it stops: the take is the move.
+    if (this.filming) immediate = true;
     const moving = this.controls.dragging || this.idleFrames < 2;
     if (!immediate && moving && now - this.lastTiles < DETAIL_MOTION_MS) return;
 
@@ -1648,7 +1681,8 @@ export class Globe {
     // ground stays readable, and drifts slowly enough to notice only if you
     // stop and look.
     const gs = STYLE.globe;
-    this.drift = (this.drift + dt * gs.clouds.drift) % 1;
+    // A frame-by-frame render sets the drift itself, from the timeline's clock.
+    if (this.filming !== "step") this.drift = (this.drift + dt * gs.clouds.drift) % 1;
     const z = this.controls.zoom;
     const c = this.clouds.uniforms;
     c.uDrift.value = this.drift;
@@ -1701,7 +1735,10 @@ export class Globe {
       // window to be complete before it will show any of it.
       ? this.#detailNeed(z) * smoothstep(0.0, 0.25, this.imagery.coverage)
       : 0;
-    this.detailMix += (wanted - this.detailMix) * (1 - Math.exp(-dt / DETAIL_TAU));
+    // A frame-by-frame render waits for every frame's tiles, so the fade is
+    // landed rather than eased: otherwise it would depend on the wait.
+    if (this.filming === "step") this.detailMix = wanted;
+    else this.detailMix += (wanted - this.detailMix) * (1 - Math.exp(-dt / DETAIL_TAU));
     if (Math.abs(wanted - this.detailMix) > 0.002) this.dirty = true;
     this.earth.uniforms.uDetailMix.value = this.detailMix;
     // Where the imagery draws the water too, the coastline the ink is tracing

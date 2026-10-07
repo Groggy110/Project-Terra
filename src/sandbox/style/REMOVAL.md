@@ -23,11 +23,11 @@ system, and the app needs them:
 
 | What | Where |
 | --- | --- |
-| Sandbox code | `src/sandbox/style/` (`index.js`, `panel.js`, `tools.js`, `capture.js`, `sandbox.css`, this file) |
+| Sandbox code | `src/sandbox/style/` (`index.js`, `panel.js`, `tools.js`, `capture.js`, `animate.js`, `sandbox.css`, this file) |
 | Entry points | two marked blocks, each between `// SANDBOX START` and `// SANDBOX END`: one in `src/main.js` (loads the panel on demand, exposes `window.terraStyleEditor`), one in `src/ui/app.js` `#menu()` (the "Style editor" item in the ••• menu) |
 | Dependency | `lil-gui` in `devDependencies` (package.json and package-lock.json) |
-| Browser storage | localStorage key `terraSandbox` (presets, the export note, panel position) |
-| Globe hook | `globe.frozen` (globe.js `#tick`), set only by `capture.js` while it grabs a still. Harmless left in. |
+| Browser storage | localStorage key `terraSandbox` (presets, the export note, panel position, the animation timeline) |
+| Globe hooks | `globe.frozen` (globe.js `#tick`), set only by `capture.js` while it grabs a still; `globe.setFilming()` / `globe.filmSettled` (globe.js), `controls.path` (controls.js `update`) and `imagery.idle` (imagery.js), used only by `animate.js` to fly and film a camera path. All are inert unless set. Harmless left in. |
 | Globals | `window.terraStyleEditor` (open/toggle handle, set by main.js), `window.terraSandbox` (the panel, once opened) |
 
 No other file references the sandbox. `src/sandbox/` also holds the older

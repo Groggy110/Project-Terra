@@ -830,10 +830,24 @@ export class GlobeControls {
   /** Advances the easing; returns true when the camera actually moved. */
   update(dt) {
     const before = `${this.lat.toFixed(5)}|${this.lon.toFixed(5)}|${this.dist.toFixed(6)}`;
-    const drift = this.#drift(dt);
+    const drift = this.path ? 0 : this.#drift(dt);
     this.spinning = drift !== 0;
 
-    if (this.flight) {
+    if (this.path) {
+      // A camera path — the style editor's animation timeline — owns the view
+      // outright while it plays: no flight, drift, throw or held anchor. It
+      // is sampled here, on the globe's own frame, so the view and everything
+      // projected from it agree on every frame.
+      const p = this.path();
+      this.flight = null;
+      this.anchor = null;
+      this.vel.lat = this.vel.lon = 0;
+      this.quiet = 0;
+      this.lat = clamp(p.lat, -cam().latLimit, cam().latLimit);
+      this.lon += wrapDelta(this.lon, p.lon);
+      this.dist = clamp(p.dist, closest(), cam().maxDist + 1.4);
+      this.target = { lat: this.lat, lon: this.lon, dist: this.dist };
+    } else if (this.flight) {
       const f = this.flight;
       f.t = Math.min(f.t + dt * 1000, f.ms);
       const k = f.ease(f.t / f.ms);

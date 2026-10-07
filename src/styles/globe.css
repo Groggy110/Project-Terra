@@ -476,12 +476,13 @@ body.is-moving-area .radius__fill {
   stroke-linecap: butt;
 }
 
-/* Turned about the circle's centre. With a view-box reference the box's
-   origin is the viewBox's own (0,0) — the centre here, as the viewBox runs
-   -1..1 — so the origin is "0 0"; "50% 50%" would be the corner (1,1). */
-.radius__comet-spin {
-  transform-box: view-box;
-  transform-origin: 0 0;
+/* The whole drawing turns, as its own layer: the arcs are painted once and
+   the compositor rotates the picture, so the light runs at the display's
+   own rate whatever the page is doing. (Turning a group inside the SVG
+   repainted all hundred and forty arcs every frame, on the same thread that
+   draws the globe and places the labels — the stutter.) */
+.radius__comet svg {
+  will-change: transform;
   animation: radius-comet 7s linear infinite;
 }
 
@@ -490,7 +491,7 @@ body.is-moving-area .radius__fill {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .radius__comet-spin {
+  .radius__comet svg {
     animation: none;
   }
 }

@@ -37,6 +37,7 @@ import {
 import { applyStyle, mergeInto } from "../../style/applyStyle.js";
 import { History, download, exportJson, loadStore, parseImport, saveStore, screenshot } from "./tools.js";
 import { Capture } from "./capture.js";
+import { Animator } from "./animate.js";
 
 /** Groups whose restyle does real work (a vector repaint, a new sphere). */
 const HEAVY = new Set(["lines", "globe"]);
@@ -57,6 +58,7 @@ export class StylePanel {
     this.ab = false;
     this.abStash = null;
     this.capture = new Capture(this);
+    this.animator = new Animator(this);
     this.ui = {
       scene: currentScene(),
       theme: this.theme,
@@ -106,6 +108,7 @@ export class StylePanel {
 
     this.#toolbar(gui);
     this.capture.build(gui);
+    this.animator.build(gui);
     this.#landing(gui);
     this.#background(gui);
     this.#camera(gui);

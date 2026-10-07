@@ -616,14 +616,22 @@ export class LabelLayer {
     }
     el.fill.setAttribute("d", whole ? `${d}Z` : "");
     el.edge.setAttribute("d", whole ? `${d}Z` : d);
-    // Over the rim as drawn: the projected circle's box, which the comet's
-    // unit circle is stretched to. Only round a whole rim — on a broken one
-    // the light would run across the gap.
+    // Over the rim as drawn: a square on the circle's centre, as wide as its
+    // mean diameter — a circle facing the camera projects round to well
+    // under a pixel, and a broken rim (round the limb) hides it anyway. Square
+    // because the light turns as one composited layer (globe.css), and a
+    // turning layer has to be round to stay on the rim. Its size is only
+    // written when it changes by a whole pixel: a new size is a new raster.
     if (whole) {
+      const size = Math.round((x1 - x0 + y1 - y0) / 2);
+      const cx = (x0 + x1) / 2;
+      const cy = (y0 + y1) / 2;
       el.ring.style.display = "";
-      el.ring.style.width = `${(x1 - x0).toFixed(1)}px`;
-      el.ring.style.height = `${(y1 - y0).toFixed(1)}px`;
-      el.ring.style.transform = `translate3d(${x0.toFixed(1)}px,${y0.toFixed(1)}px,0)`;
+      if (el.ringSize !== size) {
+        el.ringSize = size;
+        el.ring.style.width = el.ring.style.height = `${size}px`;
+      }
+      el.ring.style.transform = `translate3d(${(cx - size / 2).toFixed(1)}px,${(cy - size / 2).toFixed(1)}px,0)`;
     } else {
       el.ring.style.display = "none";
     }

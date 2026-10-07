@@ -96,9 +96,16 @@ function stageFrame() {
 /** Where the headline hangs from: the rim, and the disc's centre line. */
 function stageCss(stage) {
   const s = document.documentElement.style;
-  s.setProperty("--stage-rim", `${stage.rim}px`);
-  s.setProperty("--stage-x", `${stage.x}px`);
+  const rim = `${stage.rim}px`;
+  const x = `${stage.x}px`;
+  // Moves the headline: its box has to be measured again (#trackStage).
+  if (s.getPropertyValue("--stage-rim") !== rim || s.getPropertyValue("--stage-x") !== x) heroMoved = true;
+  s.setProperty("--stage-rim", rim);
+  s.setProperty("--stage-x", x);
 }
+
+/** The headline's box has changed since it was last measured. */
+let heroMoved = true;
 
 export class App {
   constructor() {
@@ -494,6 +501,30 @@ export class App {
     const hero = this.el.hero;
     if (!hero || this.stageTracking) return;
     this.stageTracking = true;
+    // The headline's box is measured only when it can have moved — its own
+    // entrance or exit, a resize, the stage being reframed — and reused
+    // otherwise. Measured every frame, after the globe had moved its labels,
+    // it was a forced layout of the whole page on every frame of the landing.
+    if (!this.heroWatch) {
+      this.heroWatch = true;
+      this.heroAnimating = 0;
+      // Its own, not its words': those animate inside it, and some for ever.
+      const start = (e) => {
+        if (e.target === hero) this.heroAnimating += 1;
+      };
+      const end = (e) => {
+        if (e.target !== hero) return;
+        this.heroAnimating = Math.max(0, this.heroAnimating - 1);
+        heroMoved = true;
+      };
+      hero.addEventListener("transitionrun", start);
+      hero.addEventListener("transitionend", end);
+      hero.addEventListener("transitioncancel", end);
+      hero.addEventListener("animationstart", start);
+      hero.addEventListener("animationend", end);
+      hero.addEventListener("animationcancel", end);
+      window.addEventListener("resize", () => (heroMoved = true));
+    }
     const step = () => {
       const live = document.body.classList.contains("is-hero") || performance.now() < (this.stageTrackUntil ?? 0);
       if (!live || !this.globe) {
@@ -501,7 +532,15 @@ export class App {
         return;
       }
       const d = this.globe.discOnScreen();
-      const box = hero.getBoundingClientRect();
+      // On the way out the words are fading over a planet that is leaving:
+      // the box from before the exit is close enough, and measuring a page
+      // mid-transition is the costliest layout there is.
+      const leaving = !document.body.classList.contains("is-hero");
+      if (!this.heroBox || (!leaving && (heroMoved || this.heroAnimating > 0))) {
+        heroMoved = false;
+        this.heroBox = hero.getBoundingClientRect();
+      }
+      const box = this.heroBox;
       const x = Math.round(d.x - box.left);
       const y = Math.round(d.y - box.top);
       const r = Math.round(d.r);

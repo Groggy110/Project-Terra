@@ -1,8 +1,9 @@
 /**
  * Capture: isolate parts of the page for screen recordings and grabs, put a
  * flat ground behind them, replay the landing entrance on cue, and export
- * straight from the page — a transparent PNG, a transparent PNG sequence of
- * the animation, or a video over the flat ground.
+ * straight from the page — a transparent PNG, a frame sequence of the
+ * entrance or of the animation timeline (animate.js), or a video over the
+ * flat ground.
  *
  * Isolation hides with `visibility`, never `display`, so nothing moves: the
  * search bar on its own sits exactly where it sits on the page.
@@ -80,7 +81,8 @@ export class Capture {
       fps: 30,
       length: 0,
       format: window.MediaRecorder?.isTypeSupported?.("video/mp4;codecs=avc1") ? "mp4" : "webm",
-      replayOnRecord: true,
+      startWith: "entrance",
+      alpha: true,
     };
     this.show = Object.fromEntries(TARGETS.map((t) => [t.key, true]));
     this.stream = null;
@@ -136,16 +138,22 @@ export class Capture {
     keep(ex.add(this.ui, "area", { "Isolated elements": "elements", "Whole window": "window" }).name("Area"));
     btn(ex, "Save transparent PNG", () => this.#run(() => this.png()));
     keep(ex.add(this.ui, "fps", { 24: 24, 30: 30, 60: 60 }).name("Frames per second"));
-    keep(ex.add(this.ui, "length", 0, 20, 0.5).name("Length (s, 0 = auto)"));
-    btn(ex, "Save entrance as PNG sequence (.zip)", () => this.#run(() => this.sequence()));
+    keep(ex.add(this.ui, "length", 0, 60, 0.5).name("Length (s, 0 = auto)"));
+    keep(ex.add(this.ui, "alpha").name("Transparent frames (slower)"));
+    btn(ex, "Save entrance as a frame sequence (.zip)", () => this.#run(() => this.sequence()));
     keep(ex.add(this.ui, "format", { "MP4 (H.264)": "mp4", "WebM (VP9)": "webm" }).name("Video format"));
-    keep(ex.add(this.ui, "replayOnRecord").name("Start with the entrance"));
+    keep(
+      ex.add(this.ui, "startWith", { Nothing: "none", "The landing entrance": "entrance", "The animation timeline": "timeline" }).name(
+        "Start the video with",
+      ),
+    );
     btn(ex, "Record video over the background", () => this.#run(() => this.record()));
     note(
       ex,
-      "Exports read this tab: Chrome asks once — choose “This tab”. PNGs carry real transparency " +
-        "(glows and glass included). Video can’t carry alpha, so it records over the background above; " +
-        "pick green or black there. Esc stops a recording early.",
+      "Exports read this tab: Chrome asks once — choose “This tab”. Transparent frames are PNGs with real " +
+        "alpha (glows and glass included), taken twice each over black and white; untick it for faster, " +
+        "opaque JPEGs. Video can’t carry alpha, so it records over the background above; pick green or " +
+        "black there. Esc stops a recording early.",
     );
     return f;
   }
@@ -376,25 +384,59 @@ export class Capture {
     this.panel.toast(`Saved a transparent PNG, ${trimmed.width}×${trimmed.height}`);
   }
 
-  async sequence() {
-    if (!this.app.onLanding) return this.panel.toast("The sequence is the landing entrance: switch to the landing page first", true);
+  /** The landing entrance as a frame-by-frame driver (see sequence). */
+  #entranceDriver() {
+    return {
+      name: "entrance",
+      check: () => (this.app.onLanding ? "" : "The sequence is the landing entrance: switch to the landing page first"),
+      setup: () => {
+        const rise = this.ui.riseToo;
+        this.ui.riseToo = false;
+        this.restartEntrance();
+        this.ui.riseToo = rise;
+        return {};
+      },
+    };
+  }
+
+  /** Video of the animation timeline, whatever "Start the video with" says. */
+  recordTimeline() {
+    const anim = this.panel.animator;
+    if (!anim?.hasContent) return this.panel.toast("Add two keyframes, or an element animation, first", true);
+    const was = this.ui.startWith;
+    this.ui.startWith = "timeline";
+    return this.#run(() => this.record()).finally(() => (this.ui.startWith = was));
+  }
+
+  /** The animation timeline, frame by frame. */
+  renderTimeline() {
+    return this.#run(() => this.sequence(this.panel.animator.renderDriver()));
+  }
+
+  /**
+   * A frame sequence, every frame set by hand so a slow capture cannot drop
+   * or smear one. The driver starts the animation (setup) and, for anything
+   * the document's own animations do not cover, places frame `t` (seek):
+   * the timeline pins the camera there and waits for the globe to draw it.
+   * Every other running animation on the page is stepped here, on the same
+   * clock. `live` keeps the globe drawing; otherwise it is held still.
+   */
+  async sequence(driver = this.#entranceDriver()) {
+    const problem = driver.check?.();
+    if (problem) return this.panel.toast(problem, true);
     await this.#ensureStream();
     this.#panelVisible(false);
     const rect = this.#elementsRect(80);
     const fps = Number(this.ui.fps) || 30;
+    const alpha = this.ui.alpha;
 
-    // Start the entrance and stop its clock at once: every frame is then
-    // set by hand, so a slow capture cannot drop or smear one.
     const before = new Set(document.getAnimations());
-    const rise = this.ui.riseToo;
-    this.ui.riseToo = false;
-    this.restartEntrance();
-    this.ui.riseToo = rise;
+    const own = driver.setup() ?? {};
     getComputedStyle(document.body).opacity;
-    const anims = document.getAnimations();
+    const anims = document.getAnimations().filter((a) => !own.owns?.has(a));
     const base = new Map(anims.map((a) => [a, before.has(a) ? Number(a.currentTime) || 0 : 0]));
     anims.forEach((a) => a.pause());
-    if (this.globe) this.globe.frozen = true;
+    if (this.globe && !driver.live) this.globe.frozen = true;
 
     const auto = Math.max(
       1,
@@ -405,18 +447,28 @@ export class Capture {
           return t && Number.isFinite(t.endTime) ? t.endTime / 1000 : 0;
         }),
     );
-    const seconds = this.ui.length > 0 ? this.ui.length : Math.min(auto + 0.2, 10);
+    const seconds = this.ui.length > 0 ? this.ui.length : own.seconds ?? Math.min(auto + 0.2, 10);
     const count = Math.ceil(seconds * fps);
     const zip = new Zip();
     const title = document.title;
+    const ext = alpha ? "png" : "jpg";
+    const started = performance.now();
     try {
       for (let i = 0; i < count; i++) {
-        const t = (i * 1000) / fps;
-        for (const a of anims) a.currentTime = base.get(a) + t;
-        const img = await this.#mattedFrame(rect);
-        zip.add(`frame_${String(i).padStart(4, "0")}.png`, new Uint8Array(await (await toPng(img)).arrayBuffer()));
+        const t = i / fps;
+        for (const a of anims) a.currentTime = base.get(a) + t * 1000;
+        await driver.seek?.(t);
+        let blob;
+        if (alpha) {
+          blob = await toPng(await this.#mattedFrame(rect));
+        } else {
+          await this.#fresh();
+          blob = await toJpeg(this.#grab(rect));
+        }
+        zip.add(`frame_${String(i).padStart(4, "0")}.${ext}`, new Uint8Array(await blob.arrayBuffer()));
         // In the tab's title: anything drawn on the page would be in the frames.
-        document.title = `Frame ${i + 1} / ${count} — Terra`;
+        const left = ((performance.now() - started) / (i + 1)) * (count - i - 1);
+        document.title = `Frame ${i + 1} / ${count} · ${Math.ceil(left / 1000)} s left — Terra`;
       }
     } finally {
       document.title = title;
@@ -424,15 +476,16 @@ export class Capture {
         a.currentTime = base.get(a) + seconds * 1000;
         a.play();
       }
+      driver.teardown?.();
       if (this.globe) {
         this.globe.frozen = false;
         this.globe.dirty = true;
       }
       this.apply();
     }
-    download(zip.blob(), `terra-entrance-${fps}fps-${stamp()}.zip`);
+    download(zip.blob(), `terra-${driver.name}-${fps}fps-${stamp()}.zip`);
     this.#panelVisible(true);
-    this.panel.toast(`Saved ${count} transparent frames at ${fps} fps`);
+    this.panel.toast(`Saved ${count} ${alpha ? "transparent " : ""}frames at ${fps} fps`);
   }
 
   async record() {
@@ -464,13 +517,18 @@ export class Capture {
     document.title = "● Recording — Terra";
     const esc = (e) => e.key === "Escape" && rec.state === "recording" && rec.stop();
     window.addEventListener("keydown", esc, true);
-    const replay = this.ui.replayOnRecord && this.app.onLanding;
+    const replay = this.ui.startWith === "entrance" && this.app.onLanding;
+    const anim = this.panel.animator;
+    const timeline = this.ui.startWith === "timeline" && anim?.hasContent;
     if (replay) {
       await wait(250);
       this.restartEntrance();
+    } else if (timeline) {
+      await wait(250);
+      anim.play({ hide: false });
     }
-    const seconds = this.ui.length > 0 ? this.ui.length : replay ? 4.5 : 6;
-    const timer = setTimeout(() => rec.state === "recording" && rec.stop(), seconds * 1000 + (replay ? 250 : 0));
+    const seconds = this.ui.length > 0 ? this.ui.length : replay ? 4.5 : timeline ? anim.duration + 0.4 : 6;
+    const timer = setTimeout(() => rec.state === "recording" && rec.stop(), seconds * 1000 + (replay || timeline ? 250 : 0));
     await stopped;
     clearTimeout(timer);
     window.removeEventListener("keydown", esc, true);
@@ -532,11 +590,19 @@ function trim(img) {
 }
 
 function toPng(img) {
+  return encode(img, "image/png");
+}
+
+function toJpeg(img) {
+  return encode(img, "image/jpeg", 0.94);
+}
+
+function encode(img, type, quality) {
   const c = document.createElement("canvas");
   c.width = img.width;
   c.height = img.height;
   c.getContext("2d").putImageData(img, 0, 0);
-  return new Promise((r) => c.toBlob(r, "image/png"));
+  return new Promise((r) => c.toBlob(r, type, quality));
 }
 
 /* ------------------------------------------------------------------ zip */

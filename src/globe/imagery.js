@@ -597,6 +597,11 @@ export class ImageryLayer {
    * and ride along with that whole upload instead. Returns true while
    * anything is still fading.
    */
+  /** Nothing queued, in flight or still fading in: the window is as sharp as it will get. */
+  get idle() {
+    return !this.queue.length && !this.inflight.size && !this.fades.size;
+  }
+
   frame(now = performance.now()) {
     if (!this.fades.size || !this.rect) return false;
     const tex = this.#gpu();
