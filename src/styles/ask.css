@@ -1,54 +1,54 @@
-/* Ask Terra (src/ui/ask.js): the conversation, in the middle of the map.
+/* Ask Terra (src/ui/ask.js): the conversation, down the left of the map.
 
-   The window itself is clear. There is no pane behind the conversation —
-   the planet goes on turning through it — and each thing in it is its own
-   piece of glass: the header, every message, every result, and the field at
-   the foot. Each blurs what is behind it a little, so the globe's colour and
-   shape still come through but the words sit on something steady.
-
-   That is also why the window has no blur, mask or filter of its own: any of
-   them makes it a "backdrop root", and the glass inside it would then blur
-   only the empty window instead of the planet behind. */
+   One window of frosted glass: a header, the thread, and the field at the
+   foot. The window does the blurring, once, so the planet comes through it
+   softened but always there, turning; everything inside it — the messages,
+   the results, the field — is a lighter or darker wash on that glass rather
+   than a glass of its own (a blur inside a blur would only blur the window). */
 
 :root {
-  /* Room between the left edge and the needs rail on the right. */
-  --ask-w: min(640px, calc(100vw - 2 * (var(--panel-w) + var(--edge) + 18px)));
+  /* Down the left, leaving the planet and the needs rail on the right. */
+  --ask-w: min(460px, calc(100vw - var(--panel-w) - 3 * var(--edge) - 24px));
 
-  /* The glass every piece of the conversation is cut from (glass.css's
-     material, a little clearer so more of the planet shows). */
-  --ask-glass:
-    linear-gradient(180deg, rgb(255 255 255 / 0.1) 0%, rgb(255 255 255 / 0.025) 46%, rgb(255 255 255 / 0.04) 100%),
-    rgb(9 14 25 / 0.42);
-  --ask-edge: rgb(205 225 255 / 0.16);
-  --ask-light: inset 0 1px 0 rgb(255 255 255 / 0.16), inset 0 -1px 0 rgb(255 255 255 / 0.04);
-  --ask-drop: 0 1px 2px rgb(0 0 0 / 0.25), 0 16px 36px -18px rgb(0 0 0 / 0.75);
-  --ask-blur: blur(16px) saturate(1.7);
+  /* The window material lives in glass.css, shared with every pane. */
+  --ask-window: var(--win-fill);
+  --ask-blur: var(--win-blur);
+  --ask-edge: var(--win-edge);
+  --ask-line: var(--win-line);
+  --ask-wash: var(--win-wash);
+  --ask-wash-hi: var(--win-wash-hi);
 }
 
 .ask {
   position: fixed;
   z-index: 6;
-  top: calc(var(--safe-t) + 104px);
-  bottom: calc(var(--safe-b) + 26px);
-  left: 50%;
-  width: max(var(--ask-w), 380px);
+  top: calc(var(--safe-t) + 92px);
+  bottom: calc(var(--safe-b) + 22px);
+  left: calc(var(--edge) + var(--safe-l));
+  width: max(var(--ask-w), 360px);
   display: flex;
   flex-direction: column;
-  gap: 12px;
   color: var(--body);
-  translate: -50% 14px;
+  background: var(--ask-window);
+  border: 1px solid var(--ask-edge);
+  border-radius: 28px;
+  box-shadow: var(--win-shadow);
+  -webkit-backdrop-filter: var(--ask-blur);
+  backdrop-filter: var(--ask-blur);
+  overflow: hidden;
+  translate: -16px 0;
+  scale: 0.985;
   opacity: 0;
-  transition: opacity 0.32s var(--ease), translate 0.42s cubic-bezier(0.32, 0.72, 0, 1);
-  pointer-events: none;
+  transition:
+    opacity 0.32s var(--ease),
+    translate 0.46s cubic-bezier(0.32, 0.72, 0, 1),
+    scale 0.46s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .ask.is-in {
   opacity: 1;
-  translate: -50% 0;
-}
-
-.ask > * {
-  pointer-events: auto;
+  translate: 0 0;
+  scale: 1;
 }
 
 .ask[hidden] {
@@ -72,107 +72,213 @@ body.ask-open .grabber {
 
 /* The imagery credit steps up off the dial's row, clear of the field, and a
    toast rises above the field rather than landing on it. */
-body.ask-open .credit {
-  left: calc(var(--edge) + var(--safe-l));
-  bottom: calc(var(--edge) + var(--safe-b) + 34px + 12px);
-  max-width: calc(50vw - var(--ask-w) / 2 - var(--edge) - 12px);
+body.ask-open .credit,
+body.ask-open .dial {
+  translate: calc(max(var(--ask-w), 360px) + 14px) 0;
+  transition: translate 0.42s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 body.ask-open .toasts {
   bottom: calc(var(--safe-b) + 104px);
 }
 
-/* Every piece of the conversation is a pane of the same glass. */
-.ask__head,
-.ask__q,
-.ask__reply,
-.ask__a--wait,
-.ask__card,
-.ask__example,
-.ask__hello,
-.ask__composer {
-  background: var(--ask-glass);
-  border: 1px solid var(--ask-edge);
-  box-shadow: var(--ask-light), var(--ask-drop);
-  -webkit-backdrop-filter: var(--ask-blur);
-  backdrop-filter: var(--ask-blur);
-}
-
 /* ---- head ---- */
 
 .ask__head {
-  align-self: center;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 6px 5px 16px;
-  border-radius: 999px;
-}
-
-.ask__title {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 14px 14px 10px 18px;
+}
+
+.ask__title {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
-  padding-right: 6px;
-  font-size: 14px;
-  font-weight: 620;
-  color: var(--ink);
   text-align: left;
   cursor: default;
 }
 
-.ask__spark {
-  width: 15px;
-  height: 15px;
-  fill: #ffcf7a;
-  filter: drop-shadow(0 0 6px rgba(255, 190, 90, 0.55));
+.ask__name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ask__name b {
+  font-size: 15px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }
 
 .ask__count {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--ink-2);
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.ask__count:empty {
-  display: none;
+/* Terra's guide (ui/ask.js, avatar): no badge round it, just the little
+   green cloud and its own cyan glow. The box is the layout's; the cloud is
+   allowed out of it, upward when it hops. */
+.ask__avatar {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 36px;
+}
+
+.ask__mascot {
+  position: relative;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 0 2px rgb(40 230 255 / 0.7)) drop-shadow(0 0 8px rgb(20 200 255 / 0.45));
+  animation: guide-hover 3.4s ease-in-out infinite;
+}
+
+/* The guide beside each answer floats a beat behind the one in the header,
+   so the two never bob in step. */
+.ask__a .ask__mascot,
+.ask__a .ask__shadow {
+  animation-delay: -1.3s;
+}
+
+.ask__mascot-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.ask__mascot-eyes {
+  transform-box: fill-box;
+  transform-origin: 50% 60%;
+}
+
+/* A soft glow under it: faint while it hovers, firmer as it hops. */
+.ask__shadow {
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 64%;
+  height: 4px;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(30 190 255 / 0.45), transparent);
+  opacity: 0.5;
+  animation: guide-hover-shadow 3.4s ease-in-out infinite;
+}
+
+/* At rest it hovers: two pixels up and down with the slightest sway, slow
+   enough to read as alive rather than as motion. */
+@keyframes guide-hover {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-1.5px) rotate(-1.5deg); }
+  50% { transform: translateY(-2.5px) rotate(0deg); }
+  75% { transform: translateY(-1.5px) rotate(1.5deg); }
+}
+
+@keyframes guide-hover-shadow {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(0.82); opacity: 0.3; }
+}
+
+/* Thinking takes over from hovering: the hop has its own rise and fall. */
+.ask__avatar.is-thinking .ask__mascot {
+  animation: none;
+}
+
+/* Thinking: little hops — a crouch, a stretch on the way up, a squash on
+   landing — with the eyes squeezing shut a touch at the top. */
+.ask__avatar.is-thinking .ask__mascot-body {
+  animation: guide-hop 0.78s cubic-bezier(0.35, 0, 0.4, 1) infinite;
+}
+
+.ask__avatar.is-thinking .ask__mascot-eyes {
+  animation: guide-squint 0.78s ease-in-out infinite;
+}
+
+.ask__avatar.is-thinking .ask__shadow {
+  opacity: 1;
+  animation: guide-shadow 0.78s cubic-bezier(0.35, 0, 0.4, 1) infinite;
+}
+
+@keyframes guide-hop {
+  0% { transform: translateY(0) scale(1.12, 0.86); }
+  14% { transform: translateY(-4%) scale(0.92, 1.1); }
+  42% { transform: translateY(-30%) scale(0.97, 1.04); }
+  50% { transform: translateY(-32%) scale(1, 1); }
+  72% { transform: translateY(0) scale(0.96, 1.05); }
+  82% { transform: translateY(0) scale(1.14, 0.84); }
+  100% { transform: translateY(0) scale(1.12, 0.86); }
+}
+
+@keyframes guide-squint {
+  0%, 30%, 70%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.7) translateY(-4%); }
+}
+
+@keyframes guide-shadow {
+  0%, 82%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.55); opacity: 0.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask__mascot,
+  .ask__shadow,
+  .ask__avatar.is-thinking .ask__mascot-body,
+  .ask__avatar.is-thinking .ask__mascot-eyes,
+  .ask__avatar.is-thinking .ask__shadow {
+    animation: none;
+  }
 }
 
 .ask__new {
-  height: 28px;
-  padding: 0 12px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
   border-radius: 999px;
-  border: 1px solid var(--ask-edge);
-  font-size: 12.5px;
   color: var(--ink-2);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+.ask__new:hover {
+  background: var(--ask-wash-hi);
+  color: var(--ink);
+}
+
+.ask__new svg,
+.ask__x svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .ask__x {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 999px;
-  color: var(--muted);
+  color: var(--ink-2);
   transition: background 0.2s var(--ease), color 0.2s var(--ease);
 }
 
 .ask__x:hover {
-  background: rgb(255 255 255 / 0.1);
+  background: var(--ask-wash-hi);
   color: var(--ink);
-}
-
-.ask__x svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
 }
 
 /* ---- thread ---- */
@@ -181,89 +287,101 @@ body.ask-open .toasts {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
-  /* Room round the panes for their shadows, which a scroller clips. */
-  padding: 6px 10px 18px;
-  margin: 0 -10px;
+  padding: 24px 24px 28px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 26px;
   scroll-behavior: smooth;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.15) transparent;
+  /* Messages fade out under the header and over the field, not cut off. */
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 18px, #000 calc(100% - 22px), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 18px, #000 calc(100% - 22px), transparent 100%);
 }
 
-.ask__thread::-webkit-scrollbar {
-  display: none;
+/* Terra's turn: the mark on the left, the words and results beside it. */
+.ask__a {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  animation: ask-in 0.4s cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 
-.ask__hello {
+.ask__a .ask__avatar {
+  width: 30px;
+  height: 26px;
+  margin-top: -1px;
+}
+
+.ask__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* Terra's words sit straight on the window, as plain text. */
+.ask__reply {
   margin: 0;
-  padding: 14px 18px;
+  max-width: 100%;
+  padding-top: 2px;
+  font-size: 15px;
+  line-height: 1.65;
+  letter-spacing: -0.003em;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* The visitor's words: a quiet grey bubble on the right. */
+.ask__q {
+  align-self: flex-end;
+  max-width: 78%;
+  padding: 9px 16px;
   border-radius: 20px;
   font-size: 15px;
-  line-height: 1.55;
+  line-height: 1.5;
   color: var(--ink);
+  background: rgb(255 255 255 / 0.1);
+  overflow-wrap: anywhere;
+  animation: ask-in 0.35s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes ask-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
 }
 
 .ask__examples {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: 8px;
 }
 
 .ask__example {
   text-align: left;
-  padding: 10px 15px;
-  border-radius: 999px;
-  font-size: 13.5px;
+  padding: 8px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--ask-line);
+  background: transparent;
+  font-size: 13px;
   color: var(--ink-2);
-  transition: border-color 0.2s var(--ease), translate 0.2s var(--ease);
+  transition: background 0.2s var(--ease), border-color 0.2s var(--ease), color 0.2s var(--ease);
 }
 
 .ask__example:hover {
-  border-color: rgb(205 225 255 / 0.3);
-  translate: 0 -1px;
-}
-
-/* The visitor's words: the same glass, tinted with the accent, on the right. */
-.ask__q {
-  align-self: flex-end;
-  max-width: 78%;
-  padding: 11px 16px;
-  border-radius: 20px 20px 6px 20px;
-  font-size: 15px;
-  line-height: 1.45;
-  color: #fff;
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.22) 0%, rgb(255 255 255 / 0.05) 50%, rgb(255 255 255 / 0.08) 100%),
-    color-mix(in srgb, var(--accent) 58%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 55%, rgb(255 255 255 / 0.3));
-  overflow-wrap: anywhere;
-}
-
-.ask__a {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.ask__reply {
-  margin: 0;
-  max-width: 88%;
-  padding: 13px 17px;
-  border-radius: 20px 20px 20px 6px;
-  font-size: 15px;
-  line-height: 1.55;
+  background: var(--ask-wash-hi);
+  border-color: rgb(205 225 255 / 0.22);
   color: var(--ink);
 }
 
-.ask__a--wait {
-  flex-direction: row;
+.ask__wait {
+  display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 16px;
-  border-radius: 20px 20px 20px 6px;
   font-size: 13.5px;
   color: var(--ink-2);
 }
@@ -300,11 +418,53 @@ body.ask-open .toasts {
   }
 }
 
+/* Serve locally: within ten miles, or the closest wherever they are. */
+.ask__modes {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.22);
+  border: 1px solid var(--ask-line);
+}
+
+.ask__modes button {
+  padding: 6px 13px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 540;
+  color: var(--ink-2);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+.ask__modes button:has(.ico) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+}
+
+.ask__modes .ico {
+  width: 13px;
+  height: 13px;
+}
+
+.ask__modes button:hover {
+  background: var(--ask-wash-hi);
+}
+
+.ask__modes button.is-on {
+  background: var(--ask-wash-hi);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1);
+}
+
 /* ---- result cards ---- */
 
 .ask__cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 10px;
   width: 100%;
 }
@@ -313,31 +473,34 @@ body.ask-open .toasts {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   width: 100%;
-  padding: 13px 15px 14px;
+  padding: 14px 16px 15px;
   text-align: left;
-  border-radius: 18px;
-  transition: border-color 0.22s var(--ease), translate 0.22s var(--ease), box-shadow 0.22s var(--ease);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.045);
+  border: 1px solid var(--ask-line);
+  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
   -webkit-tap-highlight-color: transparent;
 }
 
 .ask__card:hover {
-  translate: 0 -2px;
-  border-color: rgb(205 225 255 / 0.3);
-  box-shadow: var(--ask-light), 0 1px 2px rgb(0 0 0 / 0.25), 0 20px 40px -18px rgb(0 0 0 / 0.85);
+  background: rgb(255 255 255 / 0.075);
+  border-color: rgb(205 225 255 / 0.2);
 }
 
 .ask__card:active {
   scale: 0.99;
 }
 
+/* The card whose need is open, joined to it underneath. */
+.ask__card[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--ask-line));
+}
+
 .ask__card.is-active {
-  border-color: color-mix(in srgb, var(--accent) 75%, transparent);
-  box-shadow:
-    var(--ask-light),
-    0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent),
-    var(--ask-drop);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, rgb(255 255 255 / 0.04));
 }
 
 .ask__card-top {
@@ -346,18 +509,24 @@ body.ask-open .toasts {
   gap: 7px;
 }
 
-.ask__card-top .ml {
-  font-size: 10px;
+/* Kinds and labels in the conversation are set in the text face, not the
+   map's monospace: small, medium weight, lightly tracked. */
+.ask .ml {
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 560;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--ink-2);
 }
 
 .ask__tag {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  padding: 2px 6px;
-  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 560;
+  padding: 2px 8px;
+  border-radius: 999px;
   color: var(--ongoing);
-  background: color-mix(in srgb, var(--ongoing) 16%, transparent);
+  background: color-mix(in srgb, var(--ongoing) 14%, transparent);
 }
 
 .ask__fly {
@@ -366,6 +535,7 @@ body.ask-open .toasts {
   align-items: center;
   gap: 4px;
   font-size: 11.5px;
+  font-weight: 540;
   color: var(--brand-blue);
   opacity: 0;
   translate: -4px 0;
@@ -416,36 +586,460 @@ body.ask-open .toasts {
 
 .ask__why {
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--ink-2);
 }
 
 .ask__commit {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.03em;
+  margin-top: 2px;
+  font-size: 12px;
   color: var(--muted);
 }
 
-/* ---- composer: the one bar while the conversation is open ---- */
+/* ---- a need, opened in the thread ---- */
+
+.ask__detail {
+  grid-column: 1 / -1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px 18px;
+  border-radius: 18px;
+  background: rgb(255 255 255 / 0.05);
+  border: 1px solid var(--ask-line);
+  animation: ask-in 0.35s cubic-bezier(0.32, 0.72, 0, 1) both;
+  scroll-margin: 16px;
+}
+
+.ask__detail-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ask__detail-x {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: -6px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+.ask__detail-x:hover {
+  background: var(--ask-wash-hi);
+  color: var(--ink);
+}
+
+.ask__detail-x svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.ask__detail-title {
+  margin: -4px 0 0;
+  font-size: 18px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.ask__detail-where {
+  margin: -6px 0 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  opacity: 0.85;
+}
+
+.ask__detail-where svg,
+.ask__ghost svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.ask__cells {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--ask-line);
+}
+
+.ask__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 12px;
+  background: rgb(8 12 22 / 0.55);
+}
+
+.ask__cell span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.ask__cell b {
+  font-size: 13.5px;
+  font-weight: 560;
+  color: var(--ink);
+}
+
+.ask__detail-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.ask__skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ask__skills span {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--ask-wash);
+  border: 1px solid var(--ask-line);
+}
+
+.ask__detail-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.ask__ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--ask-line);
+  background: var(--ask-wash);
+  font-size: 13px;
+  color: var(--ink-2);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+.ask__ghost:hover {
+  background: var(--ask-wash-hi);
+  color: var(--ink);
+}
+
+.ask__ghost svg {
+  margin-top: 0;
+}
+
+/* ---- a find from a local organisation's own website ----
+
+   Blue where Terra's own needs are red: the circle's colour, so a card reads
+   as something the search turned up nearby, not something posted here. */
+
+.dot--web {
+  background: #4a9dff;
+  box-shadow: 0 0 0 2px rgb(74 157 255 / 0.25);
+}
+
+.ask__tag--web {
+  color: #a9d0ff;
+  background: rgb(47 140 255 / 0.16);
+  border-color: rgb(74 157 255 / 0.3);
+}
+
+.ask__card--web.is-active,
+.ask__card--web:hover {
+  border-color: rgb(74 157 255 / 0.55);
+}
+
+.ask__contact {
+  display: grid;
+  gap: 1px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--ask-line);
+}
+
+.ask__contact-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--ask-wash);
+  color: var(--ink);
+  text-decoration: none;
+  transition: background 0.2s var(--ease);
+}
+
+.ask__contact-row + .ask__contact-row {
+  border-top: 1px solid var(--ask-line);
+}
+
+.ask__contact-row:hover {
+  background: var(--ask-wash-hi);
+}
+
+.ask__contact-row svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: #8cc2ff;
+  stroke-width: 1.5;
+}
+
+.ask__contact-row > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ask__contact-row b {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.ask__contact-row span span {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.btn--serve {
+  text-decoration: none;
+}
+
+a.btn--serve svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.ask__source {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* ---- a task in the thread: applying, booking a call, signing in ----
+
+   The same forms the dialogs build, set in the conversation as a card: a
+   little more ground than a reply, its own close in the corner, and the
+   dialog's scale brought down to the thread's. */
+
+.ask__flow {
+  position: relative;
+  padding: 18px 18px 18px;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.03) 50%),
+    rgb(0 0 0 / 0.1);
+  border: 1px solid rgb(205 225 255 / 0.13);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
+  animation: ask-in 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
+  scroll-margin: 12px;
+}
+
+.ask__flow-x {
+  position: absolute;
+  z-index: 1;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+.ask__flow-x:hover {
+  background: var(--ask-wash-hi);
+  color: var(--ink);
+}
+
+.ask__flow-x svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.ask__flow .modal__inner {
+  display: block;
+}
+
+.ask__flow .modal__body {
+  padding: 0;
+  overflow: visible;
+  max-height: none;
+}
+
+.ask__flow .modal__eyebrow {
+  font-size: 9.5px;
+}
+
+.ask__flow .modal__title {
+  margin-top: 6px;
+  padding-right: 30px;
+  font-size: 19px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.ask__flow .modal__lede {
+  margin-top: 6px;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.ask__flow .form {
+  margin-top: 16px;
+  gap: 14px;
+}
+
+.ask__flow .field .ml {
+  font-size: 9.5px;
+}
+
+.ask__flow :is(.input, .area) {
+  font-size: 14px;
+}
+
+.ask__flow .input {
+  height: 40px;
+}
+
+.ask__flow .area {
+  min-height: 84px;
+}
+
+.ask__flow .row2 {
+  gap: 10px;
+}
+
+.ask__flow .modal__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--ask-line);
+  background: none;
+}
+
+.ask__flow .modal__foot .btn {
+  height: 38px;
+  font-size: 13.5px;
+}
+
+.ask__flow .modal__foot .modal__note {
+  flex-basis: 100%;
+}
+
+.ask__flow .modal__foot .modal__note:empty {
+  display: none;
+}
+
+/* Signing in: the gate's card without its sheet, at the thread's scale. */
+.gate__card--inline {
+  position: static;
+  width: 100%;
+  max-height: none;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  translate: none;
+  scale: none;
+}
+
+.gate__card--inline::before,
+.gate__card--inline::after {
+  display: none;
+}
+
+.ask__flow .gate__body {
+  padding: 0;
+  overflow: visible;
+}
+
+.ask__flow .gate__title {
+  padding-right: 30px;
+  font-size: 19px;
+}
+
+.ask__flow .gate__sub {
+  margin: 6px 0 16px;
+  font-size: 13.5px;
+}
+
+.ask__flow .gate__input {
+  height: 42px;
+  font-size: 14px;
+}
+
+.ask__flow .gate__go {
+  height: 42px;
+}
+
+/* ---- foot: the field, and a line of fine print under it ---- */
+
+.ask__foot {
+  flex: none;
+  padding: 6px 16px 12px;
+}
 
 .ask__composer {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 6px 6px 20px;
+  padding: 5px 5px 5px 18px;
   border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.11) 0%, rgb(255 255 255 / 0.025) 50%, rgb(255 255 255 / 0.04) 100%),
-    rgb(9 14 25 / 0.6);
-  -webkit-backdrop-filter: blur(24px) saturate(1.8);
-  backdrop-filter: blur(24px) saturate(1.8);
-  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid var(--ask-line);
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease), background 0.2s var(--ease);
 }
 
 .ask__composer:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 55%, rgb(205 225 255 / 0.2));
-  box-shadow: var(--ask-light), 0 0 0 3px var(--accent-ring), var(--ask-drop);
+  background: rgb(255 255 255 / 0.08);
+  border-color: rgb(205 225 255 / 0.26);
 }
 
 .ask__input {
@@ -460,7 +1054,8 @@ body.ask-open .toasts {
 }
 
 .ask__input::placeholder {
-  color: var(--muted);
+  color: var(--ink-2);
+  opacity: 0.55;
 }
 
 .ask__send {
@@ -488,45 +1083,81 @@ body.ask-open .toasts {
   stroke-linejoin: round;
 }
 
+.ask__note {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink-2);
+  opacity: 0.5;
+}
+
 /* ---- phone: the whole screen, the planet behind ---- */
 
 @media (max-width: 720px) {
   /* A phone is held over brighter ground for longer, and its type is
      smaller against it: a little more tint behind the words. */
   :root {
-    --ask-glass:
-      linear-gradient(180deg, rgb(255 255 255 / 0.1) 0%, rgb(255 255 255 / 0.025) 46%, rgb(255 255 255 / 0.04) 100%),
-      rgb(9 14 25 / 0.58);
+    --ask-window: var(--win-fill-strong);
   }
 
   body.ask-open .credit {
     bottom: calc(var(--safe-b) + 84px);
   }
 
+  /* Rises from the field at the foot of the screen, and only so far: the
+     lower part of the screen, with the planet carried up into the rest
+     (app.js #syncLift), so the map the answers point at stays in view. */
   .ask {
-    top: calc(var(--safe-t) + 12px);
-    bottom: calc(var(--safe-b) + 10px);
-    left: 12px;
-    right: 12px;
+    top: auto;
+    bottom: var(--dock-b, calc(var(--safe-b) + 12px));
+    left: 10px;
+    right: 10px;
     width: auto;
-    translate: 0 14px;
-    gap: 10px;
+    height: min(42dvh, 440px);
+    min-height: 300px;
+    border-radius: 24px;
+    translate: 0 24px;
+    transform-origin: bottom center;
   }
 
-  .ask.is-in {
-    translate: 0 0;
+  body.ask-open .credit,
+  body.ask-open .dial {
+    translate: none;
   }
 
   .ask__cards {
     grid-template-columns: 1fr;
   }
 
+  .ask__thread {
+    padding: 14px 12px 18px;
+    gap: 16px;
+  }
+
+  .ask__head {
+    padding: 10px 10px 10px 14px;
+  }
+
+  .ask__head .ask__avatar {
+    width: 34px;
+    height: 30px;
+  }
+
+  .ask__foot {
+    padding: 8px 10px 10px;
+  }
+
   .ask__q {
     max-width: 86%;
   }
 
-  .ask__reply {
-    max-width: 94%;
+  .ask__a .ask__avatar {
+    display: none;
+  }
+
+  .ask__new span,
+  .ask__note {
+    display: none;
   }
 
   .ask__fly {
@@ -542,13 +1173,18 @@ body.ask-open .toasts {
      globe can be seen flying there and the ministry's sheet has the bottom
      of the screen; tapping the header brings it back. */
   .ask.is-min {
-    bottom: auto;
+    height: auto;
+    min-height: 0;
   }
 
   .ask.is-min .ask__thread,
-  .ask.is-min .ask__composer,
+  .ask.is-min .ask__foot,
   .ask.is-min .ask__new {
     display: none;
+  }
+
+  .ask.is-min .ask__head {
+    border-bottom: 0;
   }
 
   .ask.is-min .ask__title {
@@ -562,4 +1198,184 @@ body.ask-open .toasts {
     opacity: 0;
     pointer-events: none;
   }
+}
+
+/* ---- a local search under way: what it is doing, and how far along ---- */
+
+.ask__progress {
+  gap: 10px;
+  width: 100%;
+  padding-top: 3px;
+}
+
+.ask__progress-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.ask__progress .ask__status {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.ask__step {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.ask__bar {
+  --p: 0;
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+  overflow: hidden;
+}
+
+/* The fill, and a soft sheen running along it so it reads as working even
+   while it creeps. */
+.ask__bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--p) * 100%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2ce8f4, #1688f2);
+  box-shadow: 0 0 10px rgb(30 190 255 / 0.5);
+  transition: width 0.15s linear;
+}
+
+.ask__bar i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
+  translate: -100% 0;
+  animation: ask-sheen 1.6s ease-in-out infinite;
+}
+
+@keyframes ask-sheen {
+  to {
+    translate: 100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask__bar i::after {
+    animation: none;
+  }
+}
+
+/* ---- a ministry, in the thread (ask.js, #place) ----
+
+   What the side rail used to show, as one card under Terra's mark: who they
+   are, where, what they work on, the needs they have open — each opening
+   under its own card — and how to reach them. */
+
+.ask__place {
+  gap: 12px;
+  padding: 16px 18px 18px;
+  border-radius: 18px;
+  background: rgb(255 255 255 / 0.045);
+  border: 1px solid var(--ask-line);
+  animation: ask-in 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
+  scroll-margin: 12px;
+}
+
+.ask__place-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+}
+
+.ask__place-name {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.ask__place .ask__detail-where {
+  margin: -6px 0 0;
+}
+
+.ask__place-blurb {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.ask__label {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 560;
+  color: var(--muted);
+}
+
+.ask__cards--one {
+  grid-template-columns: 1fr;
+}
+
+.ask__muted {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.ask__facts {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: 2px;
+  border-top: 1px solid var(--ask-line);
+}
+
+.ask__fact {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--ask-line);
+  font-size: 13.5px;
+}
+
+.ask__fact:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.ask__fact span {
+  color: var(--muted);
+}
+
+.ask__fact b {
+  font-weight: 540;
+  color: var(--ink);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.ask__fact a {
+  color: var(--brand-blue);
+  text-decoration: none;
+}
+
+.ask__fact a:hover {
+  text-decoration: underline;
 }

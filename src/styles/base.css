@@ -189,6 +189,7 @@ button {
   opacity: 0.95;
 }
 
+/* The dust: twice the window, so the slow turn never shows an edge. */
 .paper__galaxy::after {
   inset: -50%;
   background: url("/textures/stardust.png") 0 0 / 640px 640px repeat;
@@ -524,13 +525,13 @@ body.hero-in .hero__eyebrow {
       var(--sheen) 0 / 260% 100% no-repeat,
     linear-gradient(
       180deg,
-      rgb(255 255 255 / 0.42) 0%,
-      rgb(200 225 255 / 0.18) 26%,
-      rgb(40 85 200 / 0.3) 52%,
-      rgb(40 90 220 / 0.34) 78%,
-      rgb(140 190 255 / 0.4) 100%
+      rgb(255 255 255 / 0.4) 0%,
+      rgb(228 240 255 / 0.16) 28%,
+      rgb(176 208 255 / 0.05) 52%,
+      rgb(120 170 255 / 0.1) 78%,
+      rgb(150 196 255 / 0.32) 100%
     ),
-    linear-gradient(100deg, rgb(40 90 220 / 0.22), rgb(110 90 240 / 0.22));
+    linear-gradient(100deg, rgb(120 170 255 / 0.1), rgb(150 128 255 / 0.12));
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -950,7 +951,6 @@ body.hero-in .hero__aura {
   /* Anything that scrolls does so with momentum, and keeps its rubber band to
      itself so it cannot hand a flick back to the page. */
   .scroll,
-  .panel__body,
   .board {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;

@@ -13,6 +13,26 @@ uniform vec4 uWindow;       // uMin, vMin, uSpan, vSpan of the painted window
 // the one conversion happens here, per pixel, instead of per tile on the CPU.
 uniform vec4 uDetailWindow; // uMin, mMin, uSpan, mSpan
 uniform float uDetailMix;   // 0 off, 1 imagery fully in charge of the land
+
+// ---- close range ----------------------------------------------------------
+// Near the ground two things break that orbit never notices. The sphere is a
+// mesh, and a facet sags hundreds of metres under the true surface — nothing
+// from ninety kilometres, the whole picture from four hundred metres. And a
+// 32-bit float holds a position on the unit sphere to about 0.4 m and a
+// longitude in [0,1] to about 2.4 m, which steps streamed imagery into blocks.
+// So when uPrec is on, every pixel casts its own ray from the screen, meets
+// the *true* sphere, and is located as an offset from a reference point (the
+// view centre, uRef) rather than as an absolute coordinate: the small numbers
+// carry the precision the large ones lose. The JS side (globe.js, #syncClose)
+// does the large-number work in doubles and hands over only differences.
+uniform float uPrec;        // 1: solve geography per pixel from the ray
+uniform vec2 uViewport;     // drawing buffer, px
+uniform mat4 uInvProj;      // camera projection, inverted (with any view offset)
+uniform mat3 uCamRot;       // camera to world rotation
+uniform vec3 uRef;          // the reference direction, exactly as a float32
+uniform vec3 uRel;          // camera position minus uRef, from doubles
+uniform float uRelC;        // |camera|^2 - 1, from doubles
+uniform vec4 uRefMerc;      // sec(lat), tan(lat) at uRef; uRef's offset from uDetailWindow in u and in Mercator
 // The tiles arrive already true-colour and contrasty, where Blue Marble is
 // flat and dark; everything downstream is graded for the latter. These bring
 // a tile back to the base's footing *before* that grade, so one set of land
@@ -77,7 +97,6 @@ uniform float uGridSpacing;     // degrees
 uniform float uGridWidth;       // pixels
 uniform sampler2D uNightTex;    // city lights, equirectangular
 uniform vec3 uNightLights;      // colour x intensity, 0 off
-uniform float uNightDay;        // how much of them shows on the lit side too, 0..1
 
 uniform float uDebug;   // 0 off; see globe.debug()
 
@@ -163,6 +182,43 @@ void cells(vec3 p, out vec3 feature, out float edge) {
 void main() {
   vec3 n = normalize(vNormalW);
 
+  // Close range (see uPrec): the true ground under this pixel, as an offset
+  // from uRef. `near` is the offset in imagery-window units.
+  bool close = false;
+  vec2 nearDuv = vec2(0.0);
+  vec3 rayDir = vec3(0.0);
+  if (uPrec > 0.5) {
+    vec2 ndc = gl_FragCoord.xy / uViewport * 2.0 - 1.0;
+    vec4 v = uInvProj * vec4(ndc, 1.0, 1.0);
+    vec3 d = normalize(uCamRot * normalize(v.xyz / v.w));
+    float b = dot(d, uRef) + dot(d, uRel);
+    float disc = b * b - uRelC;
+    if (disc > 0.0 && b < 0.0) {
+      // The nearer root, in the form that does not cancel: c / (-b + sqrt).
+      float t = uRelC / (-b + sqrt(disc));
+      vec3 delta = uRel + t * d;
+      n = normalize(uRef + delta);
+      rayDir = d;
+      // Longitude and latitude as differences from uRef's, each from cross
+      // and dot products of small vectors, never from two large angles.
+      vec2 a = vec2(uRef.x, -uRef.z);
+      vec2 db = vec2(delta.x, -delta.z);
+      float dLon = atan(a.x * db.y - a.y * db.x, dot(a, a) + dot(a, db));
+      float hr = length(a);
+      float hq = length(a + db);
+      float dh = (2.0 * dot(a, db) + dot(db, db)) / (hq + hr);
+      float qy = uRef.y + delta.y;
+      float dLat = atan(delta.y * hr - uRef.y * dh, qy * uRef.y + hq * hr);
+      // Mercator's y moves with latitude by sec, sec·tan, sec·(tan²+sec²)…:
+      // a series about uRef, exact to well under a texel over any window.
+      float se = uRefMerc.x;
+      float ta = uRefMerc.y;
+      float dM = -(se * dLat + 0.5 * se * ta * dLat * dLat + se * (ta * ta + se * se) * dLat * dLat * dLat / 6.0) / 6.2831853072;
+      nearDuv = vec2((uRefMerc.z + dLon / 6.2831853072) / uDetailWindow.z, (uRefMerc.w + dM) / uDetailWindow.w);
+      close = true;
+    }
+  }
+
   // Geography solved per pixel from the normal, so detail does not depend on
   // how finely the sphere is tessellated.
   float lonRad = atan(-n.z, n.x);
@@ -224,6 +280,7 @@ void main() {
   float dU = uv.x - uDetailWindow.x;
   dU -= floor(dU);                       // wrap, as above
   vec2 duv = vec2(dU / uDetailWindow.z, (merc - uDetailWindow.y) / uDetailWindow.w);
+  if (close) duv = nearDuv;
   float inDetail = uDetailMix * win1(duv.x, 0.02) * win1(duv.y, 0.02);
 
   // `raw` is the painted planet, and it stays the reference for everything
@@ -392,7 +449,7 @@ void main() {
   // the top of the frame however the globe is turned. Spinning the world
   // therefore carries each continent up into the light and back down out of
   // it, which is the behaviour the reference is showing.
-  vec3 V = normalize(cameraPosition - vWorld);
+  vec3 V = close ? -rayDir : normalize(cameraPosition - vWorld);
   vec3 L = normalize(uSun);
   float ndv = clamp(dot(n, V), 0.0, 1.0);
 
@@ -408,13 +465,7 @@ void main() {
   col += uEmissive * mix(1.0, 1.0 - day, uEmissiveNight);
   if (dot(uNightLights, vec3(1.0)) > 0.001) {
     float city = texture2DGradEXT(uNightTex, uv, ddx, ddy).r;
-    // On the dark side always; on the lit side as far as uNightDay asks — the
-    // landing look keeps the cities burning on a sunlit planet, which is a
-    // picture and not a model. Added as light that fades as the ground under
-    // it brightens, so a lit city glows rather than whiting out the land.
-    float when = mix(1.0 - day, 1.0, uNightDay);
-    vec3 glow = uNightLights * city * when * mask * (1.0 - inDetail * 0.5);
-    col += glow * (1.0 - clamp(col, 0.0, 1.0) * 0.35);
+    col += uNightLights * city * (1.0 - day) * mask * (1.0 - inDetail * 0.5);
   }
 
   vec3 H = normalize(L + V);

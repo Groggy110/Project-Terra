@@ -54,5 +54,25 @@ if (loadStyleSandbox) {
     },
   };
   if (new URLSearchParams(location.search).get("sandbox") === "1") window.terraStyleEditor.toggle();
+  // The simplified editor beside it: same STYLE, a few plain controls.
+  let quick = null;
+  let quickLoading = null;
+  window.terraQuickStyle = {
+    get open() {
+      return !!quick?.open;
+    },
+    async toggle() {
+      if (!quick) {
+        quickLoading ??= loadStyleSandbox().then((m) => m.mountQuick(app));
+        quick = await quickLoading.catch((err) => {
+          quickLoading = null;
+          console.error("[terra] quick style", err);
+          return null;
+        });
+        return;
+      }
+      quick.toggle();
+    },
+  };
 }
 // SANDBOX END

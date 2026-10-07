@@ -28,6 +28,22 @@ function cityRankLimit(z) {
 const estWidth = (text, per) => text.length * per + 14;
 
 /**
+ * The smallest city whose ministries get a pin at zoom `z`. Out at the whole
+ * planet only the great cities carry one, so a network of hundreds reads as
+ * a map rather than a rash; each step in brings the next size of city in,
+ * and close to the ground every ministry shows.
+ */
+function pinMinPop(z) {
+  if (z < 0.3) return 5_000_000;
+  if (z < 0.45) return 2_000_000;
+  if (z < 0.6) return 1_000_000;
+  if (z < 0.75) return 300_000;
+  return 0;
+}
+
+const fold = (s) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/**
  * Tags a place with its unit vector, so the per-frame cull is one dot product.
  * Same convention as geo.js: x = cos(lat)cos(lon), y = sin(lat),
  * z = -cos(lat)sin(lon).
@@ -61,11 +77,29 @@ export class LabelLayer {
     this.dimmed = new Set();
     this.reserved = [];
     this.user = null;
+    this.area = null;
+    this.areaEl = null;
+    this.found = [];
+    this.foundActive = null;
   }
 
   /** Where the viewer is, drawn as a blue dot; null removes it. */
   setUser(here) {
     this.user = here;
+  }
+
+  /**
+   * Places the serve-locally guide found on the web, `[{ lat, lon, name }]`,
+   * drawn as small markers of their own; `active` is the one opened.
+   */
+  setFound(list, active = null) {
+    this.found = list || [];
+    this.foundActive = active;
+  }
+
+  /** A circle on the ground, `{ lat, lon, miles }`; null removes it. */
+  setArea(area) {
+    this.area = area;
   }
 
   setData({ ministries = [], places = [], countries = [] }) {
@@ -97,6 +131,22 @@ export class LabelLayer {
     this.countries = countries
       .map((c) => withVec({ name: c[0], lon: c[1], lat: c[2], rank: c[3], extent: c[4] }))
       .sort((a, b) => a.rank - b.rank);
+
+    // Each ministry's city size, from the same places list the city names
+    // come from: by name and country, then by name alone (a country spelled
+    // differently), and a mid-sized city if it is not there at all.
+    const byPlace = new Map();
+    const byName = new Map();
+    for (const p of this.places) {
+      byPlace.set(`${fold(p.name)}|${fold(p.country)}`, p.pop);
+      if (!byName.has(fold(p.name)) || byName.get(fold(p.name)) < p.pop) byName.set(fold(p.name), p.pop);
+    }
+    this.cityPop = new Map(
+      this.ministries.map((m) => [
+        m.id,
+        byPlace.get(`${fold(m.city)}|${fold(m.country)}`) ?? byName.get(fold(m.city)) ?? 1_000_000,
+      ]),
+    );
   }
 
   setSelected(id) {
@@ -145,6 +195,8 @@ export class LabelLayer {
     const cosCity = Math.cos(cap * 0.9 * DEG);
     const cosCountry = Math.cos(cap * 0.8 * DEG);
 
+    this.#area(camera, width, height);
+
     // ---- you are here ----
     // Drawn whatever else is crowding the spot, and claimed first so a city
     // name never sits on top of it.
@@ -154,6 +206,15 @@ export class LabelLayer {
         this.#claim(p.x - 9, p.y - 9, 18, 18, true);
         this.#me(p, ppd);
       }
+    }
+
+    // ---- what the serve-locally guide found on the web ----
+    for (let i = 0; i < this.found.length; i++) {
+      const f = this.found[i];
+      const p = projectPoint(f.lat, f.lon, camera, width, height, this.projection);
+      if (!p.visible || !inView(p)) continue;
+      this.#claim(p.x - 8, p.y - 8, 16, 16, true);
+      this.#foundMark(i, f, p);
     }
 
     // ---- ministries first: they are the point of the map ----
@@ -168,11 +229,50 @@ export class LabelLayer {
     const held = this.chipped;
     const chipped = new Set();
     const queue = [];
+    // Smaller cities wait for the zoom (pinMinPop). The chosen ministry
+    // shows at any zoom, and so do the ones a filter or an answer has picked
+    // out — while they are few enough to be a handful rather than the map.
+    // The landing planet is drawn close, but it is a view of the world, not
+    // a zoom into it: it gets the whole-globe set, the great cities only.
+    const minPop = document.body.classList.contains("is-hero") ? pinMinPop(0) : pinMinPop(z);
+    const picked = this.dimmed.size > 0 && this.ministries.length - this.dimmed.size <= 40;
     for (const m of this.ministries) {
+      const shown =
+        minPop === 0 ||
+        m.id === this.selected ||
+        (picked && !this.dimmed.has(m.id)) ||
+        (this.cityPop?.get(m.id) ?? 1_000_000) >= minPop;
+      if (!shown) continue;
       const p = projectPoint(m.lat, m.lon, camera, width, height, this.projection);
       if (!p.visible || !inView(p)) continue;
       queue.push({ m, x: p.x, y: p.y, edge: p.edge });
     }
+    // Dots that would sit on top of one another: the bigger city keeps its
+    // dot and the smaller waits for the zoom. Decided in a fixed order (city
+    // size, then id) so the same one always wins, with a little give for a
+    // dot already showing, so two near the limit do not take turns.
+    const dotted = this.dotted ?? new Set();
+    const kept = [];
+    const nextDotted = new Set();
+    const order = [...queue].sort(
+      (a, b) => (this.cityPop.get(b.m.id) ?? 0) - (this.cityPop.get(a.m.id) ?? 0) || (a.m.id < b.m.id ? -1 : 1),
+    );
+    const drop = new Set();
+    for (const q of order) {
+      const must = q.m.id === this.selected || (picked && !this.dimmed.has(q.m.id));
+      // Generous: a dot every couple of finger-widths reads as a calm map,
+      // and anything closer is there one step of zoom in.
+      const room = dotted.has(q.m.id) ? 26 : 32;
+      if (!must && kept.some((k) => Math.hypot(k.x - q.x, k.y - q.y) < room)) {
+        drop.add(q.m.id);
+        continue;
+      }
+      kept.push(q);
+      nextDotted.add(q.m.id);
+    }
+    this.dotted = nextDotted;
+    for (let i = queue.length - 1; i >= 0; i--) if (drop.has(queue[i].m.id)) queue.splice(i, 1);
+
     let cursor = 0;
     for (let i = 0; i < queue.length; i++) {
       if (!held.has(queue[i].m.id)) continue;
@@ -201,26 +301,40 @@ export class LabelLayer {
     const budget = Math.max(4, Math.round((width * height) / STYLE.labels.pinDensity));
     let spent = 0;
 
+    // Every dot that is due at this zoom is drawn, every frame. Dots used to
+    // compete for room as well, and as the globe turned two that drifted
+    // close would take turns dropping out — the map flickered. Now only the
+    // name plates compete, and only with each other (and the chrome): a dot
+    // drifting under a plate leaves it be, since the plate is drawn over it.
+    // The dots claim their spots afterwards, so city names keep off them.
+    const marks = [];
     for (const q of queue) {
       const active = this.selected === q.m.id;
       const wide = 24 + estWidth(q.m.city, 7.6);
       // A plate opens to the right of its dot, so one near the right edge runs
-      // off the screen and gets clipped mid-word. On a desktop there is always
-      // slack there; on a phone the globe reaches both edges and it happens to
-      // two or three pins at once. Rather than flip the plate — which would
-      // put the name on the wrong side of the dot it belongs to — the pin
-      // falls back to a bare dot, which is what it does when a plate will not
-      // fit for any other reason.
+      // off the screen and gets clipped mid-word. Rather than flip the plate —
+      // which would put the name on the wrong side of the dot it belongs to —
+      // the pin keeps a bare dot, as it does when a plate will not fit for
+      // any other reason.
       const room = q.x - 8 + wide < width - 6;
       const affordable = active || spent < budget;
-      const chip =
-        (lettering || active) && room && affordable && this.#claim(q.x - 8, q.y - 11, wide, 22, active);
+      // The plate's box starts clear of its own dot, so it is only ever
+      // refused by something else.
+      // Hysteresis: a plate already up keeps its place while it fits; a new
+      // one needs a margin of clear ground round it first. Without that, two
+      // plates at the edge of fitting swap back and forth as the globe turns.
+      const fresh = !held.has(q.m.id) && !active;
+      const clear = !fresh || this.#fits(q.x + 6, q.y - 19, wide - 6, 38);
+      const chip = (lettering || active) && room && affordable && clear && this.#claim(q.x + 14, q.y - 11, wide - 22, 22, active);
       if (chip) {
         chipped.add(q.m.id);
         spent++;
       }
-      else if (!this.#claim(q.x - 8, q.y - 11, 16, 20)) continue;
-      this.#pin(q.m, q, chip || active, active);
+      marks.push([q, chip || active, active]);
+    }
+    for (const [q, chip, active] of marks) {
+      this.#claim(q.x - 4, q.y - 4, 8, 8, true);
+      this.#pin(q.m, q, chip, active);
     }
     this.chipped = chipped;
 
@@ -283,6 +397,15 @@ export class LabelLayer {
   }
 
   /** Greedy no-overlap test with a small breathing gap. */
+  /** Whether a box is clear of everything claimed so far, without claiming it. */
+  #fits(x, y, w, h) {
+    const r = this.rects;
+    for (let i = 0; i < r.length; i += 4) {
+      if (x < r[i + 2] && x + w > r[i] && y < r[i + 3] && y + h > r[i + 1]) return false;
+    }
+    return true;
+  }
+
   #claim(x, y, w, h, force = false) {
     const gap = 5;
     const x0 = x - gap;
@@ -354,6 +477,22 @@ export class LabelLayer {
     write(node, "zIndex", active ? "30" : "20");
   }
 
+  #foundMark(i, f, p) {
+    const node = this.#node(`f:${i}:${f.name}`, () => {
+      const el = document.createElement("div");
+      el.className = "mark found";
+      el.title = f.name;
+      const dot = document.createElement("span");
+      dot.className = "found__dot";
+      el.append(dot);
+      return el;
+    });
+    node.el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
+    write(node, "opacity", clamp(p.edge, 0, 1).toFixed(2));
+    node.el.classList.toggle("is-active", this.foundActive === f);
+    write(node, "zIndex", this.foundActive === f ? "35" : "25");
+  }
+
   #me(p, ppd) {
     const node = this.#node("me", () => {
       const el = document.createElement("div");
@@ -376,6 +515,109 @@ export class LabelLayer {
     write(node, "--acc", `${Math.min(r, 160).toFixed(0)}px`);
     node.el.classList.toggle("has-accuracy", r > 12);
     write(node, "zIndex", "40");
+  }
+
+  /**
+   * The serve-locally radius: a true circle on the sphere, every point the
+   * same distance along the ground from its centre, projected afresh each
+   * pass — so it stays round where it faces the camera and bends with the
+   * planet toward the limb. Where part of it goes round the back the edge
+   * breaks there and the fill is left off, since an open outline has no
+   * inside to fill. Its own SVG rather than a marker node: it is one shape,
+   * always present while set, and the node pool retires what a pass misses.
+   */
+  #area(camera, width, height) {
+    const a = this.area;
+    if (!a) {
+      if (this.areaEl) {
+        this.areaEl.svg.style.display = "none";
+        this.areaEl.tag.style.display = "none";
+      }
+      return;
+    }
+    if (!this.areaEl) {
+      const NS = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(NS, "svg");
+      svg.setAttribute("class", "radius");
+      const fill = document.createElementNS(NS, "path");
+      fill.setAttribute("class", "radius__fill");
+      const edge = document.createElementNS(NS, "path");
+      edge.setAttribute("class", "radius__edge");
+      const tag = document.createElement("span");
+      tag.className = "radius__tag";
+      svg.append(fill, edge);
+      this.root.prepend(svg, tag);
+      // The light that runs round the rim, as it runs round the buttons on
+      // hover: a tail, a body and a white head, three dashes on the same
+      // path travelling together (globe.css, .radius__comet). pathLength
+      // makes the dashes a share of the rim, so the comet is the same
+      // fraction of a one-mile circle as of a five-hundred-mile one.
+      const comet = ["tail", "body", "head"].map((part) => {
+        const c = document.createElementNS(NS, "path");
+        c.setAttribute("class", `radius__comet radius__comet--${part}`);
+        c.setAttribute("pathLength", "100");
+        svg.append(c);
+        return c;
+      });
+      this.areaEl = { svg, fill, edge, comet, tag, w: 0, h: 0 };
+    }
+    const el = this.areaEl;
+    el.svg.style.display = "";
+    if (el.w !== width || el.h !== height) {
+      el.svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      el.w = width;
+      el.h = height;
+    }
+
+    // Points round the circle by the destination formula: from the centre,
+    // `ang` radians along the ground at each bearing.
+    const N = 120;
+    const ang = a.miles / 3958.8;
+    const la = a.lat * DEG;
+    const lo = a.lon * DEG;
+    const sinLa = Math.sin(la);
+    const cosLa = Math.cos(la);
+    const sinA = Math.sin(ang);
+    const cosA = Math.cos(ang);
+    const p = this.projection;
+    let d = "";
+    let pen = false;
+    let whole = true;
+    let top = null;
+    let foot = null;
+    for (let i = 0; i <= N; i++) {
+      const b = (i / N) * 2 * Math.PI;
+      const lat2 = Math.asin(sinLa * cosA + cosLa * sinA * Math.cos(b));
+      const lon2 = lo + Math.atan2(Math.sin(b) * sinA * cosLa, cosA - sinLa * Math.sin(lat2));
+      projectPoint(lat2 / DEG, lon2 / DEG, camera, width, height, p);
+      if (!p.visible) {
+        whole = false;
+        pen = false;
+        continue;
+      }
+      d += `${pen ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+      pen = true;
+      if (i === 0) top = { x: p.x, y: p.y };
+      else if (i === N / 2) foot = { x: p.x, y: p.y };
+    }
+    el.fill.setAttribute("d", whole ? `${d}Z` : "");
+    el.edge.setAttribute("d", whole ? `${d}Z` : d);
+    // Only round a whole rim: on a broken one the comet would jump the gap.
+    for (const c of el.comet) c.setAttribute("d", whole ? `${d}Z` : "");
+
+    // The distance, written on the circle's northern edge — or its southern
+    // one when the north runs up under the top of the screen, where the
+    // brand and the bar are.
+    const label = `${a.miles < 10 && a.miles % 1 ? a.miles.toFixed(1) : Math.round(a.miles)} mi`;
+    if (el.tag.textContent !== label) el.tag.textContent = label;
+    const at = top && top.y > 110 ? top : foot && foot.y < height - 24 ? foot : top;
+    if (at) {
+      el.tag.style.display = "";
+      el.tag.style.transform = `translate3d(${at.x.toFixed(1)}px,${at.y.toFixed(1)}px,0)`;
+      this.#claim(at.x - 22, at.y - 11, 44, 22, true);
+    } else {
+      el.tag.style.display = "none";
+    }
   }
 
   #place(key, name, p, cls, opacity, tick = false) {

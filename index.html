@@ -65,6 +65,12 @@
     <link rel="stylesheet" href="/src/styles/modal.css" />
     <link rel="stylesheet" href="/src/styles/auth.css" />
     <link rel="stylesheet" href="/src/styles/forms.css" />
+    <!-- The planet's first frame, fetched while the scripts are still parsing. -->
+    <link rel="preload" href="/textures/blue-marble.jpg" as="image" fetchpriority="high" crossorigin />
+    <link rel="preload" href="/textures/earth-aux.png" as="image" fetchpriority="high" crossorigin />
+    <link rel="preload" href="/textures/clouds.jpg" as="image" crossorigin />
+    <link rel="preload" href="/vectors/places.json" as="fetch" crossorigin />
+    <link rel="preload" href="/vectors/countries.json" as="fetch" crossorigin />
     <link rel="stylesheet" href="/src/styles/ask.css" />
     <link rel="stylesheet" href="/src/styles/glass.css" />
   </head>
@@ -118,6 +124,10 @@
         </nav>
 
         <div class="topbar__actions">
+          <button class="btn btn--ghost serve-local" data-action="serve-local" title="Choose a radius and find where to help near you">
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 14.2s4.6-4.1 4.6-7.6a4.6 4.6 0 0 0-9.2 0c0 3.5 4.6 7.6 4.6 7.6z" /><circle cx="8" cy="6.6" r="1.6" /></svg>
+            Serve locally
+          </button>
           <button class="btn btn--accent" data-action="post-need">
             <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.2v9.6M3.2 8h9.6" /></svg>
             Post a need
@@ -160,6 +170,12 @@
         </div>
         <div class="filters" id="filters"></div>
       </div>
+
+      <!-- Phone only: everything the top bar and the dock held, in one small
+           menu beside the field at the foot of the screen. -->
+      <button class="phonemenu" data-action="menu" aria-label="Menu">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M4 10h12M4 14h12" /></svg>
+      </button>
 
       <!-- Every tile provider requires this while its imagery is on screen.
            A sibling of the dial rather than a child of it: the dial is a mouse
@@ -229,7 +245,6 @@
         </button>
       </div>
 
-      <aside class="panel" id="panel"></aside>
       <div class="sheet" id="sheet"></div>
       <button class="grabber" id="grabber">
         <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.2h10M3 8h10M3 11.8h6.5" /></svg>

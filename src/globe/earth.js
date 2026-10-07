@@ -17,6 +17,8 @@ import {
   RepeatWrapping,
   ShaderMaterial,
   SphereGeometry,
+  Matrix3,
+  Matrix4,
   Vector2,
   Vector3,
   Vector4,
@@ -113,7 +115,6 @@ export function createEarth(
     uGridWidth: { value: 1 },
     uNightTex: { value: BLACK },
     uNightLights: { value: new Vector3() },
-    uNightDay: { value: 0 },
     uBase: { value: base },
     uAux: { value: aux },
     uLines: { value: lines },
@@ -123,6 +124,14 @@ export function createEarth(
     uWindow: { value: window ?? new Vector4(0, 0, 1, 1) },
     uDetailWindow: { value: detailWindow ?? new Vector4(0, 0, 1, 1) },
     uDetailMix: { value: 0 },
+    uPrec: { value: 0 },
+    uViewport: { value: new Vector2(1, 1) },
+    uInvProj: { value: new Matrix4() },
+    uCamRot: { value: new Matrix3() },
+    uRef: { value: new Vector3(1, 0, 0) },
+    uRel: { value: new Vector3() },
+    uRelC: { value: 0 },
+    uRefMerc: { value: new Vector4() },
     uDetailGamma: { value: 1.5 },
     uDetailShadowGamma: { value: 1.5 },
     uDetailSat: { value: 0.8 },
@@ -383,7 +392,6 @@ export function applyTheme(t, shared, earth, clouds, halo) {
   u.uGridSpacing.value = Math.max(gs.graticule.spacing, 0.5);
   u.uGridWidth.value = gs.graticule.width;
   scaled(gs.nightLights.color, gs.nightLights.enabled ? gs.nightLights.intensity : 0, u.uNightLights.value);
-  u.uNightDay.value = gs.nightLights.day ?? 0;
 
   // Lights and fog (shared with the clouds by reference).
   const e = earth.effects;

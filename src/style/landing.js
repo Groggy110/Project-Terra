@@ -19,13 +19,8 @@ import { STYLE, STYLE_DEFAULTS } from "./styleConfig.js";
 import { applyStyle, groupOf, mergeInto } from "./applyStyle.js";
 
 export const LANDING = {
-  // The landing planet is a picture, not a map: brighter, richer, its cities
-  // burning on the sunlit side too, under a stronger blue atmosphere.
-  renderer: { exposure: 2.05 },
-  grade: { brightness: 0, contrast: 1.08, saturation: 1.12, vibrance: 0.16 },
-  globe: { nightLights: { color: "#ffc070", intensity: 7, day: 0.9 } },
   post: {
-    bloom: { strength: 0.62, radius: 1.8, threshold: 0.42 },
+    bloom: { strength: 0.42, radius: 1.8, threshold: 0.42 },
     chromatic: { amount: 0.0021 },
     // The landing frames a quarter of the planet across the whole window, so
     // the imagery is magnified most there; it takes a little more crisping.
@@ -34,24 +29,15 @@ export const LANDING = {
   themes: {
     dark: {
       atmosphere: {
-        // The blue held to the limb (a steep fresnel), not washed across the
-        // disc: the ground stays its own colour and the edge lights up.
-        color: "#2f7dff",
-        fresnel: 1,
-        fresnelPow: 3,
         halo: {
-          // A bright cyan line round the whole top of the disc, not just the
-          // side toward the lamp, with a blue haze spreading off it.
-          inner: "#8fd0ff",
-          outer: "#1b4fe0",
-          strength: 0.85,
-          spread: 0.06,
-          topBias: 0.8,
-          falloff: 0.6,
-          bloom: 0.26,
-          bloomSpread: 0.34,
-          rimPower: 2.2,
-          spillPower: 2.4,
+          inner: "#798fe6",
+          strength: 0.06,
+          spread: 0.262,
+          falloff: 0.7,
+          bloom: 0.08,
+          bloomSpread: 0.69,
+          rimPower: 8.9,
+          spillPower: 1.9,
         },
       },
     },
@@ -70,11 +56,11 @@ export const LANDING = {
  * grows or shrinks it from there, the top staying on the rim. `x` slides it
  * sideways, as a fraction of the width. `spin` is how fast it turns there,
  * in degrees a second — slow, so the page reads as calm rather than busy.
- * `rise` is how far below its place it starts as the page opens. `home` tips the view south so the cap that shows
- * is Asia rather than the Arctic: Southeast Asia and the Philippines, a
- * little west of centre so the drift carries them across.
+ * `rise` is how far below its place it starts as the page opens. `home` tips the view a little south so the cap
+ * that shows is Europe rather than the Arctic, a touch west of centre so the
+ * drift carries it across.
  */
-export const STAGE = { rim: 0.47, minRim: 300, maxSize: 3, scale: 0.94, x: 0, spin: 1.4, rise: 0.1, home: { lat: -22, lon: 106 } };
+export const STAGE = { rim: 0.47, minRim: 300, maxSize: 3, scale: 0.94, x: 0, spin: 1.4, rise: 0.1, home: { lat: 8, lon: 5 } };
 
 /**
  * Stepping off the stage: the planet comes up to the centre on the camera's
@@ -94,7 +80,7 @@ export const STAGE_EXIT = { ms: 2600, dist: 3.05, turn: 14 };
  * much of the blue inside "anywhere." is kept, the rest going to the sky's
  * colour: under 1 lets the outline stand out.
  */
-export const HEADLINE = { size: 0.98, raise: 10, fade: 0.84, glow: 0.62, stroke: 0.73, aura: 0.62, fill: 0.21 };
+export const HEADLINE = { size: 0.98, raise: 10, fade: 0.78, glow: 0.34, stroke: 0.73, aura: 0.26, fill: 0.21 };
 
 /** The shipped values of the three above, for the editor's resets. */
 export const LANDING_DEFAULTS = structuredClone({ stage: STAGE, exit: STAGE_EXIT, headline: HEADLINE });

@@ -94,7 +94,7 @@ function atEnd(list) {
  *
  * `items` are `{ label, note, icon, kbd, badge, danger, run }`, with `null` for a rule.
  */
-export function openPop({ anchor, items, parent = document.body, id = "appMenu" }) {
+export function openPop({ anchor, items, parent = document.body, id = "appMenu", compact = false }) {
   const existing = document.getElementById(id);
   if (existing) {
     existing.dispose();
@@ -133,7 +133,16 @@ export function openPop({ anchor, items, parent = document.body, id = "appMenu" 
     menu.appendChild(row);
   }
 
-  if (PHONE.matches) {
+  if (PHONE.matches && compact) {
+    // The phone's ☰ at the foot of the screen: a small menu standing just
+    // above its button, right-aligned to it, rather than a sheet across the
+    // whole width.
+    menu.classList.add("is-compact");
+    document.body.appendChild(menu);
+    const a = anchor.getBoundingClientRect();
+    menu.style.right = `${Math.round(window.innerWidth - a.right)}px`;
+    menu.style.bottom = `${Math.round(viewH() - a.top + 10)}px`;
+  } else if (PHONE.matches) {
     asSheet(menu, close);
   } else {
     parent.appendChild(menu);
@@ -190,5 +199,8 @@ export const menuIcons = {
   reset: () => opt('<path d="M13.2 6.9A4.9 4.9 0 1 0 13.6 10"/><path d="M13.6 3.8v3.2h-3.2"/>'),
   locate: () => opt('<path d="M13.4 2.6 2.6 7.1l4.5 1.8 1.8 4.5Z"/>'),
   inbox: () => opt('<path d="M2.4 9.2 4 3.6h8l1.6 5.6v3.2H2.4z"/><path d="M2.4 9.2h3.4l.8 1.4h2.8l.8-1.4h3.4"/>'),
+  globe: () => opt('<circle cx="8" cy="8" r="5.6"/><path d="M2.4 8h11.2M8 2.4c-1.6 1.5-2.4 3.4-2.4 5.6s.8 4.1 2.4 5.6c1.6-1.5 2.4-3.4 2.4-5.6S9.6 3.9 8 2.4"/>'),
+  plus: () => opt('<path d="M8 3.2v9.6M3.2 8h9.6"/>'),
+  person: () => opt('<circle cx="8" cy="5.6" r="2.6"/><path d="M3 13.4c.6-2.6 2.6-4 5-4s4.4 1.4 5 4"/>'),
   trash: () => opt('<path d="M3.4 4.6h9.2M6.4 4.6V3.4h3.2v1.2M4.6 4.6l.7 8h5.4l.7-8"/>'),
 };

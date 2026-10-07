@@ -162,6 +162,55 @@ export async function resolvePlace(city, country) {
   return null;
 }
 
+/**
+ * Places for the serve-locally search, best first: the countries and cities
+ * the gazetteer knows that match a typed fragment. Each is
+ * `{ name, country, lat, lon, kind }`, `country` empty for a country.
+ */
+export async function suggestPlaces(query, { limit = 6 } = {}) {
+  const q = fold(query);
+  if (q.length < 2) return [];
+  const [cities, countries] = await Promise.all([searchPlaces(query, { limit }), loadCountries()]);
+  const ck = countryKey(query);
+  const lands = countries
+    .filter((c) => c.key === ck || (q.length > 2 && c.key.startsWith(q)))
+    .slice(0, 2)
+    .map((c) => ({ name: c.name, country: "", lat: c.lat, lon: c.lon, kind: "country" }));
+  const towns = cities.map((p) => ({ name: p.name, country: p.country, lat: p.lat, lon: p.lon, kind: "city" }));
+  // A country typed in full comes first; otherwise the cities lead.
+  const exactLand = lands.length && lands[0].name && countryKey(lands[0].name) === ck;
+  return (exactLand ? [...lands, ...towns] : [...towns, ...lands]).slice(0, limit);
+}
+
+/**
+ * The one place a typed name means: the gazetteer's best match, or — for a
+ * town too small for it — OpenStreetMap's search, asked from the browser.
+ * null when neither knows it.
+ */
+export async function findPlace(query) {
+  const [best] = await suggestPlaces(query, { limit: 1 });
+  if (best && (fold(best.name) === fold(query) || countryKey(best.name) === countryKey(query))) return best;
+  try {
+    const params = new URLSearchParams({ q: query, format: "jsonv2", limit: "1", addressdetails: "1" });
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
+    const [hit] = res.ok ? await res.json() : [];
+    if (hit) {
+      const a = hit.address ?? {};
+      const kind = hit.addresstype === "country" ? "country" : "city";
+      return {
+        name: a.city || a.town || a.village || a.municipality || a.county || a.state || a.country || hit.name || query.trim(),
+        country: kind === "country" ? "" : a.country || "",
+        lat: Number(hit.lat),
+        lon: Number(hit.lon),
+        kind,
+      };
+    }
+  } catch {
+    // Offline or turned away: the gazetteer's nearest guess, if it had one.
+  }
+  return best ?? null;
+}
+
 /* ------------------------------------------------------------------ region */
 
 /**

@@ -7,12 +7,11 @@ import { clamp, smoothstep } from "../globe/geo.js";
 import { Network, emptyQuery, queryIsEmpty } from "../data/network.js";
 import { Board } from "./board.js";
 import { Filters } from "./filters.js";
-import { ModalLayer, aboutModal, meetingsModal, needModal, pickUpModal, scheduleModal } from "./modals.js";
+import { ModalLayer, aboutModal, meetingsModal, pickUpModal, scheduleModal } from "./modals.js";
 import { dashboardModal } from "./dashboard.js";
 import { applicationsModal } from "./applications.js";
-import { Panel } from "./panel.js";
-import { PanelSheet } from "./sheet.js";
 import { AskPanel } from "./ask.js";
+import { LocalPicker, placeLabel } from "./local.js";
 import { add, clear, h, icons, plural, svg, viewH } from "./dom.js";
 import { openPop, menuIcons } from "./pop.js";
 import { store } from "./store.js";
@@ -22,16 +21,15 @@ import { questionnaireModal } from "./questionnaire.js";
 import { ministryModal, postNeedModal as postNeedForm } from "./ministry.js";
 import { Recommendations } from "./recommend.js";
 import * as api from "../lib/api.js";
+import { areaName, findLocalOrgs } from "../lib/places.js";
 import { applyStyle } from "../style/applyStyle.js";
 import { STYLE } from "../style/styleConfig.js";
 // The stage, the flight off it and the landing look are the style editor's
 // to change as well, so they live with the style (see landing.js).
 import { STAGE, STAGE_EXIT, enterLanding, leaveLanding, returnToLanding } from "../style/landing.js";
-import { pickVerse, verseText } from "../lib/verses.js";
 
 
 /** How long after the loading screen lifts the headline lands. */
-const HERO_IN_MS = 520;
 /** How long the headline takes to lift away (base.css, hero-out). */
 const HERO_OUT_MS = 780;
 
@@ -51,6 +49,18 @@ const badge = (n) => (n > 99 ? "99+" : String(n));
  * so the overview is the painted planet and fetches nothing.
  */
 const PHONE_DIST = 3.35;
+
+/** How many needs the serve-locally guide reads at once (its own cap). */
+const LOCAL_POOL = 160;
+
+/** Great-circle distance between two { lat, lon }, in miles. */
+function distanceMiles(a, b) {
+  const r = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * r;
+  const dLon = (b.lon - a.lon) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
+  return 3958.8 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
 
 /** The camera for the stage at this window size. */
 function stageFrame() {
@@ -113,7 +123,6 @@ export class App {
       crumbs: document.getElementById("crumbs"),
       nav: document.getElementById("nav"),
       filters: document.getElementById("filters"),
-      panel: document.getElementById("panel"),
       sheet: document.getElementById("sheet"),
       grabber: document.getElementById("grabber"),
       modals: document.getElementById("modals"),
@@ -125,16 +134,73 @@ export class App {
     };
 
     this.modals = new ModalLayer(this.el.modals, { onToggle: () => this.#syncCovered() });
-    this.panel = new Panel(this.el.panel, { net: this.net, on: this.#panelHandlers() });
+    // There is no side rail: a ministry opens in the conversation. The chrome
+    // keeps the layout it had with the rail closed.
+    document.body.classList.add("no-panel");
     this.ask = new AskPanel({
       net: this.net,
       ask: api.isConfigured ? (args) => api.askTerra(args) : null,
-      onOpenNeed: (need) => this.openNeed(need, { fly: true }),
+      // A pick stays in the conversation: the globe goes to the ministry and
+      // lights its pin, but no panel or popup opens beside it.
+      onFlyTo: (need) => {
+        const m = this.net.ministryById.get(need.ministry);
+        if (!m) return;
+        this.selected = m;
+        this.globe?.select(m.id);
+        this.globe?.setSpin(false);
+        this.globe?.focus(m, { zoom: 1 });
+      },
+      // A find from a local organisation's website: the globe goes to it and
+      // its marker is lit. null when its card is closed.
+      onPlace: (w) => {
+        const placed = w && Number.isFinite(w?.lat) ? w : null;
+        this.globe?.setFound(this.localFound ?? [], placed);
+        if (!placed) return;
+        this.globe?.setSpin(false);
+        this.globe?.focus({ lat: w.lat, lon: w.lon }, { zoom: 1 });
+      },
+      // Applying, booking a call and signing in all happen in the
+      // conversation, as cards in the thread rather than dialogs over it.
+      onServe: (need) => {
+        if (!need.taken) return this.openPickUp(need, { chat: true });
+        this.net.toggleInterest(need.id);
+        this.#afterDataChange();
+        if (this.session) api.withdrawInterest(need.id).catch(() => {});
+        this.toast("Interest withdrawn.");
+      },
+      onSchedule: api.isConfigured ? (need) => this.openSchedule(need, { chat: true }) : null,
+      // Quiet, and no onboarding dialog over the conversation: it says
+      // "You're signed in" itself, and the questions can wait for next time.
+      onSignedIn: () => this.#afterAuth({ quiet: true, onboard: false }),
       onResults: (needs) => this.#askResults(needs),
-      onToggle: () => {
+      onMinistry: (need) => {
+        const m = this.net.ministryById.get(need.ministry);
+        if (m) this.openMinistry(m, { fly: true });
+      },
+      onEdit: (need) => (this.ministry && need.ministry === this.ministry.id ? () => this.editNeed(need) : null),
+      // A ministry's card closed: its pin lets go too, if it is the one chosen.
+      onLeave: (m) => {
+        if (this.selected?.id === m.id) this.#deselect();
+      },
+      // A new chat clears the radius card with everything else.
+      onReset: () => this.#endLocal(),
+      onToggle: (open) => {
+        // Closing the conversation is the end of serving locally: the radius
+        // and the guide's answer both live in it.
+        if (!open && this.localOn) this.#endLocal();
+        // A ministry lives in the conversation, so closing it lets go of the pin.
+        if (!open && this.selected) this.#deselect();
         this.syncReserved();
+        this.#syncLift();
         setTimeout(() => this.syncReserved(), 360);
       },
+    });
+    this.local = new LocalPicker({
+      count: (miles) => this.#localCount(miles),
+      onChange: (miles) => this.#drawLocal(miles),
+      onFind: (miles) => this.#findLocal(miles),
+      onWhere: (place) => this.#moveLocal(place),
+      onClose: () => this.#endLocal(),
     });
     // "Search skills, needs or ministries" is 44 characters and a
     // phone shows about 28 of them, so the field advertises itself with a
@@ -149,23 +215,7 @@ export class App {
     placeholder();
 
     this.board = new Board(this.el.sheet, { net: this.net, on: this.#boardHandlers() });
-    // After the board, because it reports its first detent immediately and
-    // syncReserved reads every piece of chrome including the board's sheet.
-    // Phones only; above the breakpoint it stands itself down.
-    this.sheet = new PanelSheet(this.el.panel, {
-      // The sheet is one of the rectangles the label layer has to keep clear
-      // of, and its height changes on every drag, so the reserved list is
-      // recomputed whenever it settles.
-      onDetent: (_, px) => {
-        this.sheetPx = px;
-        this.#syncLift();
-        this.syncReserved();
-        this.#syncCovered();
-      },
-      // Dragged off the bottom of the screen: the same as its close button.
-      onDismiss: () => this.panel.setOpen(false),
-    });
-    this.filtersUi = new Filters(this.el.filters, {
+    this.filtersUi = this.el.filters && new Filters(this.el.filters, {
       net: this.net,
       query: this.query,
       onChange: () => {
@@ -179,19 +229,24 @@ export class App {
 
   async start() {
     const boot = this.#boot();
-    // The entrance state: headline, a find bar standing under it, and the
-    // network figures where the panel will be. Everything settles once the
+    // The entrance state: headline and a find bar standing under it.
+    // Everything settles once the
     // globe has flown in.
     // A phone has no entrance: the headline over a small disc is a web page,
     // and on a phone the planet is the page from the first frame.
     const phone = PHONE.matches;
     if (!phone) document.body.classList.add("is-hero");
+    // The page is there at once — top bar, headline, find bar — and the
+    // planet fades up into it when its maps are in (globe-in, below).
+    document.body.classList.add("is-live");
+    if (!phone) document.body.classList.add("hero-in");
+    // The network is fetched alongside the maps rather than after them.
+    const networkReady = api.isConfigured && !this.demo ? this.reloadNetwork() : Promise.resolve();
     const stage = phone ? undefined : stageFrame();
     if (stage) {
       stageCss(stage);
       enterLanding();
     }
-    this.panel.setOpen(false);
     this.#bindChrome();
     this.#bindKeys();
 
@@ -230,6 +285,13 @@ export class App {
       onSignedIn: () => this.#afterAuth(),
       onSkip: () => this.#renderAccount(),
     });
+    // While the conversation is open, signing in happens in it. The linked-
+    // account flows (an intent) keep their own sheet.
+    this.gate.route = (mode, intent) => {
+      if (!this.ask?.open || intent) return false;
+      this.ask.signIn(mode);
+      return true;
+    };
     this.recs = new Recommendations(h("div", { class: "recs" }), {
       onOpenNeed: (need) => this.openNeed(need),
       onNeedQuestionnaire: () => this.openQuestionnaire(),
@@ -237,8 +299,9 @@ export class App {
     });
 
     if (api.isConfigured && !this.demo) {
-      await this.reloadNetwork();
-      await this.#afterAuth({ quiet: true });
+      // Not waited for: the pins and the count arrive when the network does.
+      networkReady.then(() => this.#renderHeroCount());
+      this.#afterAuth({ quiet: true });
       api.onAuthChange((session) => {
         const was = this.session?.user?.id ?? null;
         // Every refresh rotates the token; keep the latest so switching back
@@ -251,7 +314,6 @@ export class App {
       this.toast("No backend configured — showing an empty globe. See .env.example.");
     }
 
-    this.panel.render(this.query);
     this.#renderCrumbs();
     this.#renderAccount();
     this.syncReserved();
@@ -273,7 +335,7 @@ export class App {
       });
     });
     await boot.done();
-    document.body.classList.add("is-live");
+    document.body.classList.add("globe-in");
     // The planet rises into place as the loading screen lifts, already
     // turning: from a little below where the stage puts its rim, with the
     // drift starting under it.
@@ -292,9 +354,7 @@ export class App {
     // globe has said where they want to be, and having it fly out from under
     // them is the rudest thing the page could do.
     // Someone who clicked through while it was still loading has already left.
-    if (document.body.classList.contains("is-hero")) {
-      this.heroInTimer = setTimeout(() => document.body.classList.add("hero-in"), HERO_IN_MS);
-    } else if (phone && !this.globe.controls.gestured) {
+    if (!document.body.classList.contains("is-hero") && phone && !this.globe.controls.gestured) {
       // The one camera move, straight away: the whole planet coming in to
       // fill the screen, already turning.
       this.globe.releaseSpin();
@@ -308,7 +368,7 @@ export class App {
       // Not over the landing screen, where it would sit on the find bar's
       // suggestions: it waits for the working view, where it is about the map
       // in front of you.
-      const note = "Fictional sample data — drag the globe to look around.";
+      const note = "Drag the globe to look around.";
       if (document.body.classList.contains("is-hero")) this.pendingNote = note;
       else setTimeout(() => this.toast(note), 3400);
     }
@@ -349,21 +409,10 @@ export class App {
     // the globe — on a short ease of its own under the drag.
     if (settle) this.globe?.settle(STAGE_EXIT.ms, { dist: STAGE_EXIT.dist, turn: STAGE_EXIT.turn });
     else this.globe?.leaveStage({ dist: STAGE_EXIT.dist });
-    // The panel is frosted glass over a live render, the most expensive thing
-    // the page can slide across it; it comes in as the planet slows into
-    // place rather than on the flight's opening frames, which are the ones
-    // that decide whether the move reads as smooth.
-    const panelIn = Math.round((settle ? STAGE_EXIT.ms : 1100) * 0.55);
-    clearTimeout(this.panelInTimer);
-    this.panelInTimer = setTimeout(() => {
-      if (this.onLanding) return;
-      this.panel.setOpen(true);
-      this.syncReserved();
-    }, panelIn);
     // Twice: once to give the ground the headline was holding straight back
-    // to the pins, and again once the panel and the find bar have landed.
+    // to the pins, and again once the find bar has landed.
     this.syncReserved();
-    setTimeout(() => this.syncReserved(), panelIn + 760);
+    setTimeout(() => this.syncReserved(), Math.round((settle ? STAGE_EXIT.ms : 1100) * 0.55) + 760);
   }
 
   /* ------------------------------------------------ the style editor's */
@@ -390,10 +439,9 @@ export class App {
    */
   showLanding() {
     if (this.onLanding || !this.hasLanding || !this.globe) return;
-    clearTimeout(this.panelInTimer);
     this.#deselect();
     this.setView("globe");
-    this.panel.setOpen(false);
+    this.ask?.close();
     this.#hideSuggest();
     clearTimeout(this.heroOutTimer);
     document.body.classList.remove("hero-in", "hero-out");
@@ -458,94 +506,29 @@ export class App {
   }
 
   /**
-   * The loading screen: the mark, a verse about serving, and the bar.
-   *
-   * The bar is paced rather than raw. The textures can land in well under a
-   * second on a warm cache, and a bar that fills in three jumps and a screen
-   * that is gone before the verse on it has been read make the one quiet
-   * moment on the page feel like a flicker. So what is drawn is the real
-   * progress, but never ahead of a steady clock that takes BOOT_MIN_MS to
-   * run, eased as it goes; and done() waits for the drawn bar, not the load.
+   * No loading screen: the page goes straight to the app, and the planet
+   * appears as soon as its textures are in. The veil is only put up if the
+   * globe cannot start at all, to say why.
    */
   #boot() {
-    const BOOT_MIN_MS = 4200;
-    const fill = h("div", { class: "boot__fill" });
-    const verse = pickVerse();
-    const words = h("p", { class: "boot__verse" });
-    const ref = h("div", { class: "boot__ref" });
-    const quote = h("figure", { class: "boot__quote" }, words, ref);
-    const veil = h(
-      "div",
-      { class: "boot" },
-      h(
-        "div",
-        { class: "boot__inner" },
-        h("img", { class: "boot__mark", src: "/brand/terra-logo-480.png", alt: "Terra", width: 480, height: 248 }),
-        quote,
-        h("div", { class: "boot__bar" }, fill),
-      ),
-    );
-    document.body.appendChild(veil);
-    // The words arrive when their text does — YouVersion's if it answers
-    // quickly, the bundled KJV if not — never as a swap mid-read.
-    verseText(verse).then(({ text, version }) => {
-      words.textContent = text;
-      ref.textContent = `${verse.ref} · ${version}`;
-      quote.classList.add("is-in");
-    });
-
-    const t0 = performance.now();
-    let real = 0;
-    let shown = 0;
-    let raf = 0;
-    let finish = null;
-    const tick = (now) => {
-      const clock = Math.min((now - t0) / BOOT_MIN_MS, 1);
-      // Ease-out on the clock: it moves off briskly and settles into the end.
-      const paced = 1 - Math.pow(1 - clock, 2.2);
-      const goal = Math.min(real, paced);
-      shown += (goal - shown) * 0.12;
-      if (goal - shown < 0.002) shown = goal;
-      fill.style.width = `${(shown * 100).toFixed(2)}%`;
-      if (finish && shown >= 0.999) {
-        const done = finish;
-        finish = null;
-        // A beat on the full bar, then the screen goes.
-        setTimeout(() => {
-          veil.classList.add("is-done");
-          done();
-          setTimeout(() => veil.remove(), 1200);
-        }, 320);
-        return;
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-
     return {
-      progress(p) {
-        real = Math.max(real, clamp(p, 0, 1) * 0.94);
-      },
-      /** Resolves as the screen starts to leave. */
-      done() {
-        real = 1;
-        return new Promise((resolve) => (finish = resolve));
-      },
+      progress() {},
+      done: () => Promise.resolve(),
       fail(err) {
-        cancelAnimationFrame(raf);
-        clear(veil);
-        add(veil, [
-          h(
-            "div",
-            { class: "boot__inner boot__fail" },
-            h("div", { class: "boot__label", text: "could not start" }),
-            h("p", {
-              text:
-                "The globe needs WebGL2 and the baked textures in public/textures. Run npm run assets, then reload.",
-            }),
-            h("p", { style: { fontFamily: "var(--mono)", fontSize: "12px" }, text: String(err?.message || err) }),
+        document.body.appendChild(
+          h("div", { class: "boot" },
+            h(
+              "div",
+              { class: "boot__inner boot__fail" },
+              h("div", { class: "boot__label", text: "could not start" }),
+              h("p", {
+                text:
+                  "The globe needs WebGL2 and the baked textures in public/textures. Run npm run assets, then reload.",
+              }),
+              h("p", { style: { fontFamily: "var(--mono)", fontSize: "12px" }, text: String(err?.message || err) }),
+            ),
           ),
-        ]);
+        );
       },
     };
   }
@@ -579,6 +562,7 @@ export class App {
       else if (action === "menu") this.#menu(trigger);
       else if (action === "open-board") this.setView(this.board.open ? "globe" : "needs");
       else if (action === "join") this.#join();
+      else if (action === "serve-local") this.serveLocally();
       else if (action === "near-me") this.#nearMe();
       else if (action === "toggle-filters") this.#toggleFilters();
     });
@@ -636,24 +620,31 @@ export class App {
 
   #menu(anchor) {
     const saved = store.interestCount + store.posted.length;
+    // On a phone the ☰ beside the field is the whole navigation: what the
+    // top bar holds on a desktop comes first, then the usual menu.
+    const phone = PHONE.matches;
+    const signedIn = !!this.session;
     openPop({
       anchor,
       parent: this.el.chrome,
+      compact: phone,
       items: [
+        ...(phone
+          ? [
+              { label: "Globe", icon: menuIcons.globe, run: () => { this.setView("globe"); this.globe?.reset(); } },
+              { label: "Needs", note: "Every open need, as a list", icon: menuIcons.board, run: () => this.setView("needs") },
+              { label: "Serve locally", note: "Choose how far, and Terra finds where to help", icon: menuIcons.locate, run: () => this.serveLocally() },
+              { label: "Post a need", icon: menuIcons.plus, run: () => this.postNeed() },
+              { label: signedIn ? "Your account" : "Sign in or join", icon: menuIcons.person, run: () => this.#join() },
+              null,
+            ]
+          : []),
+        ...(phone ? [] : [{ label: "Serve locally", note: "Choose how far, and Terra finds where to help", icon: menuIcons.locate, run: () => this.serveLocally() }]),
         { label: "About this map", note: "How the globe is drawn", icon: menuIcons.info, run: () => this.setView("about") },
-        { label: "Open needs board", icon: menuIcons.board, kbd: "B", run: () => this.setView("needs") },
-        // On a phone there is no side panel, only the sheet a pin brings up;
-        // what stands in for the rail's summary is the network in that sheet.
-        PHONE.matches
-          ? { label: "Network summary", note: "Every open need, in figures", icon: menuIcons.panel, run: () => { this.panel.showNetwork(); this.panel.render(this.query); this.sheet.setDetent("half"); } }
-          : {
-              label: this.panel.open ? "Hide the side panel" : "Show the side panel",
-              icon: menuIcons.panel,
-              run: () => this.panel.setOpen(!this.panel.open),
-            },
+        ...(phone ? [] : [{ label: "Open needs board", icon: menuIcons.board, kbd: "B", run: () => this.setView("needs") }]),
         // SANDBOX START — the temporary Style Sandbox's menu entry; present only
         // while src/sandbox/style/ exists (see main.js and REMOVAL.md there).
-        ...(window.terraStyleEditor
+        ...(window.terraStyleEditor && !phone
           ? [
               {
                 label: window.terraStyleEditor.open ? "Hide the style editor" : "Style editor",
@@ -661,12 +652,19 @@ export class App {
                 icon: menuIcons.theme,
                 run: () => window.terraStyleEditor.toggle(),
               },
+              {
+                label: window.terraQuickStyle?.open ? "Hide quick style" : "Quick style",
+                note: "Lights, glow and colours, simply",
+                icon: menuIcons.theme,
+                run: () => window.terraQuickStyle?.toggle(),
+              },
             ]
           : []),
         // SANDBOX END
         null,
         { label: "Show where I am", note: "A blue dot at your location", icon: menuIcons.locate, run: () => this.#nearMe() },
-        { label: "Reset the view", icon: menuIcons.reset, kbd: "R", run: () => this.globe?.reset() },
+        // On a phone, Globe at the top of the menu already does this.
+        ...(phone ? [] : [{ label: "Reset the view", icon: menuIcons.reset, kbd: "R", run: () => this.globe?.reset() }]),
         null,
         {
           label: "Clear what this browser saved",
@@ -719,7 +717,7 @@ export class App {
   #renderCrumbs() {
     const trail = [
       { label: "About", run: () => this.setView("about") },
-      { label: "Network", run: () => this.panel.showNetwork() },
+      { label: "Network", run: () => this.#deselect() },
       { label: this.#context() },
     ];
     clear(this.el.crumbs);
@@ -769,7 +767,7 @@ export class App {
    * Re-reads who is signed in and what they are. Called on every auth change,
    * so it has to be safe to run repeatedly and safe to run signed out.
    */
-  async #afterAuth({ quiet = false } = {}) {
+  async #afterAuth({ quiet = false, onboard = true } = {}) {
     this.session = await api.currentSession();
     this.profile = this.session ? await api.myProfile() : null;
     this.ministry = this.profile?.role === "ministry" ? await api.myMinistry() : null;
@@ -791,6 +789,7 @@ export class App {
 
     if (!this.session) return;
     if (!quiet) this.toast(`Signed in as ${this.profile?.full_name || this.session.user.email}`);
+    if (!onboard) return;
 
     // Each account is onboarded once, after a beat — immediately on top of a
     // sign-in reads as a second gate. A volunteer answers the questions; a
@@ -847,7 +846,7 @@ export class App {
       onPost: () => this.postNeed(),
       onShowNeed: (id) => {
         const n = this.net.needById(id);
-        if (n) this.openNeed(n, { fly: true });
+        if (n) this.openNeed(n);
       },
       // Back to the list once saved, so the new state — live, or held for
       // review — is the first thing seen.
@@ -978,7 +977,7 @@ export class App {
 
   /** The dock's Join: an account if there is none, otherwise what is theirs. */
   #join() {
-    if (!api.isConfigured) return this.toast("Accounts need the live site — this is the demo.");
+    if (!api.isConfigured) return this.toast("Accounts aren't available right now. Please try again later.");
     if (!this.session) return this.gate?.open("signup");
     if (this.profile?.role === "ministry") return this.ministry ? this.openDashboard() : this.openMinistrySetup();
     this.openSuggestions();
@@ -1006,6 +1005,207 @@ export class App {
       },
       { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 },
     );
+  }
+
+  /* -------------------------------------------------------- serve locally */
+
+  /** Where the visitor is, asking the browser once; resolves to null if it will not say. */
+  #locate() {
+    if (this.here) return Promise.resolve(this.here);
+    if (!navigator.geolocation) {
+      this.toast("This browser cannot share its location.");
+      return Promise.resolve(null);
+    }
+    for (const b of document.querySelectorAll('[data-action="near-me"], [data-action="serve-local"]')) b.classList.add("is-busy");
+    return new Promise((resolve) =>
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          this.#setHere(pos);
+          this.#watchHere();
+          for (const b of document.querySelectorAll('[data-action="serve-local"]')) b.classList.remove("is-busy");
+          resolve(this.here);
+        },
+        (err) => {
+          for (const b of document.querySelectorAll('[data-action="near-me"], [data-action="serve-local"]')) b.classList.remove("is-busy");
+          this.toast(err.code === err.PERMISSION_DENIED ? "Location is off for this site. Allow it in your browser's settings." : "Could not find where you are just now.");
+          resolve(null);
+        },
+        { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 },
+      ),
+    );
+  }
+
+  /**
+   * Serve locally. The globe comes down to the visitor's blue dot with a
+   * circle round it, and a slider sets how far the circle reaches; the
+   * camera follows it in and out, and the pins outside it recede. The circle
+   * can instead go round a city or country the visitor types, and does when
+   * the browser will not say where they are. "Find ministry opportunities"
+   * then asks the guide to choose from the needs inside — against the
+   * visitor's questionnaire when they have one.
+   *
+   * `again` is "Change the radius" after an answer: the circle stays where it
+   * was. A fresh "Serve locally" starts from the visitor.
+   */
+  async serveLocally({ again = false } = {}) {
+    this.#leaveHero();
+    if (!again) this.localPlace = null;
+    const here = this.localPlace ? this.here : await this.#locate();
+    // A second "Serve locally" replaces the card rather than stacking another.
+    if (this.local.open) this.local.close({ quiet: true });
+    this.localOn = true;
+    this.localFramed = false;
+    this.globe?.setSpin(false);
+    // The radius is a card in the conversation; its ✕ ends serving locally.
+    this.ask.layer(null, { onClose: () => this.local.close() }).show((close) => {
+      this.local.unmount = close;
+      return this.local.show({ place: this.localPlace ?? null, located: !!here });
+    });
+    this.syncReserved();
+  }
+
+  /** Where the circle is round: a place the visitor chose, or the visitor. */
+  #localCentre() {
+    return this.localPlace ?? this.here ?? null;
+  }
+
+  /** The circle moves: to `place`, or back to the visitor for null. */
+  async #moveLocal(place) {
+    if (!this.localOn) return;
+    this.localFramed = false;
+    if (place) {
+      this.localPlace = place;
+      // The globe glides there rather than jumping, and the circle is drawn
+      // round it with the slider's radius.
+      return this.local.setPlace(place);
+    }
+    this.localPlace = null;
+    const here = await this.#locate();
+    if (!this.localOn || this.localPlace) return;
+    this.local.setPlace(null, { located: !!here });
+    if (!here) this.globe?.setArea(null);
+  }
+
+  /** The ministries with open needs within `miles` of the circle's centre, nearest first. */
+  #localInside(miles) {
+    const centre = this.#localCentre();
+    if (!centre) return [];
+    return this.net.ministries
+      .filter((m) => m.openNeeds > 0)
+      .map((m) => ({ m, d: distanceMiles(centre, m) }))
+      .filter((x) => x.d <= miles)
+      .sort((a, b) => a.d - b.d);
+  }
+
+  #localCount(miles) {
+    const ids = new Set(this.#localInside(miles).map((x) => x.m.id));
+    return { needs: this.net.needs.filter((n) => ids.has(n.ministry)).length };
+  }
+
+  /** The circle on the planet, the camera framing it, the pins outside it dimmed. */
+  #drawLocal(miles) {
+    const centre = this.#localCentre();
+    if (!centre || !this.localOn) return;
+    const area = { lat: centre.lat, lon: centre.lon, miles };
+    this.globe?.setArea(area);
+    const keep = new Set(this.#localInside(miles).map((x) => x.m.id));
+    this.globe?.setDimmed(new Set(this.net.ministries.filter((m) => !keep.has(m.id)).map((m) => m.id)));
+    this.globe?.frameArea(area, { fill: PHONE.matches ? 0.32 : 0.36, ms: this.localFramed ? 650 : undefined });
+    this.localFramed = true;
+  }
+
+  #endLocal() {
+    if (!this.localOn) return;
+    this.localOn = false;
+    this.localPlace = null;
+    if (this.local.open) this.local.close({ quiet: true });
+    this.globe?.setArea(null);
+    this.localFound = null;
+    this.globe?.setFound([]);
+    this.applyQuery();
+    this.syncReserved();
+  }
+
+  /**
+   * Hands the circle to the guide. The page finds the churches and ministries
+   * inside it (lib/places.js); the serve-local function reads their websites
+   * and chooses, with any Terra needs inside the circle alongside. Answered
+   * in the conversation, with what it is doing shown while it works.
+   */
+  #findLocal(miles) {
+    const here = this.#localCentre();
+    if (!here) return;
+    const place = this.localPlace ? placeLabel(this.localPlace) : null;
+    const byMinistry = new Map(this.#localInside(miles).map((x) => [x.m.id, x.d]));
+    const urgency = { urgent: 0, soon: 1, ongoing: 2 };
+    const inside = this.net.needs
+      .filter((n) => byMinistry.has(n.ministry))
+      .map((need) => ({ need, miles: byMinistry.get(need.ministry) }))
+      .sort((a, b) => a.miles - b.miles || (urgency[a.need.urgency] ?? 3) - (urgency[b.need.urgency] ?? 3))
+      .slice(0, LOCAL_POOL);
+    this.local.close({ quiet: true });
+    this.syncReserved();
+
+    this.ask.findLocal({
+      miles,
+      place,
+      onAdjust: () => this.serveLocally({ again: true }),
+      // Three steps, each with its share of the bar: the bar eases towards
+      // the step's share while it runs, and fills when the answer arrives.
+      run: async (status) => {
+        // How far the web search reaches (serve-local's own cap).
+        const reach = Math.min(miles, 100);
+        let found = { orgs: [], places: [] };
+        if (api.isConfigured) {
+          status(`Finding churches and ministries ${place ? `around ${this.localPlace.name}` : "inside the circle"}…`, { step: 1, to: 0.3, tau: 6 });
+          // The name of the area, for the agent's web search: the place
+          // typed, or wherever the visitor is.
+          const [orgs, near] = await Promise.all([
+            findLocalOrgs(here.lat, here.lon, reach).catch(() => found),
+            place ? Promise.resolve(place) : areaName(here.lat, here.lon),
+          ]);
+          found = orgs;
+          const area = place || near || found.places.slice(0, 2).join(", ");
+          status(`Searching the web and reading church and ministry websites${area ? ` in ${area.split(",")[0]}` : ""}…`, { step: 2, to: 0.75, tau: 16 });
+          // The reading and choosing take a while; say what is happening.
+          const later = setTimeout(() => status("Choosing the best ways for you to serve…", { step: 3, to: 0.95, tau: 14 }), 18000);
+          try {
+            const res = await api.serveLocal({ miles, lat: here.lat, lon: here.lon, area, needs: inside, orgs: found.orgs, places: found.places });
+            const byId = new Map(inside.map((x) => [x.need.id, x.need]));
+            const picks = res.items
+              .map((it, i) =>
+                it.kind === "need"
+                  ? { need: byId.get(it.id), why: it.why }
+                  : { web: { ...it, name: it.org }, why: it.why, key: `web:${i}:${it.org}` },
+              )
+              .filter((p) => p.need || p.web);
+            // The same objects the cards hold, so the globe can light the one
+            // opened — those with a place on the map (a web find may have none).
+            this.localFound = picks.filter((p) => p.web && Number.isFinite(p.web.lat)).map((p) => p.web);
+            this.globe?.setFound(this.localFound);
+            return { reply: res.reply, picks };
+          } catch {
+            // Fall through to what the page can say on its own.
+          } finally {
+            clearTimeout(later);
+          }
+        }
+        // The guide out of reach: Terra's own needs inside the circle, the
+        // nearest ten, one per ministry before a second from any.
+        const far = (d) => (d < 1 ? "Under a mile away" : d < 10 ? `${d.toFixed(1)} miles away` : `${Math.round(d).toLocaleString()} miles away`);
+        const firsts = [];
+        const rest = [];
+        const seen = new Set();
+        for (const x of inside) (seen.has(x.need.ministry) ? rest : (seen.add(x.need.ministry), firsts)).push(x);
+        const picks = [...firsts, ...rest].slice(0, 10).map((x) => ({ need: x.need, why: `${far(x.miles)} · ${x.need.city}` }));
+        return {
+          reply: picks.length
+            ? `I couldn't search local churches' websites just now, but here ${picks.length === 1 ? "is the one need" : `are ${picks.length} needs`} on Terra within ${miles} miles of ${place ?? "you"}.`
+            : `I couldn't search the churches and ministries round ${place ?? "you"} just now. Please try again in a moment.`,
+          picks,
+        };
+      },
+    });
   }
 
   #flyHere() {
@@ -1056,10 +1256,9 @@ export class App {
   }
 
   /**
-   * On a phone, raises the globe into the room left above the sheet, so the
-   * city a pin was tapped on stays in sight instead of going under the card
-   * that describes it. Centred in the gap between the search field and the
-   * sheet's top edge.
+   * On a phone, raises the globe into the room left above the conversation,
+   * so the city a pin was tapped on stays in sight instead of going under
+   * the card that describes it.
    */
   #syncLift() {
     if (!this.globe) return;
@@ -1071,13 +1270,14 @@ export class App {
       this.globe.setShift(stage.shift, { instant: true });
       return this.globe.setLift(stage.lift, { instant: true });
     }
-    const open = PHONE.matches && this.panel.open && !this.board.open;
-    if (!open) return this.globe.setLift(0);
     const H = viewH();
-    const top = document.querySelector(".findbar")?.getBoundingClientRect().bottom ?? 0;
-    const sheet = Math.min(this.sheetPx ?? H * 0.5, H * 0.6);
-    const mid = (top + H - sheet) / 2;
-    this.globe.setLift(clamp(0.5 - mid / H, 0, 0.3));
+    // The phone's conversation rises from the foot of the screen; the planet
+    // moves up into the room left above it.
+    if (PHONE.matches && this.ask?.open) {
+      const covered = this.ask.root.getBoundingClientRect().top || H * 0.6;
+      return this.globe.setLift(clamp(0.5 - covered / 2 / H, 0, 0.3));
+    }
+    this.globe.setLift(0);
   }
 
   #accountMenu(anchor) {
@@ -1188,7 +1388,6 @@ export class App {
 
   applyQuery() {
     this.#renderHeroCount();
-    this.panel.render(this.query);
     if (this.board.open) this.board.render(this.query);
     this.globe?.setDimmed(this.net.excluded(this.query));
     this.#renderCrumbs();
@@ -1198,8 +1397,10 @@ export class App {
     this.query = emptyQuery();
     this.el.search.value = "";
     this.el.clearSearch.hidden = true;
-    this.filtersUi.query = this.query;
-    this.filtersUi.render();
+    if (this.filtersUi) {
+      this.filtersUi.query = this.query;
+      this.filtersUi.render();
+    }
     this.applyQuery();
   }
 
@@ -1263,21 +1464,6 @@ export class App {
 
   /* --------------------------------------------------------------- events */
 
-  #panelHandlers() {
-    return {
-      postNeed: (ministryId) => this.postNeed(ministryId),
-      openBoard: () => this.setView("needs"),
-      openNeed: (need) => this.openNeed(need, { fly: true }),
-      clearFilters: () => this.clearFilters(),
-      layoutChanged: () => {
-        // On a phone the sheet's close button means "done with this place".
-        if (PHONE.matches && !this.panel.open && this.selected) this.#deselect();
-        this.#syncLift();
-        setTimeout(() => this.syncReserved(), 480);
-      },
-    };
-  }
-
   #boardHandlers() {
     return {
       postNeed: (ministryId) => this.postNeed(ministryId),
@@ -1289,7 +1475,7 @@ export class App {
       queryChanged: () => {
         this.el.search.value = this.query.text;
         this.el.clearSearch.hidden = !this.query.text;
-        this.filtersUi.render();
+        this.filtersUi?.render();
         this.applyQuery();
       },
       boardToggled: (open) => {
@@ -1303,46 +1489,31 @@ export class App {
     };
   }
 
-  openMinistry(ministry, { fly = false } = {}) {
+  openMinistry(ministry, { fly = false, need = null } = {}) {
     const full = this.net.ministryById.get(ministry.id) ?? ministry;
     this.selected = full;
     this.globe?.select(full.id);
     this.globe?.setSpin(false);
-    this.panel.showMinistry(full);
-    if (PHONE.matches) this.sheet.setDetent("half");
+    // In the conversation, where its needs can be opened, served, booked and
+    // asked about; `need` opens one of them straight away.
+    this.ask.showMinistry(full, { need });
     // All the way in: choosing a ministry is choosing a city, not a region.
     if (fly) this.globe?.focus(full, { zoom: 1 });
     this.#renderCrumbs();
   }
 
   /**
-   * `fly` takes the globe to the ministry first and stands the need beside
-   * its pin, rather than over a blurred world — for picks made from the
-   * panel and the search, where the map is the context.
+   * A need, opened under its ministry in the conversation, with the globe
+   * gone to it. From the board or a dialog, those step aside for the map.
    */
-  openNeed(need, { fly = false } = {}) {
+  openNeed(need) {
     const fresh = this.net.needById(need.id) ?? need;
-    const m = fly ? this.net.ministryById.get(fresh.ministry) : null;
-    if (m) {
-      this.#leaveHero();
-      this.openMinistry(m, { fly: true });
-    }
-    needModal(this.modals, fresh, {
-      onPickUp: (n) => this.openPickUp(n),
-      onDrop: (n) => {
-        this.net.toggleInterest(n.id);
-        this.#afterDataChange();
-        if (this.session) api.withdrawInterest(n.id).catch(() => {});
-        this.toast("Interest withdrawn.");
-      },
-      onMinistry: (n) => {
-        const m = this.net.ministryById.get(n.ministry);
-        if (m) this.openMinistry(m, { fly: true });
-      },
-      onSchedule: api.isConfigured ? (n) => this.openSchedule(n) : null,
-      // Only on the ministry's own needs.
-      onEdit: this.ministry && fresh.ministry === this.ministry.id ? (n) => this.editNeed(n) : null,
-    }, { side: !!m });
+    const m = this.net.ministryById.get(fresh.ministry);
+    if (!m) return;
+    this.#leaveHero();
+    if (this.modals.isOpen) this.modals.close();
+    if (this.board.open) this.setView("globe");
+    this.openMinistry(m, { fly: true, need: fresh });
   }
 
   /**
@@ -1350,31 +1521,39 @@ export class App {
    * and to the database as well when there is somebody to attribute it to: a
    * signed-out visitor can still answer and share links, just not upload.
    */
-  openPickUp(need) {
+  openPickUp(need, { chat = false } = {}) {
     const live = api.isConfigured && !this.demo;
-    pickUpModal(this.modals, this.net.needById(need.id) ?? need, {
+    const layer = chat ? this.ask.layer(`I'd like to serve on “${need.title}”`) : this.modals;
+    pickUpModal(layer, this.net.needById(need.id) ?? need, {
       canUpload: live && !!this.session,
-      onSignIn: live ? () => this.gate.open("signin") : null,
+      onSignIn: live
+        ? () => (chat ? this.ask.signIn("signin", { then: () => this.openPickUp(need, { chat }) }) : this.gate.open("signin"))
+        : null,
       onSubmit: async (answers) => {
         if (this.session) await api.expressInterest(need.id, answers);
         this.net.toggleInterest(need.id, { ...answers, files: answers.files.map((f) => f.name) });
         this.#afterDataChange();
-        this.toast(
-          this.session
-            ? `Sent — ${need.ministryName} can see your answers.`
-            : `Saved in this browser. Sign in so ${need.ministryName} can see it.`,
-        );
+        const done = this.session
+          ? `Sent — ${need.ministryName} can see your answers.`
+          : `Saved in this browser. Sign in so ${need.ministryName} can see it.`;
+        if (chat) this.ask.say(`${done} I'll keep “${need.title}” on your list.`);
+        else this.toast(done);
       },
     });
   }
 
   /** Book a first video call about a need; signing in comes first. */
-  openSchedule(need) {
+  openSchedule(need, { chat = false } = {}) {
     if (!this.session) {
+      if (chat) {
+        this.ask.say("To book a call with the ministry, sign in first — it only takes a moment.");
+        return this.ask.signIn("signin", { said: null, then: () => this.openSchedule(need, { chat }) });
+      }
       this.toast("Sign in to book a call with the ministry.");
       return this.gate.open("signup");
     }
-    scheduleModal(this.modals, this.net.needById(need.id) ?? need, {
+    const layer = chat ? this.ask.layer(`I'd like a call with ${need.ministryName}`) : this.modals;
+    scheduleModal(layer, this.net.needById(need.id) ?? need, {
       onBook: (fields) => api.scheduleMeeting(fields),
     });
   }
@@ -1385,7 +1564,7 @@ export class App {
       load: () => api.myMeetings(),
       onOpenNeed: (id) => {
         const n = this.net.needById(id);
-        if (n) this.openNeed(n, { fly: true });
+        if (n) this.openNeed(n);
       },
     });
   }
@@ -1415,7 +1594,7 @@ export class App {
             this.globe?.select(m.id);
             this.globe?.focus(m, { zoom: Math.max(this.globe.zoom, 0.5) });
             this.selected = m;
-            this.panel.showMinistry(m);
+            this.ask.showMinistry(m);
           }
         }
       },
@@ -1423,19 +1602,13 @@ export class App {
   }
 
   #afterDataChange() {
-    this.panel.net = this.net;
     this.board.net = this.net;
-    this.filtersUi.net = this.net;
+    if (this.filtersUi) this.filtersUi.net = this.net;
     this.globe?.setMinistries(this.net.ministries);
-    if (this.selected) {
-      const fresh = this.net.ministryById.get(this.selected.id);
-      if (fresh) {
-        this.selected = fresh;
-        this.panel.showMinistry(fresh);
-      }
-    } else {
-      this.panel.render(this.query);
-    }
+    // The conversation shows whether you have taken a need up, and a
+    // ministry's card its needs as they are now.
+    if (this.ask?.open) this.ask.render({ keepScroll: true });
+    if (this.selected) this.selected = this.net.ministryById.get(this.selected.id) ?? this.selected;
     if (this.board.open) this.board.render(this.query);
   }
 
@@ -1471,13 +1644,9 @@ export class App {
     push(this.el.grabber, 4);
     push(document.querySelector(".dock"), 4);
     for (const fab of document.querySelectorAll(".fabs .fab")) push(fab, 4);
-    if (this.panel.open) push(this.el.panel);
-    // The conversation's window is clear: only its header and field are
-    // solid enough that a label under them would be lost.
-    if (this.ask?.open) {
-      push(this.ask.root.querySelector(".ask__head"));
-      push(this.ask.root.querySelector(".ask__composer"));
-    }
+    // The conversation's window is frosted: a label under it would only
+    // show as a smudge.
+    if (this.ask?.open) push(this.ask.root);
     if (this.board.open) push(this.el.sheet);
     this.globe?.setReserved(rects);
     // A side card starts below the find bar, so it never covers the search or
@@ -1492,16 +1661,6 @@ export class App {
     this.selected = null;
     this.globe?.select(null);
     this.globe?.setSpin(true);
-    if (PHONE.matches) {
-      // The sheet goes away with the place; the network summary is one tap
-      // away on the dock, and on a phone the map is the summary.
-      this.panel.mode = "network";
-      this.panel.ministry = null;
-      if (this.panel.open) this.panel.setOpen(false);
-    } else {
-      this.panel.showNetwork();
-    }
-    this.panel.render(this.query);
     this.#renderCrumbs();
   }
 
@@ -1514,7 +1673,7 @@ export class App {
   /**
    * Tells the globe when nothing of it is on screen.
    *
-   * A full-height sheet or a dialog on a phone leaves the renderer drawing a
+   * The full-height board or a dialog on a phone leaves the renderer drawing a
    * planet — the heaviest thing on the page — underneath something opaque, at
    * sixty frames a second, while a finger is trying to scroll the thing on
    * top. That is most of why the list stuttered. On a desktop the board is a
@@ -1524,7 +1683,7 @@ export class App {
     const phone = window.matchMedia("(max-width: 720px)").matches;
     const covered =
       !!this.modals?.covers ||
-      (phone && (!!this.board?.open || document.body.classList.contains("sheet-full")));
+      (phone && !!this.board?.open);
     this.globe?.setCovered(covered);
   }
 

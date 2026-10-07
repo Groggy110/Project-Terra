@@ -16,12 +16,13 @@ import { STYLE } from "../style/styleConfig.js";
  * drift, the smoothing and the wheel — lives in STYLE.camera and STYLE.motion
  * and is read live, so a restyle takes effect on the next frame.
  *
- * The close stop, camera.minDist, is a *height*, not a distance: 1.014 frames
- * about ninety kilometres — a city and the country it sits in, which is as
- * close as a *globe* has any business going. `zoom` is the log of the distance
- * normalised over minDist..maxDist, so moving either end rescales the whole
- * ladder; in logs the moves are small, and every threshold keyed off zoom() is
- * written as a smoothstep wide enough to absorb them.
+ * The zoom ladder runs from maxDist, the whole globe, to minDist, 1.014 —
+ * about ninety kilometres up, a city and the country it sits in. `zoom` is
+ * the log of the distance normalised over that span, so moving either end
+ * rescales the whole ladder; in logs the moves are small, and every threshold
+ * keyed off zoom() is written as a smoothstep wide enough to absorb them.
+ * The camera itself goes on past the ladder's end, down to camera.closeDist —
+ * street level — with zoom() reading 1 the whole way (closest()).
  *
  * The drift rate is set in *pixels of ground per second*, not degrees: a
  * degree is worth twice as much screen at the working view as it is at the
@@ -34,6 +35,8 @@ import { STYLE } from "../style/styleConfig.js";
  * the same *proportion* of the remaining approach at every zoom.
  */
 const cam = () => STYLE.camera;
+/** The camera's true close stop: closeDist, never further out than minDist. */
+const closest = () => Math.min(cam().closeDist ?? cam().minDist, cam().minDist);
 const mo = () => STYLE.motion;
 
 /**
@@ -194,8 +197,27 @@ export class GlobeControls {
    * could never come down to a city at all. Scaling the height above the
    * ground keeps the whole-globe framing and gives the close stop back.
    */
+  /** The semantic distance whose fitted() is `real`. */
+  unfitted(real) {
+    let lo = 1;
+    let hi = Math.max(real, 1 + 1e-9);
+    for (let i = 0; i < 48; i++) {
+      const mid = (lo + hi) / 2;
+      if (this.fitted(mid) < real) lo = mid;
+      else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+
   fitted(dist) {
-    return 1 + (dist - 1) * this.fit;
+    // The portrait withdrawal is about framing the whole planet; near the
+    // ground there is no planet to frame, and kept on it would hold a phone
+    // two and a half times higher than a desktop at the same zoom. It eases
+    // off below the city stop, and is gone by street level.
+    const alt = dist - 1;
+    const city = cam().minDist - 1;
+    const keep = smoothstep(city * 0.02, city, alt);
+    return 1 + alt * (1 + (this.fit - 1) * keep);
   }
 
   /**
@@ -572,13 +594,18 @@ export class GlobeControls {
     this.#wheel(e);
   }
 
-  /** All the way in, onto the point that was double-clicked. */
+  /**
+   * In onto the point that was double-clicked: to the city stop from further
+   * out, and from there two map levels at a time, as a slippy map steps.
+   */
   #dbl = (e) => {
     const at = this.pointAt(e);
+    const alt = this.target.dist - 1;
+    const city = cam().minDist - 1;
     this.flyTo({
       lat: at?.lat ?? this.target.lat,
       lon: at?.lon ?? this.target.lon,
-      dist: cam().minDist,
+      dist: 1 + (alt > city * 1.05 ? city : alt / 4),
       ms: 1100,
     });
   };
@@ -611,7 +638,7 @@ export class GlobeControls {
    */
   #zoomTo(next, event) {
     const from = this.target.dist;
-    const to = clamp(next, cam().minDist, cam().maxDist);
+    const to = clamp(next, closest(), cam().maxDist);
     this.target.dist = to;
     if (!event || to === from) return;
 
@@ -650,8 +677,12 @@ export class GlobeControls {
       if (camRoll()) camera.rotateZ(camRoll());
       camera.updateMatrixWorld();
       // Round the back of the globe from here: head straight for it instead.
-      // (Visible means p·camera > 1: the cap shrinks to ~10° at the closest zoom.)
-      if (a.p.dot(camera.position) < 1.001) {
+      // Visible means p·camera > 1, and the margin over 1 has to shrink with
+      // the height: a fixed 1.001 is the horizon from six kilometres up, so
+      // below that *every* point read as round the back, and each zoom notch
+      // swung the view half way to the cursor — the lurch sideways when
+      // zooming out from street level.
+      if (a.p.dot(camera.position) < 1 + Math.min(0.001, (this.fitted(dist) - 1) * 0.02)) {
         const at = vec3ToLatLon(a.p);
         this.lat = clamp(this.lat + (at.lat - this.lat) * 0.5, -cam().latLimit, cam().latLimit);
         this.lon += wrapDelta(this.lon, at.lon) * 0.5;
@@ -693,11 +724,11 @@ export class GlobeControls {
    * so the stop is arrived at rather than hit.
    */
   #scaled(dist, factor) {
-    const floor = cam().minDist - 1;
+    const floor = closest() - 1;
     const alt = Math.max(dist - 1, floor);
     let e = 1 + 0.25 * smoothstep(1.2, 3, alt);
     if (factor < 1) e *= 1 - 0.45 * (1 - smoothstep(floor, floor * 7, alt));
-    return clamp(1 + alt * Math.pow(factor, e), cam().minDist, cam().maxDist);
+    return clamp(1 + alt * Math.pow(factor, e), closest(), cam().maxDist);
   }
 
   /**
@@ -711,7 +742,7 @@ export class GlobeControls {
     const to = {
       lat: clamp(lat ?? this.target.lat, -cam().latLimit, cam().latLimit),
       lon: this.lon + wrapDelta(this.lon, lon ?? this.target.lon),
-      dist: clamp(dist ?? this.target.dist, cam().minDist, cam().maxDist),
+      dist: clamp(dist ?? this.target.dist, closest(), cam().maxDist),
     };
     this.vel.lat = 0;
     this.vel.lon = 0;
@@ -812,7 +843,15 @@ export class GlobeControls {
       }
       this.lat = f.from.lat + (f.to.lat - f.from.lat) * k;
       this.lon = f.from.lon + (f.to.lon - f.from.lon) * k + f.drift;
-      this.dist = clamp(f.from.dist + (f.to.dist - f.from.dist) * k + arc, cam().minDist, cam().maxDist + 1.4);
+      // Below the ladder's close end the height is eased in logs: from ninety
+      // kilometres to four hundred metres is a factor of two hundred, and a
+      // straight line would cover all of it in the last few frames.
+      const lo = Math.min(f.from.dist, f.to.dist) - 1;
+      const deep = lo < cam().minDist - 1;
+      const d = deep
+        ? 1 + Math.exp(Math.log(f.from.dist - 1) + (Math.log(f.to.dist - 1) - Math.log(f.from.dist - 1)) * k)
+        : f.from.dist + (f.to.dist - f.from.dist) * k;
+      this.dist = clamp(d + arc, closest(), cam().maxDist + 1.4);
       if (f.t >= f.ms) {
         this.flight = null;
         this.lat = f.to.lat;

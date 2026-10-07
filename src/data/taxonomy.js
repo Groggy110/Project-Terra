@@ -47,6 +47,7 @@ export const REGIONS = [
   { id: "latam", label: "Latin America" },
   { id: "mena", label: "Middle East & North Africa" },
   { id: "northam", label: "North America" },
+  { id: "oceania", label: "Oceania" },
 ];
 
 const index = (list) => new Map(list.map((x) => [x.id, x]));

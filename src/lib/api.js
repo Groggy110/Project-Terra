@@ -60,17 +60,31 @@ const shapeNeed = (row) => ({
  * on the globe — it is a pin with nothing open, not an absence — and an inner
  * join would silently drop it.
  */
+/**
+ * Every row of a query, a page at a time: the API returns at most 1,000 rows
+ * to a request, and the network is past that. `build` makes a fresh query
+ * each time, since a builder can only be ranged once.
+ */
+async function allRows(build, page = 1000) {
+  const rows = [];
+  for (let from = 0; ; from += page) {
+    const { data, error } = await build().range(from, from + page - 1);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if (!data || data.length < page) return rows;
+  }
+}
+
 export async function loadNetwork() {
   if (!supabase) return { ministries: [], needs: [] };
-  const [mRes, nRes] = await Promise.all([
-    supabase.from("ministries").select("*").order("name"),
-    supabase.from("needs").select("*").eq("status", "live").order("posted", { ascending: false }),
+  // Ordered on a unique column as well, so the pages never overlap or skip.
+  const [ministries, needs] = await Promise.all([
+    allRows(() => supabase.from("ministries").select("*").order("name").order("id")),
+    allRows(() => supabase.from("needs").select("*").eq("status", "live").order("posted", { ascending: false }).order("id")),
   ]);
-  if (mRes.error) throw mRes.error;
-  if (nRes.error) throw nRes.error;
   return {
-    ministries: (mRes.data ?? []).map(shapeMinistry),
-    needs: (nRes.data ?? []).map(shapeNeed),
+    ministries: ministries.map(shapeMinistry),
+    needs: needs.map(shapeNeed),
   };
 }
 
@@ -613,4 +627,50 @@ export async function askTerra({ question, history = [], needs = [] }) {
   }
   if (!data || typeof data.reply !== "string") throw new Error("no answer");
   return { reply: data.reply, picks: Array.isArray(data.picks) ? data.picks : [] };
+}
+
+/**
+ * Serve locally (supabase/functions/serve-local): the visitor's circle — its
+ * centre, rounded to about a kilometre, and radius — with the Terra needs
+ * inside it and the churches and ministries the page found there
+ * (lib/places.js). The function reads their websites and chooses, against
+ * the visitor's questionnaire when they are signed in. Returns
+ * `{ reply, items, places, profile }`, items being `{ kind: "need", id, why }`
+ * or `{ kind: "web", org, title, summary, why, email, phone, page, … }`;
+ * throws when the guide cannot be reached.
+ */
+export async function serveLocal({ miles, lat, lon, area = "", needs = [], orgs = [], places = [] }) {
+  const sb = requireSupabase();
+  const records = needs.map(({ need: n, miles: d }) => ({
+    id: n.id,
+    title: n.title,
+    miles: Math.round(d * 10) / 10,
+    type: n.type,
+    urgency: n.urgency,
+    people: n.people,
+    focus: n.focus,
+    remote: n.remote,
+    commitment: n.commitment,
+    skills: n.skills,
+    tags: n.tags,
+    detail: n.detail,
+    ministry: n.ministryName,
+    city: n.city,
+    country: n.country,
+  }));
+  const round = (v) => Math.round(v * 100) / 100;
+  const { data, error } = await sb.functions.invoke("serve-local", {
+    body: { miles, lat: round(lat), lon: round(lon), area, needs: records, orgs, places },
+  });
+  if (error) {
+    const detail = await error.context?.json?.().catch(() => null);
+    throw new Error(detail?.error ?? error.message);
+  }
+  if (!data || typeof data.reply !== "string") throw new Error("no answer");
+  return {
+    reply: data.reply,
+    items: Array.isArray(data.items) ? data.items : [],
+    places: Array.isArray(data.places) ? data.places : [],
+    profile: !!data.profile,
+  };
 }

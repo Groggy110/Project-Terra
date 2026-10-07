@@ -26,11 +26,38 @@
     inset 0 -1px 0 rgb(255 255 255 / 0.035);
   --glass-drop: 0 1px 2px rgb(0 0 0 / 0.3), 0 14px 34px -16px rgb(0 0 0 / 0.8);
   --glass-blur: blur(22px) saturate(1.8);
+
+  /* The window: the frosted pane Ask Terra is drawn in, and with it every
+     panel, menu, dialog and sheet. One blur, done by the window; what sits
+     inside it is a lighter or darker wash on that glass, never a second
+     blur (a blur inside a blur only blurs the window). */
+  --win-fill:
+    radial-gradient(120% 60% at 50% 0%, rgb(120 160 255 / 0.1), transparent 60%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.07) 0%, rgb(255 255 255 / 0.015) 30%, rgb(0 0 0 / 0.08) 100%),
+    rgb(8 12 22 / 0.5);
+  --win-fill-strong:
+    radial-gradient(120% 60% at 50% 0%, rgb(120 160 255 / 0.1), transparent 60%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.07) 0%, rgb(255 255 255 / 0.015) 30%, rgb(0 0 0 / 0.08) 100%),
+    rgb(8 12 22 / 0.66);
+  --win-fill-solid:
+    radial-gradient(120% 60% at 50% 0%, rgb(120 160 255 / 0.1), transparent 60%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.07) 0%, rgb(255 255 255 / 0.015) 30%, rgb(0 0 0 / 0.08) 100%),
+    rgb(13 18 30);
+  --win-blur: blur(30px) saturate(1.35) brightness(0.85);
+  --win-edge: rgb(205 225 255 / 0.14);
+  --win-line: rgb(205 225 255 / 0.09);
+  --win-wash: rgb(255 255 255 / 0.06);
+  --win-wash-hi: rgb(255 255 255 / 0.1);
+  --win-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.14),
+    inset 0 0 0 1px rgb(255 255 255 / 0.02),
+    0 2px 6px rgb(0 0 0 / 0.25),
+    0 40px 80px -30px rgb(0 0 0 / 0.8);
 }
 
 /* ---- the small things you press ---- */
 
-html:root body :is(.btn--ghost, .chip__btn, .dial__btn, .grabber, .fab, .ask__new) {
+html:root body :is(.btn--ghost, .chip__btn, .dial__btn, .grabber, .fab) {
   background: var(--glass-sheen), var(--glass-tint);
   border-color: var(--glass-edge);
   box-shadow: var(--glass-light), var(--glass-drop);
@@ -105,41 +132,137 @@ html:root body :is(.btn--accent, .search__go, .ask__send):hover {
     var(--accent-hover);
 }
 
-/* ---- the larger panes ---- */
+/* ---- the windows: every panel, menu, dialog and sheet ---- */
 
-html:root body :is(.panel, .appmenu, .chip__menu, .suggest, .dock) {
-  background: var(--glass-sheen), var(--glass-tint-strong);
-  border-color: var(--glass-edge);
-  box-shadow: var(--glass-light), var(--shadow-2);
-  -webkit-backdrop-filter: blur(28px) saturate(1.7);
-  backdrop-filter: blur(28px) saturate(1.7);
+html:root body :is(.pop, .appmenu, .chip__menu, .suggest, .dock, .modal, .gate__card:not(.gate__card--inline), .sheet) {
+  background: var(--win-fill);
+  border: 1px solid var(--win-edge);
+  box-shadow: var(--win-shadow);
+  -webkit-backdrop-filter: var(--win-blur);
+  backdrop-filter: var(--win-blur);
 }
 
-/* The panel at its tallest, and the phone's menus, already take an opaque
-   surface where nothing behind them is worth the blur (panel.css,
-   chrome.css); they keep it. */
-html:root body .panel.is-sheet.is-full,
+/* The dialogs and the sign-in card read prose and forms: a touch more tint. */
+html:root body :is(.modal, .gate__card:not(.gate__card--inline)) {
+  background: var(--win-fill-strong);
+  border-radius: 28px;
+}
+
+/* Their paper washes and grain belonged to the old opaque cards. */
+html:root body :is(.modal, .gate__card)::before,
+html:root body .gate__card::after {
+  display: none;
+}
+
+/* The phone's full-height sheets — the panel at its tallest, the menus, the
+   needs board — cover nearly the whole screen over a live globe, and a blur
+   there re-blurs the WebGL frame on every scroll for a frosting nobody can
+   see (board.css). They keep the window's light and colour on a
+   solid ground instead. */
 html:root body .pop.is-sheet {
-  background: var(--glass-sheen), var(--surface);
+  background: var(--win-fill-solid);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 
-/* Cards inside a pane are a lighter pane of the same glass. */
-html:root body .panel .need,
-html:root body .panel .stat {
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.05), rgb(255 255 255 / 0.015)), rgb(255 255 255 / 0.02);
-  border-color: rgb(205 225 255 / 0.1);
+@media (max-width: 720px) {
+  html:root body .sheet {
+    background: var(--win-fill-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+html:root body .toast {
+  background: var(--win-fill-strong);
+  border: 1px solid var(--win-edge);
+  color: var(--ink);
+  box-shadow: var(--win-shadow);
+  -webkit-backdrop-filter: var(--win-blur);
+  backdrop-filter: var(--win-blur);
+}
+
+/* ---- inside a window: washes, not panes ---- */
+
+/* Cards and stats in a list are a lighter wash with a hairline. */
+html:root body :is(.sheet .need, .sheet .card, .modal .call, .detail__cell) {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.07), rgb(255 255 255 / 0.03));
+  border-color: var(--win-line);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
-html:root body .panel .need:hover {
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.025)), rgb(255 255 255 / 0.03);
-  border-color: rgb(205 225 255 / 0.18);
+html:root body :is(.sheet .need, .sheet .card):hover {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.11), rgb(255 255 255 / 0.05));
+  border-color: rgb(205 225 255 / 0.2);
 }
 
-html:root body .panel .btn--soft {
-  background: var(--glass-sheen), rgb(255 255 255 / 0.05);
-  border-color: var(--glass-edge);
-  box-shadow: var(--glass-light);
+/* Fields, and the segmented switches, sit in the glass as darker wells. */
+html:root body :is(.input, .select, .area, .gate__input) {
+  background: rgb(0 0 0 / 0.22);
+  border-color: var(--win-line);
+  color: var(--ink);
+}
+
+html:root body :is(.input, .select, .area, .gate__input):hover {
+  border-color: rgb(205 225 255 / 0.2);
+}
+
+html:root body :is(.input, .select, .area, .gate__input):focus {
+  background: rgb(0 0 0 / 0.28);
+  border-color: color-mix(in srgb, var(--accent) 55%, rgb(205 225 255 / 0.2));
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+html:root body :is(.gate__seg, .seg-inline) {
+  background: rgb(0 0 0 / 0.22);
+  border: 1px solid var(--win-line);
+}
+
+html:root body :is(.gate__seg, .seg-inline) button.is-on {
+  background: var(--win-wash-hi);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1);
+}
+
+html:root body .gate__role {
+  background: var(--win-wash);
+  border-color: var(--win-line);
+}
+
+html:root body .gate__role.is-on {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* The quiet buttons are a wash with a hairline, everywhere. */
+html:root body :is(.pop, .modal, .gate__card, .sheet, .ask) .btn--soft {
+  background: var(--win-wash);
+  border-color: var(--win-line);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  color: var(--ink-2);
+}
+
+html:root body :is(.pop, .modal, .gate__card, .sheet, .ask) .btn--soft:hover {
+  background: var(--win-wash-hi);
+  color: var(--ink);
+}
+
+/* Rows in a menu light up as a wash. */
+html:root body .pop :is(button, a):not(.btn):hover {
+  background: var(--win-wash);
+}
+
+/* A dialog's foot is the window's foot: a hairline and a darker ground. */
+html:root body .modal .modal__foot {
+  border-top: 1px solid var(--win-line);
+  background: rgb(0 0 0 / 0.12);
+}
+
+/* The wash behind a centred dialog: lighter, so the planet still shows. */
+html:root body .scrim:not(.scrim--clear) {
+  background: rgb(4 8 16 / 0.3);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
 }

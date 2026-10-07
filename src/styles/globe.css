@@ -23,8 +23,8 @@
   transition: opacity 1.9s var(--ease);
 }
 
-body.is-live #globe,
-body.is-live .overlay {
+body.globe-in #globe,
+body.globe-in .overlay {
   opacity: 1;
 }
 
@@ -402,6 +402,134 @@ body.is-live .overlay {
    plain place names wait for the working view, where there is a map to read. */
 body.is-hero .overlay .place {
   visibility: hidden;
+}
+
+/* ---------- serve locally: the radius ---------- */
+
+/* The circle "Serve locally" searches inside (not ".area": that is the
+   forms' textarea, and this rule stretched every one of them over the page): the blue of the you-are-here
+   dot, washed thin enough that the ground and the pins inside it still read,
+   with a firmer edge and the distance written on its northern rim. Under the
+   pins (it is first in the layer) and never a target. */
+.radius {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.radius__fill {
+  fill: rgba(47, 140, 255, 0.16);
+}
+
+.radius__edge {
+  fill: none;
+  stroke: #4a9dff;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px rgba(47, 140, 255, 0.55));
+}
+
+/* The buttons' hover light (chrome.css, "the bar's light"), running round
+   the rim the whole time the circle is up: a long faint tail, a brighter
+   body and a short white head, each a dash on the same path. A dash of
+   length L ends at L - offset, so each animates its offset from L to
+   L - 100: the three ends stay together and go once round per cycle. */
+.radius__comet {
+  fill: none;
+  stroke-linecap: round;
+  animation-duration: 6s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.radius__comet--tail {
+  stroke: rgb(47 140 255 / 0.4);
+  stroke-width: 3;
+  stroke-dasharray: 26 74;
+  animation-name: radius-comet-tail;
+}
+
+.radius__comet--body {
+  stroke: rgb(140 196 255 / 0.85);
+  stroke-width: 2.5;
+  stroke-dasharray: 12 88;
+  animation-name: radius-comet-body;
+}
+
+.radius__comet--head {
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-dasharray: 3 97;
+  filter: drop-shadow(0 0 4px #fff) drop-shadow(0 0 10px rgba(74, 157, 255, 0.9));
+  animation-name: radius-comet-head;
+}
+
+@keyframes radius-comet-tail {
+  from { stroke-dashoffset: 26; }
+  to { stroke-dashoffset: -74; }
+}
+
+@keyframes radius-comet-body {
+  from { stroke-dashoffset: 12; }
+  to { stroke-dashoffset: -88; }
+}
+
+@keyframes radius-comet-head {
+  from { stroke-dashoffset: 3; }
+  to { stroke-dashoffset: -97; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radius__comet {
+    display: none;
+  }
+}
+
+.radius__tag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  translate: -50% -50%;
+  padding: 3px 9px 4px;
+  border-radius: 999px;
+  background: #2f8cff;
+  color: #fff;
+  font-family: var(--label-font);
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px -4px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+/* What the guide found on the web: white, ringed in the circle's blue, so
+   they read as the search's own finds and not as Terra's red ministries. */
+.found {
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+
+.found__dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 11px;
+  height: 11px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2.5px #2f8cff, 0 1px 5px rgba(0, 0, 0, 0.5);
+  transition: scale 0.2s var(--ease-out);
+}
+
+.found.is-active .found__dot {
+  scale: 1.6;
+  box-shadow: 0 0 0 2.5px #2f8cff, 0 0 0 7px rgba(47, 140, 255, 0.3), 0 1px 5px rgba(0, 0, 0, 0.5);
 }
 
 /* ---------- you are here ---------- */

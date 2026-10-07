@@ -191,12 +191,6 @@ export function aboutModal(layer, { stats, onPostNeed }) {
             h("li", {}, h("b", { text: "You offer your skills." }), " Search for what you do, or answer five questions and let Terra suggest needs that fit you."),
             h("li", {}, h("b", { text: "Meet on a video call." }), " Pick a time for a first conversation right in Terra, and a meeting link is sent to you both."),
           ),
-          h("div", { class: "notice" }, [
-            h("b", { text: "Everything on this map is fictional sample data." }),
-            " The organisations, people and needs are invented for demonstration, and every contact address is on ",
-            h("code", { text: "example.org" }),
-            ", which cannot receive mail. Interests you express and needs you post are saved in this browser only.",
-          ]),
           h(
             "div",
             { class: "prose" },

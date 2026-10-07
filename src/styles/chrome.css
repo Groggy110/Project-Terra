@@ -89,8 +89,7 @@ body.is-hero.hero-in .chrome::before {
 
 /* Close in, the bar's labels sit directly on open ocean, and dark ink on that
    is unreadable. A short wash of the paper colour gives them ground without
-   putting a slab across the top of the world. (On a wide window the bar is a
-   floating pane of glass instead; see below.) */
+   putting a slab across the top of the world. */
 .topbar::before {
   content: "";
   position: absolute;
@@ -103,29 +102,6 @@ body.is-hero.hero-in .chrome::before {
     color-mix(in srgb, var(--paper) 66%, transparent) 44%,
     transparent 100%
   );
-}
-
-/* A wide window: the bar is a pane of the dark glass the controls are made
-   of (glass.css), floating just inside the frame — barely tinted, a hairline
-   edge, the top light, and a faint blue line along its foot where the
-   planet's glow would catch it. */
-@media (min-width: 721px) {
-  .topbar::before {
-    inset: calc(var(--safe-t) + 8px) 14px 4px 14px;
-    border-radius: 20px;
-    background:
-      linear-gradient(180deg, rgb(255 255 255 / 0.06) 0%, rgb(255 255 255 / 0.012) 55%, rgb(255 255 255 / 0.02) 100%),
-      rgb(8 13 24 / 0.62);
-    border: 1px solid rgb(205 225 255 / 0.1);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.1),
-      inset 0 -1px 0 rgb(120 175 255 / 0.16),
-      0 12px 30px -18px rgb(0 0 0 / 0.7);
-    /* Enough blur and tint that the nav keeps a dark ground when the
-       bright limb of the planet passes behind it. */
-    -webkit-backdrop-filter: blur(24px) saturate(1.5) brightness(0.8);
-    backdrop-filter: blur(24px) saturate(1.5) brightness(0.8);
-  }
 }
 
 .brand {
@@ -2212,3 +2188,460 @@ body.is-hero .suggest {
 @keyframes locate-busy {
   to { opacity: 0.35; }
 }
+
+/* ---------- phone: the field at the foot, everything else behind ☰ ----------
+
+   A phone held upright is a map with one thing to do: ask. The field sits at
+   the foot of the screen, under the thumb, with a single round ☰ beside it
+   that holds what the top bar and the dock used to — Globe, Needs, Post, the
+   account and the rest of the menu — as a small menu standing above it. The
+   conversation rises from the same place (ask.css). */
+
+.phonemenu {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --dock-h: 52px;
+  }
+
+  .dock,
+  .fabs {
+    display: none;
+  }
+
+  .findbar,
+  body.no-panel .findbar {
+    top: auto;
+    bottom: var(--dock-b);
+    left: calc(var(--edge) + var(--safe-l));
+    right: calc(var(--edge) + var(--safe-r) + 52px + 10px);
+    transition: opacity 0.25s var(--ease), translate 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  /* Suggestions open upward, over the map, from a field at the foot. */
+  .findbar .suggest {
+    top: auto;
+    bottom: calc(100% + 8px);
+    max-height: min(46vh, 380px);
+  }
+
+  .phonemenu {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    right: calc(var(--edge) + var(--safe-r));
+    bottom: var(--dock-b);
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    color: var(--ink);
+    background: var(--win-fill-strong);
+    border: 1px solid var(--win-edge);
+    box-shadow: var(--win-shadow);
+    -webkit-backdrop-filter: var(--win-blur);
+    backdrop-filter: var(--win-blur);
+    -webkit-tap-highlight-color: transparent;
+    transition: opacity 0.25s var(--ease), translate 0.42s cubic-bezier(0.32, 0.72, 0, 1), scale 0.15s;
+  }
+
+  .phonemenu:active {
+    scale: 0.94;
+  }
+
+  .phonemenu svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+  }
+
+  /* A sheet, the board or the conversation up: the field and ☰ step down out
+     of the way, as the dock did. */
+  body:not(.no-panel) .findbar,
+  body.board-open .findbar,
+  body.ask-open .findbar,
+  body:not(.no-panel) .phonemenu,
+  body.board-open .phonemenu,
+  body.ask-open .phonemenu {
+    translate: 0 calc(100% + var(--dock-b) + 20px);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* The ☰ menu: small, right-aligned above its button. */
+  .pop.is-compact {
+    position: fixed;
+    z-index: 59;
+    width: min(260px, calc(100vw - 2 * var(--edge)));
+    padding: 6px;
+    border-radius: 20px;
+    transform-origin: bottom right;
+    animation: compact-in 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .pop.is-compact .opt {
+    min-height: 44px;
+    font-size: 15px;
+  }
+
+  @keyframes compact-in {
+    from {
+      opacity: 0;
+      scale: 0.94;
+      translate: 0 6px;
+    }
+  }
+
+  /* The name at the head of the screen. The bar comes back holding only the
+     logo, centred and sized to it, so the box the label layer keeps clear
+     (app.js, syncReserved) is the logo's and not a strip across the map. */
+  .topbar {
+    display: block;
+    left: 50%;
+    right: auto;
+    height: auto;
+    translate: -50% 0;
+    padding: calc(var(--safe-t) + 12px) 0 0;
+  }
+
+  .topbar::before,
+  .topbar > :not(.brand) {
+    display: none;
+  }
+
+  .brand {
+    display: block;
+  }
+
+  .brand__logo {
+    height: 36px;
+    margin: 0;
+  }
+}
+
+/* ---------- serve locally: the radius ---------- */
+
+/* A card in the Ask Terra conversation (ui/local.js): the thread's card
+   (.ask__flow) is the glass, so this is only the layout inside it. */
+.local {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--ink);
+}
+
+.local[hidden] {
+  display: none;
+}
+
+.local__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.local__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #8cc2ff;
+}
+
+.local__title .ico {
+  width: 15px;
+  height: 15px;
+}
+
+.local__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.local__body[hidden],
+.local__away[hidden],
+.local__list[hidden],
+.local__note[hidden] {
+  display: none;
+}
+
+/* Where to look: round the visitor, or somewhere they name. */
+.local__where {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  margin-top: 2px;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 0.22);
+  border: 1px solid var(--win-line, rgb(205 225 255 / 0.12));
+}
+
+.local__where button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 540;
+  color: var(--ink-2);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+.local__where button:hover {
+  color: var(--ink);
+}
+
+.local__where button.is-on {
+  background: rgb(255 255 255 / 0.12);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 1px 3px rgb(0 0 0 / 0.3);
+}
+
+.local__where .ico {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.local__away {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.local__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid var(--win-line, rgb(205 225 255 / 0.14));
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease);
+}
+
+.local__search:focus-within {
+  background: rgb(255 255 255 / 0.08);
+  border-color: rgb(205 225 255 / 0.28);
+}
+
+.local__search > .ico {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.local__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  border: 0;
+  outline: none;
+  background: none;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.local__input::placeholder {
+  color: var(--ink-2);
+  opacity: 0.55;
+}
+
+.local__go {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: var(--ink);
+  background: rgb(255 255 255 / 0.1);
+  transition: background 0.2s var(--ease), opacity 0.2s var(--ease);
+}
+
+.local__go:hover {
+  background: rgb(255 255 255 / 0.16);
+}
+
+.local__go.is-busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.local__go .ico {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Suggestions, in the card rather than floating over the conversation. */
+.local__list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 0.22);
+  border: 1px solid var(--win-line, rgb(205 225 255 / 0.12));
+}
+
+.local__opt {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.local__opt b {
+  font-weight: 560;
+}
+
+.local__opt span {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.local__opt:hover,
+.local__opt.is-on {
+  background: rgb(255 255 255 / 0.09);
+}
+
+.local__note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.local__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.local__label {
+  font-size: 15px;
+  color: var(--ink-2);
+}
+
+.local__value {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The track fills blue up to the thumb, as far as the circle reaches. */
+.local__range {
+  --track: rgb(255 255 255 / 0.14);
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+
+.local__range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, #2f8cff var(--fill, 0%), var(--track) var(--fill, 0%));
+}
+
+.local__range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, #2f8cff var(--fill, 0%), var(--track) var(--fill, 0%));
+}
+
+.local__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 0 0 4px rgb(47 140 255 / 0.35), 0 2px 6px rgb(0 0 0 / 0.45);
+}
+
+.local__range::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 0 0 4px rgb(47 140 255 / 0.35), 0 2px 6px rgb(0 0 0 / 0.45);
+}
+
+.local__range:focus {
+  outline: none;
+}
+
+.local__range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 5px rgb(47 140 255 / 0.6), 0 2px 6px rgb(0 0 0 / 0.45);
+}
+
+.local__scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: -6px;
+  font-size: 11.5px;
+  color: var(--muted, var(--ink-2));
+}
+
+.local__inside {
+  margin: 2px 0 4px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.local__inside b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.local__find {
+  justify-content: center;
+  height: 46px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.local__find:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+

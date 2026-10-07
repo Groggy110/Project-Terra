@@ -9,6 +9,11 @@
  * work — so the screen reports what happened rather than assuming. A signup
  * that returns no session means confirmation is required, and it says so
  * instead of leaving someone staring at a form that looked like it worked.
+ *
+ * `inline` builds the same card with no sheet round it, for a host to place
+ * (Ask Terra puts it in the conversation); closing it calls `onClose`.
+ * `route(mode, intent)` lets the app take an open() elsewhere: returning
+ * true means it was handled there.
  */
 import { h, add, clear, icons, svg } from "./dom.js";
 import { pullToClose } from "./swipe.js";
@@ -19,9 +24,12 @@ const HAND = '<path d="M7.5 12.8V6.3a1.8 1.8 0 0 1 3.6 0v4.8m0 0V4.5a1.8 1.8 0 0
 const BUILDING = '<path d="M4 20.5V6.2a1.7 1.7 0 0 1 1.7-1.7h7.1a1.7 1.7 0 0 1 1.7 1.7v14.3M14.5 20.5V11h3.8a1.7 1.7 0 0 1 1.7 1.7v7.8M2.5 20.5h19M7.4 8.3h3.7M7.4 11.9h3.7M7.4 15.5h3.7"/>';
 
 export class AuthGate {
-  constructor({ onSignedIn, onSkip } = {}) {
+  constructor({ onSignedIn, onSkip, inline = false, onClose } = {}) {
     this.onSignedIn = onSignedIn;
     this.onSkip = onSkip;
+    this.inline = inline;
+    this.onClose = onClose;
+    this.route = null;
     this.mode = "signin";      // signin | signup | magic
     this.role = "volunteer";
     this.busy = false;
@@ -32,6 +40,10 @@ export class AuthGate {
     // its own padding and its painted ground on the move together, so on a
     // short window the card's tint slid up past its corner.
     this.body = h("div", { class: "gate__body" });
+    if (inline) {
+      this.card = h("div", { class: "gate__card gate__card--inline", "aria-label": "Sign in to Terra" }, this.body);
+      return;
+    }
     this.card = h(
       "div",
       { class: "gate__card", role: "dialog", "aria-modal": "true", "aria-label": "Sign in to Terra" },
@@ -63,7 +75,7 @@ export class AuthGate {
   }
 
   get isOpen() {
-    return this.el.classList.contains("is-open");
+    return this.inline ? !!this.card.isConnected : this.el.classList.contains("is-open");
   }
 
   /**
@@ -72,11 +84,13 @@ export class AuthGate {
    *   the headline explains what is being linked, and the email may be filled.
    */
   open(mode = "signin", intent = null) {
+    if (this.route?.(mode, intent)) return;
     this.mode = mode;
     this.intent = intent;
     if (intent?.role) this.role = intent.role;
     this.sent = null;
     this.error = null;
+    if (this.inline) return this.render();
     this.el.hidden = false;
     this.render();
     // One frame, so the transition has a from-state to animate out of.
@@ -89,6 +103,7 @@ export class AuthGate {
   }
 
   close() {
+    if (this.inline) return this.onClose?.();
     this.el.classList.remove("is-open");
     window.removeEventListener("keydown", this.onKey);
     setTimeout(() => { if (!this.isOpen) this.el.hidden = true; }, 460);
@@ -183,7 +198,7 @@ export class AuthGate {
           ? [ "Already have an account? ", h("button", { type: "button", onclick: () => { this.mode = "signin"; this.render(); } }, "Sign in") ]
           : [ "New here? ", h("button", { type: "button", onclick: () => { this.mode = "signup"; this.render(); } }, "Create an account") ],
       ),
-      h("button", { class: "gate__skip", type: "button", onclick: () => this.skip(), text: this.intent ? "Cancel" : "Look around without an account" }),
+      h("button", { class: "gate__skip", type: "button", onclick: () => this.skip(), text: this.intent || this.inline ? "Not now" : "Look around without an account" }),
     ]);
   }
 

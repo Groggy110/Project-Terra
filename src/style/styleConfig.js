@@ -57,6 +57,16 @@ export const STYLE = {
      * as a globe has any business going. See controls.js.
      */
     minDist: 1.014,
+    /**
+     * How close the camera may actually come: about four hundred metres up,
+     * street level, where the imagery's finest tiles are shown at about two
+     * screen pixels each. Below minDist the zoom ladder reads 1 — every
+     * threshold keyed to zoom() has finished by then — and the camera simply
+     * keeps going down. The shader switches to a per-pixel ray against the
+     * true sphere on the way (earth.frag.glsl, uPrec), since neither the mesh
+     * nor a 32-bit float is fine enough this low.
+     */
+    closeDist: 1.00006,
     /** The whole-globe view, and the far end of the zoom ladder. */
     maxDist: 4.45,
     latLimit: 87,
@@ -123,7 +133,7 @@ export const STYLE = {
     /** Latitude/longitude grid drawn on the surface. */
     graticule: { enabled: false, color: "#ffffff", opacity: 0.09, spacing: 12.5, width: 1.25 },
     /** City lights on the night side, painted from places.json by population. */
-    nightLights: { enabled: true, color: "#623c04", intensity: 2.2, size: 0.5, day: 0 },
+    nightLights: { enabled: true, color: "#623c04", intensity: 2.2, size: 0.5 },
     clouds: {
       enabled: true,
       /** Shell height above the ground, in earth radii. */
@@ -182,20 +192,21 @@ export const STYLE = {
   },
 
   markers: {
-    size: 5.5,
-    rim: 0.8,
-    activeRim: 2,
-    hoverScale: 1.7,
-    activeScale: 1.4,
+    size: 7,
+    rim: 1.5,
+    activeRim: 2.5,
+    hoverScale: 1.35,
+    activeScale: 1.45,
     /** Soft glow round each dot, in px. 0 is the minimal look. */
-    glow: 0,
+    glow: 7,
     /** Opacity of a pin the active filters exclude. */
     dimOpacity: 0.28,
     opacity: 1,
     /** circle | square | diamond */
-    shape: "diamond",
-    /** Ripple from each dot: off | urgent | all. */
-    pulse: { mode: "urgent", speed: 1.95, size: 3 },
+    shape: "circle",
+    /** Ripple from each dot: off | urgent | all. Off: with hundreds of
+     *  ministries a ripple on every urgent one reads as the map flickering. */
+    pulse: { mode: "off", speed: 1.95, size: 3 },
     hoverColorOn: false,
     activeColorOn: false,
   },
@@ -317,17 +328,19 @@ export const STYLE = {
         lakeEdge: { color: "#6cc4e2", width: 0.8, alpha: 0.24 },
       },
       markers: {
-        urgent: "#ff1900",
-        normal: "#ffae00",
+        // One red for every ministry: the map marks where help is needed,
+        // not how soon — urgency is read in the need itself.
+        urgent: "#ff3b30",
+        normal: "#ff3b30",
         rimColor: "#ffffff",
-        rimAlpha: 0.67,
+        rimAlpha: 0.95,
         shadowColor: "#000000",
-        shadowAlpha: 0.55,
+        shadowAlpha: 0.5,
         shadowBlur: 4,
         activeRimColor: "#ffffff",
         activeShadowColor: "#102a4a",
         activeShadowAlpha: 0.4,
-        glowColor: "#e2685a",
+        glowColor: "#c4281f",
         hoverColor: "#1f8104",
         activeColor: "#ffffff",
         pulseColor: "#ff1900",

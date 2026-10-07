@@ -88,6 +88,13 @@ function wantsHd(renderer) {
   return big && !saveData && (renderer.capabilities.maxTextureSize || 0) >= 8192;
 }
 
+/**
+ * Below this height (in Earth radii, about 130 km) the shader locates every
+ * pixel by its own ray against the true sphere (earth.frag.glsl, uPrec). Above
+ * it the mesh and plain floats are fine, and the cheaper path is kept.
+ */
+const CLOSE_ALT = 0.02;
+
 const SETTLE_MS = 130;
 const MOTION_PAINT_MS = 110;
 /**
@@ -387,14 +394,25 @@ export class Globe {
     const realClouds = load("/textures/clouds-real.jpg").catch(() => null);
 
     this.hd = wantsHd(this.renderer);
-    const textures = {};
-    for (const [key, url] of TEXTURES) {
-      const src = this.hd ? (HD_TEXTURES[url] ?? url) : url;
-      // An 8K file that fails falls back to its 4K original rather than
-      // failing the start.
-      textures[key] = await load(src).catch((err) => (src !== url ? load(url) : Promise.reject(err)));
-      step(key === "base" ? "imagery" : key === "aux" ? "topography" : "cloud sheet");
-    }
+    // Everything the first frame needs, fetched at once rather than one after
+    // another: the 4K maps, the coastlines and the place names. The 8K maps
+    // are not waited for — the planet appears on the 4K pair and sharpens
+    // when the larger files land (#upgradeMaps).
+    const vectors = this.store.load("50m");
+    const named = Promise.all([
+      fetch("/vectors/places.json").then((r) => r.json()),
+      fetch("/vectors/countries.json").then((r) => r.json()),
+    ]);
+    const textures = Object.fromEntries(
+      await Promise.all(
+        TEXTURES.map(([key, url]) =>
+          load(url).then((tex) => {
+            step(key === "base" ? "imagery" : key === "aux" ? "topography" : "cloud sheet");
+            return [key, tex];
+          }),
+        ),
+      ),
+    );
 
     // The stage looks across the planet at a slant toward its rim, where 8x
     // anisotropy smears the sharper maps; take what the GPU offers, to 16.
@@ -434,14 +452,11 @@ export class Globe {
     this.#applyPost();
     this.setTheme(this.theme);
 
-    await this.store.load("50m");
+    await vectors;
     this.painter.repaintBase(this.theme);
     step("vectors");
 
-    const [places, countries] = await Promise.all([
-      fetch("/vectors/places.json").then((r) => r.json()),
-      fetch("/vectors/countries.json").then((r) => r.json()),
-    ]);
+    const [places, countries] = await named;
     this.places = places;
     this.countries = countries;
     this.labels.setData({ places, countries, ministries: this.ministries || [] });
@@ -470,7 +485,33 @@ export class Globe {
     this.running = true;
     this.last = performance.now();
     requestAnimationFrame(this.#tick);
+    if (this.hd) this.#upgradeMaps(load, aniso);
     return this;
+  }
+
+  /** Swaps the 4K surface maps for the 8K pair once they have downloaded. */
+  #upgradeMaps(load, aniso) {
+    const u = this.earth.uniforms;
+    const swap = (uniform, url) =>
+      load(HD_TEXTURES[url]).then(
+        (tex) => {
+          prepare(tex);
+          tex.userData.anisotropy = aniso;
+          tex.anisotropy = aniso;
+          const old = u[uniform].value;
+          u[uniform].value = tex;
+          old?.dispose?.();
+          if (uniform === "uAux" && tex.image) {
+            u.uAuxTexel.value.set(1 / tex.image.width, 1 / tex.image.height);
+            u.uAuxSize.value.set(tex.image.width, tex.image.height);
+          }
+          this.dirty = true;
+        },
+        () => {}, // the 4K map stays; nothing is lost
+      );
+    // Not over a base map someone has chosen in the style editor.
+    if (this.baseUrl === TEXTURES[0][1]) swap("uBase", TEXTURES[0][1]);
+    swap("uAux", TEXTURES[1][1]);
   }
 
   /* ------------------------------------------------------------------ api */
@@ -504,8 +545,9 @@ export class Globe {
       // Only the near stop is enforced here. The entrance frames the globe
       // from beyond maxDist on purpose, and the next zoom clamps the far end.
       const c = this.controls;
-      c.dist = Math.max(c.dist, cam.minDist);
-      c.target.dist = Math.max(c.target.dist, cam.minDist);
+      const close = Math.min(cam.closeDist ?? cam.minDist, cam.minDist);
+      c.dist = Math.max(c.dist, close);
+      c.target.dist = Math.max(c.target.dist, close);
       this.#invalidateVectors();
     }
 
@@ -604,7 +646,7 @@ export class Globe {
 
     const n = g.nightLights;
     if (n.enabled && this.places && this.nightSize !== n.size) {
-      const tex = paintNightLights(this.places, n.size);
+      const tex = paintNightLights(this.places, n.size, this.renderer.capabilities.maxTextureSize);
       const old = this.earth.uniforms.uNightTex.value;
       this.earth.uniforms.uNightTex.value = tex;
       if (old !== BLACK) old.dispose();
@@ -620,6 +662,7 @@ export class Globe {
    * the page would show.
    */
   render() {
+    this.#syncClose();
     if (this.chain.active) {
       // The aberration is centred on the planet rather than the screen, so it
       // gathers toward the limb wherever the disc is framed.
@@ -629,10 +672,52 @@ export class Globe {
     } else this.renderer.render(this.scene, this.camera);
   }
 
+  /**
+   * Close range, once per frame before drawing. The near plane follows the
+   * camera down — fixed at 0.005, thirty kilometres, it would slice the
+   * ground away long before street level — and the shader is handed what its
+   * per-pixel ray needs, worked out here in doubles: the camera's rays, the
+   * view centre as the exact float32 it will be read as, the camera's offset
+   * from it, and where it sits in the imagery window. See uPrec.
+   */
+  #syncClose() {
+    const alt = this.controls.camDist - 1;
+    const near = clamp(alt * 0.35, 2e-6, STYLE.camera.near);
+    if (Math.abs(this.camera.near - near) > near * 1e-3) {
+      this.camera.near = near;
+      this.camera.updateProjectionMatrix();
+    }
+    const u = this.earth.uniforms;
+    u.uPrec.value = alt < CLOSE_ALT ? 1 : 0;
+    if (alt >= CLOSE_ALT) return;
+
+    const buf = this.renderer.getDrawingBufferSize(this.bufferSize);
+    u.uViewport.value.set(buf.x, buf.y);
+    this.camera.updateMatrixWorld();
+    u.uInvProj.value.copy(this.camera.projectionMatrixInverse);
+    u.uCamRot.value.setFromMatrix4(this.camera.matrixWorld);
+
+    const r = latLonToVec3(this.controls.lat, this.controls.lon, 1, this.refScratch ??= new Vector3());
+    r.set(Math.fround(r.x), Math.fround(r.y), Math.fround(r.z));
+    u.uRef.value.copy(r);
+    const p = this.camera.position;
+    u.uRel.value.set(p.x - r.x, p.y - r.y, p.z - r.z);
+    u.uRelC.value = p.lengthSq() - 1;
+
+    const lat = Math.atan2(r.y, Math.hypot(r.x, r.z));
+    const lon = Math.atan2(-r.z, r.x);
+    const w = u.uDetailWindow.value;
+    let du = lon / (2 * Math.PI) + 0.5 - w.x;
+    du -= Math.floor(du);
+    const merc = 0.5 - Math.log(Math.tan(Math.PI / 4 + clamp(lat, -1.4844, 1.4844) / 2)) / (2 * Math.PI);
+    u.uRefMerc.value.set(1 / Math.cos(lat), Math.tan(lat), du, merc - w.y);
+  }
+
   /** The sheet and the halo, which STYLE can switch off and debug() hides. */
   #applyVisibility() {
     const debug = this.earth.uniforms.uDebug.value;
-    this.clouds.mesh.visible = !debug && STYLE.globe.clouds.enabled;
+    this.cloudsShown = !debug && STYLE.globe.clouds.enabled;
+    this.clouds.mesh.visible = this.cloudsShown;
     this.halo.mesh.visible = !debug && STYLE.themes[this.theme].atmosphere.enabled;
   }
 
@@ -681,6 +766,36 @@ export class Globe {
     this.dirty = true;
   }
 
+  /** Places the serve-locally guide found on the web; `active` is the one opened. */
+  setFound(list, active = null) {
+    this.labels.setFound(list, active);
+    this.dirty = true;
+  }
+
+  /** The serve-locally circle, `{ lat, lon, miles }`, or null to take it away. */
+  setArea(area) {
+    this.labels.setArea(area);
+    this.dirty = true;
+  }
+
+  /**
+   * Brings the camera down over a point until a circle of `miles` round it
+   * fills about `fill` of the shorter side of the screen.
+   */
+  frameArea({ lat, lon, miles }, { fill = 0.36, ms } = {}) {
+    const { w, h } = this.size;
+    const half = Math.tan(this.camera.fov * DEG * 0.5);
+    // The ground's px per degree at the centre is h / (2·depth·tan(fov/2))
+    // per radian; solve it for the depth that puts the radius at `fill`.
+    const rad = miles / 3958.8;
+    const depth = (rad * h) / (2 * half * fill * Math.min(w, h));
+    const hop = this.controls.angleTo(lat, lon);
+    // That depth is the camera's real altitude; a portrait screen stretches
+    // the semantic one (controls.fitted), so it is asked for un-stretched.
+    const dist = this.controls.unfitted(1 + depth);
+    this.controls.flyTo({ lat, lon, dist, ms: ms ?? clamp(800 + hop * 6, 800, 1800) });
+  }
+
   /** Chrome rectangles that labels must avoid. */
   setReserved(rects) {
     this.labels.setReserved(rects);
@@ -705,7 +820,9 @@ export class Globe {
     this.controls.flyTo({
       lat: target.lat,
       lon: target.lon,
-      dist: distForZoom(Math.max(zoom, from)),
+      // Never further out than now: below the ladder's end zoom reads 1, and
+      // "at least this close" must not lift someone off the street.
+      dist: Math.min(distForZoom(Math.max(zoom, from)), this.controls.target.dist),
       ms: ms ?? clamp(700 + hop * 6, 700, 1750),
     });
   }
@@ -1453,6 +1570,9 @@ export class Globe {
     c.uRealMix.value = real;
     const cloudBase = lerp(this.cloudBase, this.themeDef?.clouds.realOpacity ?? this.cloudBase, real);
     c.uOpacity.value = lerp(cloudBase, 0, smoothstep(gs.clouds.fadeStart, gs.clouds.fadeEnd, z));
+    // Faded out, the sheet is not drawn at all: below thirty-five kilometres
+    // the camera is inside it, looking at its underside.
+    this.clouds.mesh.visible = this.cloudsShown && (c.uOpacity.value > 0.002 || this.controls.camDist - 1 > 0.006);
 
     // The cells are a fixed angular size, so coming in makes each one bigger
     // on screen until a single facet fills the window. The faceted shell is a
