@@ -121,6 +121,29 @@ async function fromOverpass(lat, lon, miles, ms) {
 }
 
 /**
+ * Where an address is, for "Show on map": OpenStreetMap's search, leaning
+ * towards `near` (the circle's centre) so "1820 15th Street" means the one
+ * in the circle and not one across the country. `{ lat, lon }`, or null.
+ */
+export async function locateAddress(query, near) {
+  if (!query) return null;
+  const params = new URLSearchParams({ q: query, format: "jsonv2", limit: "1" });
+  if (near) {
+    const d = 0.6;
+    params.set("viewbox", [near.lon - d, near.lat + d, near.lon + d, near.lat - d].map((v) => v.toFixed(4)).join(","));
+  }
+  try {
+    const res = await within(`${NOMINATIM}?${params}`, 6000);
+    const [hit] = res.ok ? await res.json() : [];
+    const lat = Number(hit?.lat);
+    const lon = Number(hit?.lon);
+    return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The name of the place at a point — "Quezon City, Philippines" — for the
  * agent's web search when the circle is round the visitor rather than a
  * place they typed. Empty when OpenStreetMap will not say.

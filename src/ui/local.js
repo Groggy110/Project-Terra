@@ -105,6 +105,7 @@ export class LocalPicker {
         h("span", { text: `${RADII[0]} mi` }),
         h("span", { text: `${RADII[RADII.length - 1]} mi` }),
       ),
+      h("p", { class: "local__hint", text: "Drag the circle on the map to move it." }),
       this.inside,
       this.find,
     );
@@ -149,6 +150,13 @@ export class LocalPicker {
     // Without the visitor's location there is only somewhere they name.
     this.#paintMode(place || !located ? "away" : "here");
     if (this.#ready()) this.#set(this.miles, { force: true });
+  }
+
+  /** The place the circle is round has been named (a double-click's lookup). */
+  rename(place) {
+    if (place !== this.place) return;
+    this.input.value = placeLabel(place);
+    this.#words();
   }
 
   /** `quiet` takes the card away without ending serve-locally (the guide takes over). */

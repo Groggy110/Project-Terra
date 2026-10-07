@@ -11,6 +11,7 @@ import { ModalLayer, aboutModal, meetingsModal, pickUpModal, scheduleModal } fro
 import { dashboardModal } from "./dashboard.js";
 import { applicationsModal } from "./applications.js";
 import { AskPanel } from "./ask.js";
+import { clearChats } from "./chats.js";
 import { LocalPicker, placeLabel } from "./local.js";
 import { add, clear, h, icons, plural, svg, viewH } from "./dom.js";
 import { openPop, menuIcons } from "./pop.js";
@@ -21,13 +22,16 @@ import { questionnaireModal } from "./questionnaire.js";
 import { ministryModal, postNeedModal as postNeedForm } from "./ministry.js";
 import { Recommendations } from "./recommend.js";
 import * as api from "../lib/api.js";
-import { areaName, findLocalOrgs } from "../lib/places.js";
+import { areaName, findLocalOrgs, locateAddress } from "../lib/places.js";
+import { placeAsked, primePlaces } from "../data/places.js";
 import { applyStyle } from "../style/applyStyle.js";
 import { STYLE } from "../style/styleConfig.js";
 // The stage, the flight off it and the landing look are the style editor's
 // to change as well, so they live with the style (see landing.js).
 import { STAGE, STAGE_EXIT, enterLanding, leaveLanding, returnToLanding } from "../style/landing.js";
 
+/** "Santa Barbara, United States of America"; a country by itself. */
+const placeName = (p) => (p.country && p.kind !== "country" ? `${p.name}, ${p.country}` : p.name);
 
 /** How long after the loading screen lifts the headline lands. */
 /** How long the headline takes to lift away (base.css, hero-out). */
@@ -119,6 +123,7 @@ export class App {
       overlay: document.getElementById("overlay"),
       hero: document.getElementById("hero"),
       hint: document.getElementById("hint"),
+      tip: document.getElementById("tip"),
       credit: document.getElementById("credit"),
       crumbs: document.getElementById("crumbs"),
       nav: document.getElementById("nav"),
@@ -142,6 +147,12 @@ export class App {
       ask: api.isConfigured ? (args) => api.askTerra(args) : null,
       // A pick stays in the conversation: the globe goes to the ministry and
       // lights its pin, but no panel or popup opens beside it.
+      onGo: async (text) => {
+        const place = await placeAsked(text, { bare: false });
+        if (!place) return null;
+        this.#travelTo(place, { chat: true });
+        return `Here's ${placeName(place)}.`;
+      },
       onFlyTo: (need) => {
         const m = this.net.ministryById.get(need.ministry);
         if (!m) return;
@@ -150,15 +161,9 @@ export class App {
         this.globe?.setSpin(false);
         this.globe?.focus(m, { zoom: 1 });
       },
-      // A find from a local organisation's website: the globe goes to it and
-      // its marker is lit. null when its card is closed.
-      onPlace: (w) => {
-        const placed = w && Number.isFinite(w?.lat) ? w : null;
-        this.globe?.setFound(this.localFound ?? [], placed);
-        if (!placed) return;
-        this.globe?.setSpin(false);
-        this.globe?.focus({ lat: w.lat, lon: w.lon }, { zoom: 1 });
-      },
+      // A find from a local organisation's website: the globe goes to its
+      // address and its marker is lit and named. null when its card is closed.
+      onPlace: (w) => this.#showFound(w),
       // Applying, booking a call and signing in all happen in the
       // conversation, as cards in the thread rather than dialogs over it.
       onServe: (need) => {
@@ -190,6 +195,8 @@ export class App {
         if (!open && this.localOn) this.#endLocal();
         // A ministry lives in the conversation, so closing it lets go of the pin.
         if (!open && this.selected) this.#deselect();
+        // A place gone to from the conversation was framed beside it.
+        if (!open && !document.body.classList.contains("is-hero")) this.globe?.setShift(0);
         this.syncReserved();
         this.#syncLift();
         setTimeout(() => this.syncReserved(), 360);
@@ -254,6 +261,8 @@ export class App {
       overlay: this.el.overlay,
       hero: stage,
       onProgress: (p, label) => boot.progress(p, label),
+      // The serve-locally circle, dragged to where the visitor means.
+      onAreaMove: (centre, { done }) => this.#moveCircle(centre, done),
       onPinClick: (m) => {
         this.#leaveHero();
         this.openMinistry(m, { fly: true });
@@ -262,6 +271,7 @@ export class App {
         if (document.body.classList.contains("is-hero")) return this.#leaveHero({ settle: true });
         this.#deselect();
       },
+      onDoubleClick: (at) => this.#serveAt(at),
       onFirstGesture: () => {
         this.#leaveHero();
         this.#hideHint();
@@ -336,6 +346,8 @@ export class App {
     });
     await boot.done();
     document.body.classList.add("globe-in");
+    // The tip arrives once the planet has, not with it.
+    setTimeout(() => this.#syncTip(), 1800);
     // The planet rises into place as the loading screen lifts, already
     // turning: from a little below where the stage puts its rim, with the
     // drift starting under it.
@@ -575,6 +587,9 @@ export class App {
     this.el.grabber.addEventListener("click", () => this.setView(this.board.open ? "globe" : "needs"));
 
     const search = this.el.search;
+    // The gazetteer, warmed on the first look at the bar, so a place typed
+    // into it is found without a wait.
+    search.addEventListener("focus", () => primePlaces(), { once: true });
     // Typing is just typing: nothing filters or drops down until Enter asks.
     search.addEventListener("input", () => {
       this.el.clearSearch.hidden = !search.value;
@@ -673,6 +688,7 @@ export class App {
           danger: true,
           run: () => {
             localStorage.removeItem("terra.v1");
+            clearChats();
             location.reload();
           },
         },
@@ -1055,6 +1071,7 @@ export class App {
     if (this.local.open) this.local.close({ quiet: true });
     this.localOn = true;
     this.localFramed = false;
+    this.#syncTip();
     this.globe?.setSpin(false);
     // The radius is a card in the conversation; its ✕ ends serving locally.
     this.ask.layer(null, { onClose: () => this.local.close() }).show((close) => {
@@ -1062,6 +1079,57 @@ export class App {
       return this.local.show({ place: this.localPlace ?? null, located: !!here });
     });
     this.syncReserved();
+  }
+
+  /**
+   * A double-click on the ground: serve locally round that spot, ten miles
+   * out, with the camera brought down until that circle fills a third of the
+   * screen — close enough to read the town, not so close the circle runs
+   * off it. The spot is the centre; the town it is in only names it, once a
+   * lookup comes back.
+   */
+  #serveAt(at) {
+    // Used once, the tip has done its job.
+    if (!store.tipDone("dblclick")) {
+      store.retireTip("dblclick");
+      this.#syncTip();
+    }
+    const place = { name: "this spot", country: "", lat: at.lat, lon: at.lon, kind: "point" };
+    this.localPlace = place;
+    this.local.miles = 10;
+    this.serveLocally({ again: true });
+    areaName(at.lat, at.lon).then((named) => {
+      if (!named || this.localPlace !== place) return;
+      const [name, ...country] = named.split(", ");
+      Object.assign(place, { name, country: country.join(", "), kind: "city" });
+      this.local.rename(place);
+    });
+    return true;
+  }
+
+  /**
+   * The double-click tip: shown in the lower right on a desktop, on the
+   * landing as on the globe, until it is closed or double-click has been
+   * used — and out of the way while a circle is already up, which is the
+   * thing it explains.
+   */
+  #syncTip() {
+    const tip = this.el.tip;
+    if (!tip) return;
+    if (!tip.wired) {
+      tip.wired = true;
+      tip.querySelector(".tip__x").addEventListener("click", () => {
+        store.retireTip("dblclick");
+        this.#syncTip();
+      });
+    }
+    const show = !store.tipDone("dblclick") && !this.localOn;
+    if (show) tip.hidden = false;
+    requestAnimationFrame(() => {
+      tip.classList.toggle("is-in", show);
+      this.syncReserved();
+    });
+    if (!show) setTimeout(() => (tip.hidden = !tip.classList.contains("is-in")), 500);
   }
 
   /** Where the circle is round: a place the visitor chose, or the visitor. */
@@ -1103,23 +1171,58 @@ export class App {
   }
 
   /** The circle on the planet, the camera framing it, the pins outside it dimmed. */
-  #drawLocal(miles) {
+  #drawLocal(miles, { frame = !this.localHold } = {}) {
     const centre = this.#localCentre();
     if (!centre || !this.localOn) return;
-    const area = { lat: centre.lat, lon: centre.lon, miles };
+    // Movable while the radius card is up; once the guide has searched it,
+    // the circle is what was searched.
+    const area = { lat: centre.lat, lon: centre.lon, miles, movable: this.local.open };
     this.globe?.setArea(area);
+    // On a desktop the conversation holds the left of the screen, and the
+    // circle is framed in the map that is left beside it rather than under
+    // the panel. A view offset, so picking and labels follow without knowing.
+    if (!PHONE.matches && this.ask.open && !document.body.classList.contains("is-hero")) {
+      const right = this.ask.root.getBoundingClientRect().right;
+      this.globe?.setShift(clamp(-right / (2 * window.innerWidth), -0.3, 0));
+    }
     const keep = new Set(this.#localInside(miles).map((x) => x.m.id));
     this.globe?.setDimmed(new Set(this.net.ministries.filter((m) => !keep.has(m.id)).map((m) => m.id)));
+    if (!frame) return;
     this.globe?.frameArea(area, { fill: PHONE.matches ? 0.32 : 0.36, ms: this.localFramed ? 650 : undefined });
     this.localFramed = true;
+  }
+
+  /**
+   * The circle dragged: it follows the hand, with the camera left where it
+   * is. Let go, it becomes the place the card searches round — named after
+   * the town under it once OpenStreetMap says which that is.
+   */
+  #moveCircle(centre, done) {
+    if (!this.localOn || !this.local.open) return;
+    const place = { name: "this spot", country: "", lat: centre.lat, lon: centre.lon, kind: "spot" };
+    this.localPlace = place;
+    if (!done) return this.#drawLocal(this.local.miles, { frame: false });
+    this.localHold = true;
+    this.local.setPlace(place);
+    this.localHold = false;
+    areaName(centre.lat, centre.lon).then((named) => {
+      if (!named || this.localPlace !== place || !this.local.open) return;
+      const [name, ...rest] = named.split(", ");
+      Object.assign(place, { name, country: rest.join(", ") });
+      this.localHold = true;
+      this.local.setPlace(place);
+      this.localHold = false;
+    });
   }
 
   #endLocal() {
     if (!this.localOn) return;
     this.localOn = false;
+    this.#syncTip();
     this.localPlace = null;
     if (this.local.open) this.local.close({ quiet: true });
     this.globe?.setArea(null);
+    if (!document.body.classList.contains("is-hero")) this.globe?.setShift(0);
     this.localFound = null;
     this.globe?.setFound([]);
     this.applyQuery();
@@ -1135,7 +1238,9 @@ export class App {
   #findLocal(miles) {
     const here = this.#localCentre();
     if (!here) return;
-    const place = this.localPlace ? placeLabel(this.localPlace) : null;
+    // A double-clicked spot not yet named is no name to search the web by;
+    // the guide works the area out from the point instead.
+    const place = this.localPlace && this.localPlace.kind !== "point" ? placeLabel(this.localPlace) : null;
     const byMinistry = new Map(this.#localInside(miles).map((x) => [x.m.id, x.d]));
     const urgency = { urgent: 0, soon: 1, ongoing: 2 };
     const inside = this.net.needs
@@ -1144,6 +1249,8 @@ export class App {
       .sort((a, b) => a.miles - b.miles || (urgency[a.need.urgency] ?? 3) - (urgency[b.need.urgency] ?? 3))
       .slice(0, LOCAL_POOL);
     this.local.close({ quiet: true });
+    // The circle searched stays where it is.
+    this.#drawLocal(miles, { frame: false });
     this.syncReserved();
 
     this.ask.findLocal({
@@ -1206,6 +1313,43 @@ export class App {
         };
       },
     });
+  }
+
+  /**
+   * "Show on map" for something the guide found: down onto the building.
+   * The address is looked up the first time (the map's point for a church can
+   * be the middle of its grounds, and a web find has none at all), checked
+   * against where the find was said to be, and kept on the find.
+   */
+  async #showFound(w) {
+    const ask = (this.foundAsk = (this.foundAsk ?? 0) + 1);
+    if (!w) return this.globe?.setFound(this.localFound ?? [], null);
+    if (!w.located) {
+      w.located = true;
+      const town = String(w.town ?? "");
+      const address = String(w.address ?? "");
+      // The address as it is, with the town only when it does not already
+      // end in it; a web find with no address, by its name in the town.
+      const query = address
+        ? (town && !address.toLowerCase().includes(town.split(",")[0].toLowerCase()) ? `${address}, ${town}` : address)
+        : [w.org || w.name, town].filter(Boolean).join(", ");
+      const centre = this.#localCentre();
+      const known = Number.isFinite(w.lat) && Number.isFinite(w.lon);
+      const hit = await locateAddress(query, known ? w : centre);
+      // Trusted only near where it should be: the map's own point when there
+      // is one, otherwise inside (or just past) the circle.
+      const reach = known ? 2 : (this.local?.miles ?? 25) * 1.5 + 5;
+      const from = known ? w : centre;
+      if (hit && (!from || distanceMiles(from, hit) <= reach)) Object.assign(w, hit);
+    }
+    if (ask !== this.foundAsk) return;
+    if (!Number.isFinite(w.lat) || !Number.isFinite(w.lon)) {
+      return this.toast(`Couldn't find ${w.org || "that place"} on the map.`);
+    }
+    if (!(this.localFound ?? []).includes(w)) this.localFound = [...(this.localFound ?? []), w];
+    this.globe?.setFound(this.localFound, w);
+    this.globe?.setSpin(false);
+    this.globe?.flyToPlace(w);
   }
 
   #flyHere() {
@@ -1415,12 +1559,54 @@ export class App {
     const search = this.el.search;
     const text = search.value.trim();
     if (!text) return search.focus();
-    this.#leaveHero({ settle: true });
     search.value = "";
     this.el.clearSearch.hidden = true;
     // Down goes the phone keyboard, which would otherwise cover the answer.
     if (PHONE.matches) search.blur();
-    this.ask.submit(text);
+    // A place ("Los Angeles", "show me Los Angeles") is somewhere to go, not
+    // a question. The gazetteer answers at once; only a "show me" for a town
+    // it does not know waits on a lookup, and a newer entry overrides it.
+    const asked = (this.barAsk = (this.barAsk ?? 0) + 1);
+    placeAsked(text)
+      .catch(() => null)
+      .then((place) => {
+        if (asked !== this.barAsk) return;
+        if (place) return this.#travelTo(place);
+        this.#leaveHero({ settle: true });
+        this.ask.submit(text);
+      });
+  }
+
+  /**
+   * Off to a place named in the find bar or the conversation: the planet
+   * spins round to it and the camera comes down over it. From the find bar
+   * the conversation steps out of the way — folded to its header on a phone,
+   * closed on a desktop, where it would otherwise stand over the middle of
+   * the map. Asked for in the conversation (`chat`), it stays open, and on a
+   * desktop the place is framed in the map beside it.
+   */
+  #travelTo(place, { chat = false } = {}) {
+    // Not the settle: its own flight would be replaced on the same frame.
+    this.#leaveHero();
+    if (this.ask.open && PHONE.matches) this.ask.root.classList.add("is-min");
+    else if (this.ask.open && !chat) this.ask.close();
+    if (this.ask.open && !PHONE.matches) {
+      const right = this.ask.root.getBoundingClientRect().right;
+      this.globe?.setShift(clamp(-right / (2 * window.innerWidth), -0.3, 0));
+    }
+    this.#deselect();
+    this.globe?.setSpin(false);
+    // A country is seen whole; a city is come down onto, by its size: a
+    // metropolis from about a hundred kilometres up, a city from forty-five,
+    // and a town — La Mirada, a place with no population on record — from
+    // eighteen, where its streets fill the middle of the screen. Heights in
+    // Earth radii; below the zoom ladder's close end, so given outright.
+    if (place.kind === "country") this.globe?.travelTo(place, { zoom: 0.42 });
+    else {
+      const km = place.population > 3e6 ? 100 : place.population > 3e5 ? 45 : 18;
+      this.globe?.travelTo(place, { dist: 1 + km / 6371 });
+    }
+    if (!chat) this.toast(placeName(place));
   }
 
   #hideSuggest() {
@@ -1631,6 +1817,7 @@ export class App {
     push(document.querySelector(".topbar"), 2);
     push(document.querySelector(".crumbs"), 4);
     push(document.querySelector(".search"));
+    if (this.el.tip?.classList.contains("is-in")) push(this.el.tip);
     // The headline's ground is spoken for: a pin there would be half-hidden
     // behind a letterform. Both boxes hug their text — the container is
     // wider than either line.

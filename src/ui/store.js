@@ -4,7 +4,7 @@
  */
 const KEY = "terra.v1";
 
-const EMPTY = { posted: [], interests: {}, seen: false };
+const EMPTY = { posted: [], interests: {}, seen: false, tips: {} };
 
 function read() {
   try {
@@ -69,6 +69,16 @@ export const store = {
 
   markSeen() {
     this.state.seen = true;
+    this.save();
+  },
+
+  /** A tip the visitor has closed, or has shown they no longer need. */
+  tipDone(id) {
+    return !!this.state.tips?.[id];
+  },
+
+  retireTip(id) {
+    this.state.tips = { ...(this.state.tips ?? {}), [id]: true };
     this.save();
   },
 };

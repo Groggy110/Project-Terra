@@ -211,6 +211,97 @@ export async function findPlace(query) {
   return best ?? null;
 }
 
+/**
+ * "Show me Los Angeles", "take me to Paris, France", or just "Kenya": the
+ * find bar's way of being asked to go somewhere rather than asked a
+ * question. Words like these at the front say it is a place being asked for.
+ */
+const GO_TO =
+  /^(?:(?:please|hey terra|terra)[, ]+)?(?:(?:can|could|would|will) you\s+)?(?:please\s+)?(?:show(?: me)?(?: where)?|take me(?: to| over to)?|bring me(?: to)?|fly(?: me)?(?: over)?(?: to)?|go(?: over)?(?: to)?|zoom(?: in| out)?(?: on| to| into| in on)?|head(?: over)?(?: to)?|travel(?: to)?|navigate(?: to)?|jump(?: to)?|move(?: to)?|spin(?: to)?|visit|find|locate|where(?:'s| is)|cent(?:er|re)(?: on)?|focus(?: on)?|let'?s go(?: to)?|i want to (?:see|go to|visit))\s+/i;
+
+/** Words that mean a question about the map's needs, not a place on it. */
+const NOT_A_PLACE =
+  /\b(?:needs?|ministr(?:y|ies)|opportunit(?:y|ies)|churche?s?|volunteer\w*|serve|serving|help|ways?|things?|something|anything|what|how|who|why|when|i|me|my|near|nearby|around|close|jobs?|work|projects?|kids|children|families|people)\b/i;
+
+/**
+ * The place a find-bar entry asks to go to, as `{ name, country, lat, lon,
+ * kind, population }`, or null when it is a question for Ask Terra instead.
+ *
+ * A bare entry has to be a place the gazetteer knows by exactly that name,
+ * so a question that happens to contain a city still goes to Ask Terra. One
+ * that says "show me" or "take me to" may also be looked up on
+ * OpenStreetMap, for a town too small for the gazetteer. `bare: false`
+ * takes only the second kind.
+ */
+export async function placeAsked(text, { ms = 4000, bare = true } = {}) {
+  let rest = String(text ?? "").trim().replace(/[?.!]+$/, "");
+  const go = rest.match(GO_TO);
+  // In the conversation a bare "Kenya" is a follow-up, not a destination.
+  if (!go && !bare) return null;
+  if (go) rest = rest.slice(go[0].length);
+  rest = rest
+    .replace(/\s+(?:on|in) the (?:map|globe)$/i, "")
+    .replace(/[, ]+(?:please|for me)$/i, "")
+    .replace(/^(?:the city of|the town of|the)\s+/i, "")
+    .trim();
+  if (fold(rest).length < 2 || rest.split(/\s+/).length > 6 || NOT_A_PLACE.test(rest)) return null;
+
+  const withPeople = async (p) => {
+    if (!p || p.kind !== "city") return p;
+    const rows = await loadPlaces();
+    const row = rows.find((r) => r.key === fold(p.name) && (!p.country || r.country === p.country));
+    return { ...p, population: row?.population ?? 0 };
+  };
+
+  // Exactly a city or a country the gazetteer knows.
+  const [best] = await suggestPlaces(rest, { limit: 1 });
+  if (best && (fold(best.name) === fold(rest) || countryKey(best.name) === countryKey(rest))) return withPeople(best);
+
+  // "Paris, France", "Springfield, Illinois", "Los Angeles, CA".
+  const comma = rest.indexOf(",");
+  if (comma > 0) {
+    const city = rest.slice(0, comma).trim();
+    const where = rest.slice(comma + 1).trim();
+    const hit = await resolvePlace(city, where);
+    if (hit?.kind === "city") return withPeople({ name: hit.city, country: hit.country, lat: hit.lat, lon: hit.lon, kind: "city" });
+    if (!go) {
+      const [first] = await suggestPlaces(city, { limit: 1 });
+      if (first && first.kind === "city" && fold(first.name) === fold(city)) return withPeople(first);
+    }
+  }
+  // A bare town the gazetteer is too small to hold — "La Mirada" — is
+  // still somewhere to go, if OpenStreetMap knows a settlement of exactly
+  // that name and ranks it as a real place. Only for a few words: anything
+  // longer is a question, and the guide answers it.
+  if (!go) {
+    if (!bare || rest.split(/\s+/).length > 3 || /[\d?]/.test(rest)) return null;
+    const timeout = new Promise((done) => setTimeout(() => done(null), Math.min(ms, 2500)));
+    return Promise.race([settlementNamed(rest).catch(() => null), timeout]).then(withPeople);
+  }
+
+  // Asked for by name: worth a look further afield, but not worth a wait.
+  const timeout = new Promise((done) => setTimeout(() => done(null), ms));
+  return Promise.race([findPlace(rest).catch(() => null), timeout]).then(withPeople);
+}
+
+/**
+ * A town or city called exactly `name`, from OpenStreetMap, or null. The
+ * name must match what was typed and the place must rank as somewhere
+ * people would mean by it (importance ≥ 0.45: La Mirada is 0.53, while
+ * "nurse" finds a Swedish town at 0.37 by a near spelling) — so a word that
+ * happens to be a hamlet somewhere is not taken for a destination.
+ */
+async function settlementNamed(name) {
+  const params = new URLSearchParams({ q: name, format: "jsonv2", limit: "1", addressdetails: "1", featureType: "settlement" });
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
+  const [hit] = res.ok ? await res.json() : [];
+  if (!hit || hit.importance < 0.45) return null;
+  const a = hit.address ?? {};
+  const town = a.city || a.town || a.village || a.municipality || hit.name;
+  if (fold(town) !== fold(name) && fold(hit.name ?? "") !== fold(name)) return null;
+  return { name: town, country: a.country || "", lat: Number(hit.lat), lon: Number(hit.lon), kind: "city" };
+}
+
 /* ------------------------------------------------------------------ region */
 
 /**

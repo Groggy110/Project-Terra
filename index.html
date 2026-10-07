@@ -204,6 +204,25 @@
 
       <div class="hint" id="hint">drag to rotate · zoom for cities · click a pin</div>
 
+      <!-- How to serve somewhere in particular (app.js, #syncTip): a desktop
+           card in the corner the rest of the chrome leaves free. -->
+      <aside class="tip" id="tip" aria-label="Tip" hidden>
+        <span class="tip__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <circle class="tip__ring tip__ring--2" cx="9" cy="9" r="7" />
+            <circle class="tip__ring tip__ring--1" cx="9" cy="9" r="4" />
+            <path class="tip__cursor" d="M9 9l9.2 3.4-3.9 1.4 3 3-1.6 1.6-3-3-1.4 3.9z" />
+          </svg>
+        </span>
+        <span class="tip__text">
+          <b>Serve anywhere on the map</b>
+          <span>Double-click a place to see ways to help within 10 miles of it.</span>
+        </span>
+        <button class="tip__x" type="button" aria-label="Dismiss tip">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.4 4.4l7.2 7.2M11.6 4.4l-7.2 7.2" /></svg>
+        </button>
+      </aside>
+
       <!-- Phone only (chrome.css, "phone"): the globe is the page, with a dock
            of the few things to do along the bottom and round map controls
            beside it, the way a map app on a phone is laid out. -->

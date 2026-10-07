@@ -1379,3 +1379,219 @@ a.btn--serve svg {
 .ask__fact a:hover {
   text-decoration: underline;
 }
+
+/* ---- past chats (ask.js, #renderHistory) ----
+
+   Opened from the clock in the header: the list takes the thread's place,
+   grouped by when, each row the chat's first question over a line of its
+   last answer, with the time on the right and a bin that shows on hover. */
+
+.ask.is-history .ask__thread,
+.ask.is-history .ask__foot {
+  display: none;
+}
+
+.ask__hist-btn[aria-expanded="true"] {
+  background: var(--ask-wash-hi);
+  color: var(--ink);
+}
+
+.ask__history {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px 12px 18px;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.15) transparent;
+  animation: ask-in 0.3s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.ask__history[hidden] {
+  display: none;
+}
+
+.ask__hist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 10px;
+}
+
+.ask__hist-head b {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.ask__hist-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 560;
+  color: var(--ink);
+  background: var(--ask-wash);
+  border: 1px solid var(--ask-line);
+  transition: background 0.2s var(--ease);
+}
+
+.ask__hist-new:hover {
+  background: var(--ask-wash-hi);
+}
+
+.ask__hist-new svg,
+.ask__hist-del svg,
+.ask__hist-empty svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ask__hist-group {
+  padding: 14px 8px 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.ask__hist-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border-radius: 12px;
+  transition: background 0.18s var(--ease);
+}
+
+.ask__hist-row:hover,
+.ask__hist-row:focus-within {
+  background: rgb(255 255 255 / 0.06);
+}
+
+.ask__hist-row.is-current {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.ask__hist-open {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 0 10px 10px;
+  text-align: left;
+}
+
+.ask__hist-title {
+  font-size: 14px;
+  font-weight: 560;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ask__hist-preview {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  opacity: 0.75;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ask__hist-when {
+  flex: none;
+  padding-top: 12px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  transition: opacity 0.15s var(--ease);
+}
+
+.ask__hist-del {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  background: rgb(20 26 38 / 0.9);
+  opacity: 0;
+  transition: opacity 0.15s var(--ease), color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.ask__hist-row:hover .ask__hist-del,
+.ask__hist-del:focus-visible {
+  opacity: 1;
+}
+
+.ask__hist-row:hover .ask__hist-when {
+  opacity: 0;
+}
+
+.ask__hist-del:hover {
+  color: #ff8a8a;
+  background: rgb(255 90 90 / 0.14);
+}
+
+/* A touch screen has no hover: the bin stays in view. */
+@media (hover: none) {
+  .ask__hist-del {
+    position: static;
+    translate: none;
+    opacity: 1;
+    margin: 6px 4px 0 0;
+    background: none;
+  }
+
+  .ask__hist-row .ask__hist-when {
+    display: none;
+  }
+}
+
+.ask__hist-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: auto;
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--ink-2);
+}
+
+.ask__hist-empty svg {
+  width: 26px;
+  height: 26px;
+  margin-bottom: 4px;
+  opacity: 0.6;
+}
+
+.ask__hist-empty b {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ask__hist-empty p {
+  margin: 0;
+  max-width: 280px;
+  font-size: 13px;
+  line-height: 1.5;
+}

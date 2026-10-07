@@ -41,7 +41,10 @@ interface Candidate {
 }
 
 const MAX_QUESTION = 500;
-const MAX_TURNS = 6;
+/** The conversation kept, from its end: turns, and characters in all. */
+const MAX_TURNS = 60;
+const MAX_TURN = 2400;
+const MAX_HISTORY = 16000;
 const MAX_CANDIDATES = 160;
 const MAX_PICKS = 8;
 
@@ -59,6 +62,8 @@ picks: the needs that genuinely fit, best first, at most 8. Respect what they as
 - A time budget ("an afternoon", "a weekend", "an hour a week") means needs whose commitment fits it; one-off totals of a few hours suit an afternoon.
 - A skill or cause means needs that ask for it or serve it.
 - A follow-up ("only urgent ones", "something else") refines the previous answer.
+
+You remember the whole conversation. Under each of your earlier answers is what was shown to the visitor, numbered as they saw it, and lines in [brackets] are things they did on the page: a ministry they opened, a search near them. When they refer back — "the second one", "that church in Boulder", "the first thing you showed me", "what was its email?" — answer about exactly that item, using what the conversation says about it. You can pick a need you showed before again (its id is in the list). Opportunities "found on their website, not on Terra" cannot be picks, but you can talk about them in the reply. Never contradict or forget what the visitor has told you about themselves (their skills, time, where they are).
 Prefer a short honest list over a padded one. If nothing fits, return no picks and say so kindly in the reply, suggesting the closest thing they could try instead.
 
 why: one short sentence addressed to the visitor, naming the specific thing that makes this need a fit for what they asked.
@@ -99,13 +104,22 @@ Deno.serve(async (req) => {
     .slice(0, MAX_CANDIDATES);
   if (!needs.length) return json({ reply: "There are no open needs on the map yet.", picks: [] });
 
-  const history = (Array.isArray(body.history) ? body.history : [])
+  // As much of the end of the conversation as fits, kept whole turn by turn;
+  // line breaks survive, since an answer lists what it showed one per line.
+  const lines = (Array.isArray(body.history) ? body.history : [])
     .slice(-MAX_TURNS)
     .map((t) => {
       const turn = t as { role?: unknown; text?: unknown };
-      return `${turn.role === "assistant" ? "Terra" : "Visitor"}: ${clip(turn.text, 400)}`;
-    })
-    .join("\n");
+      const text = String(turn.text ?? "").replace(/[ \t]+/g, " ").trim().slice(0, MAX_TURN);
+      return `${turn.role === "assistant" ? "Terra" : "Visitor"}: ${text}`;
+    });
+  const kept: string[] = [];
+  let used = 0;
+  for (let i = lines.length - 1; i >= 0 && used + lines[i].length <= MAX_HISTORY; i--) {
+    kept.unshift(lines[i]);
+    used += lines[i].length;
+  }
+  const history = (kept.length < lines.length ? "(earlier turns left out)\n" : "") + kept.join("\n\n");
 
   const apiKey = Deno.env.get("GLOO_API_KEY");
   if (!apiKey) return json({ error: "not configured" }, 503);

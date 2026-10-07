@@ -59,10 +59,13 @@ function withVec(p) {
 }
 
 export class LabelLayer {
-  constructor(root, { onPinClick, onPinHover } = {}) {
+  constructor(root, { onPinClick, onPinHover, onAreaGrab } = {}) {
     this.root = root;
     this.onPinClick = onPinClick;
     this.onPinHover = onPinHover;
+    // A press inside the serve-locally circle: true when it was taken as the
+    // start of moving the circle, so the globe does not turn under it.
+    this.onAreaGrab = onAreaGrab;
 
     this.ministries = [];
     this.places = [];
@@ -484,7 +487,12 @@ export class LabelLayer {
       el.title = f.name;
       const dot = document.createElement("span");
       dot.className = "found__dot";
-      el.append(dot);
+      // The name, shown while it is the one opened, so the building the
+      // camera came down onto says which church it is.
+      const name = document.createElement("span");
+      name.className = "found__name";
+      name.textContent = f.org || f.name;
+      el.append(dot, name);
       return el;
     });
     node.el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
@@ -547,6 +555,12 @@ export class LabelLayer {
       const tag = document.createElement("span");
       tag.className = "radius__tag";
       svg.append(fill, edge);
+      // The circle's inside is a handle while it can be moved (`movable`).
+      fill.addEventListener("pointerdown", (e) => {
+        if (!this.area?.movable || !this.onAreaGrab?.(e)) return;
+        e.stopPropagation();
+        e.preventDefault();
+      });
       this.root.prepend(svg, tag);
       const ring = cometRing(NS);
       svg.after(ring);
@@ -554,6 +568,7 @@ export class LabelLayer {
     }
     const el = this.areaEl;
     el.svg.style.display = "";
+    el.svg.classList.toggle("is-movable", !!a.movable);
     if (el.w !== width || el.h !== height) {
       el.svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
       el.w = width;

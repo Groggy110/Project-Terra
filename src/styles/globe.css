@@ -424,6 +424,29 @@ body.is-hero .overlay .place {
   fill: rgba(47, 140, 255, 0.16);
 }
 
+/* While the radius card is up the circle can be picked up and moved: its
+   inside takes the pointer (the rest of the layer still lets it through). */
+.radius.is-movable .radius__fill {
+  pointer-events: visiblePainted;
+  touch-action: none;
+  cursor: grab;
+  transition: fill 0.2s var(--ease-out);
+}
+
+.radius.is-movable .radius__fill:hover {
+  fill: rgba(47, 140, 255, 0.22);
+}
+
+body.is-moving-area,
+body.is-moving-area * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+body.is-moving-area .radius__fill {
+  fill: rgba(47, 140, 255, 0.26);
+}
+
 .radius__edge {
   fill: none;
   stroke: rgb(74 157 255 / 0.4);
@@ -498,8 +521,8 @@ body.is-hero .overlay .place {
   pointer-events: none;
 }
 
-/* What the guide found on the web: white, ringed in the circle's blue, so
-   they read as the search's own finds and not as Terra's red ministries. */
+/* What the guide found on the web: the same red dot as Terra's own
+   ministries (the pin's own tokens, so the style editor moves both). */
 .found {
   pointer-events: none;
   width: 0;
@@ -510,18 +533,75 @@ body.is-hero .overlay .place {
   position: absolute;
   left: 0;
   top: 0;
-  width: 11px;
-  height: 11px;
+  width: var(--pin-size, 11px);
+  height: var(--pin-size, 11px);
   translate: -50% -50%;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 0 0 2.5px #2f8cff, 0 1px 5px rgba(0, 0, 0, 0.5);
-  transition: scale 0.2s var(--ease-out);
+  border-radius: var(--pin-radius, 50%);
+  rotate: var(--pin-rotate, 0deg);
+  background: var(--pin-normal);
+  box-shadow: var(--pin-shadow);
+  transition: scale 0.2s var(--ease-out), box-shadow 0.2s;
 }
 
 .found.is-active .found__dot {
-  scale: 1.6;
-  box-shadow: 0 0 0 2.5px #2f8cff, 0 0 0 7px rgba(47, 140, 255, 0.3), 0 1px 5px rgba(0, 0, 0, 0.5);
+  scale: var(--pin-active-scale, 1.6);
+  box-shadow: var(--pin-active-shadow);
+}
+
+/* The opened one rings out as the camera lands on it — twice, then still —
+   and wears its name on a plate above it. */
+.found.is-active .found__dot::after {
+  content: "";
+  position: absolute;
+  inset: -2.5px;
+  border-radius: 50%;
+  border: 2px solid var(--pin-normal);
+  opacity: 0;
+  animation: found-ring 1.4s cubic-bezier(0.2, 0.7, 0.3, 1) 0.9s 2;
+}
+
+@keyframes found-ring {
+  0% {
+    opacity: 0.9;
+    scale: 1;
+  }
+  100% {
+    opacity: 0;
+    scale: 3.4;
+  }
+}
+
+.found__name {
+  position: absolute;
+  left: 0;
+  bottom: 14px;
+  translate: -50% 4px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgb(14 20 32 / 0.86);
+  border: 1px solid rgb(205 225 255 / 0.18);
+  color: #fff;
+  font: 600 12.5px/1.2 var(--sans);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 16px -6px rgb(0 0 0 / 0.6);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s var(--ease-out), translate 0.4s var(--ease-out);
+}
+
+.found.is-active .found__name {
+  opacity: 1;
+  translate: -50% 0;
+  transition-delay: 0.6s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .found.is-active .found__dot::after {
+    animation: none;
+  }
 }
 
 /* ---------- you are here ---------- */

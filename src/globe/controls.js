@@ -99,10 +99,12 @@ export class GlobeControls {
   #probe;
   #rect = null;
 
-  constructor(dom, camera, { onFirstGesture } = {}) {
+  constructor(dom, camera, { onFirstGesture, onDoubleClick } = {}) {
     this.dom = dom;
     this.camera = camera;
     this.onFirstGesture = onFirstGesture;
+    /** Offered a double-click's ground point first; true means it was taken. */
+    this.onDoubleClick = onDoubleClick;
 
     this.lat = cam().home.lat;
     this.lon = cam().home.lon;
@@ -353,6 +355,12 @@ export class GlobeControls {
     this.lastTap = null;
     if (!last || e.timeStamp - last.t > 300 || Math.hypot(e.clientX - last.x, e.clientY - last.y) > 32) return;
     this.#note();
+    const at = this.pointAt(e);
+    if (at && this.onDoubleClick?.(at)) {
+      // The second tap's finger is still down: it must not turn into a drag.
+      this.anchor = null;
+      return;
+    }
     this.#zoomTo(this.#scaled(this.target.dist, 0.5), e);
     // The second tap's finger is still down, which counts as a drag; the
     // zoom must hold its point through it all the same.
@@ -600,6 +608,7 @@ export class GlobeControls {
    */
   #dbl = (e) => {
     const at = this.pointAt(e);
+    if (at && this.onDoubleClick?.(at)) return;
     const alt = this.target.dist - 1;
     const city = cam().minDist - 1;
     this.flyTo({
@@ -736,12 +745,22 @@ export class GlobeControls {
    * counting it as a gesture would retire the hint and the hero before the
    * globe had finished arriving.
    */
-  flyTo({ lat, lon, dist, ms = 1200, silent = false, arc = 1, spinInto = false, ease = "cubic" } = {}) {
+  /**
+   * `rise`, when given, replaces the arc: the camera's height is lifted by
+   * that many e-folds at the middle of the flight (in logs, so it reads the
+   * same at street level as from orbit) — up far enough to keep both ends in
+   * view, across, and back down.
+   *
+   * `turn`, when given, is the degrees of longitude to travel instead of the
+   * shortest way round, so a flight can go the long way and be seen to spin
+   * the planet on its way to somewhere already near.
+   */
+  flyTo({ lat, lon, dist, ms = 1200, silent = false, arc = 1, rise = 0, turn, spinInto = false, ease = "cubic" } = {}) {
     if (!silent) this.#note();
     else this.quiet = 0;
     const to = {
       lat: clamp(lat ?? this.target.lat, -cam().latLimit, cam().latLimit),
-      lon: this.lon + wrapDelta(this.lon, lon ?? this.target.lon),
+      lon: this.lon + (Number.isFinite(turn) ? turn : wrapDelta(this.lon, lon ?? this.target.lon)),
       dist: clamp(dist ?? this.target.dist, closest(), cam().maxDist),
     };
     this.vel.lat = 0;
@@ -751,7 +770,8 @@ export class GlobeControls {
       to,
       t: 0,
       ms: Math.max(ms, 1),
-      arc,
+      arc: rise ? 0 : arc,
+      rise,
       spinInto,
       drift: 0,
       ease: EASINGS[ease] || easeInOut,
@@ -848,9 +868,13 @@ export class GlobeControls {
       // straight line would cover all of it in the last few frames.
       const lo = Math.min(f.from.dist, f.to.dist) - 1;
       const deep = lo < cam().minDist - 1;
-      const d = deep
-        ? 1 + Math.exp(Math.log(f.from.dist - 1) + (Math.log(f.to.dist - 1) - Math.log(f.from.dist - 1)) * k)
+      // The height eases on its own, smoother curve when the flight rises:
+      // up and down without a pause at the top.
+      const kd = f.rise ? f.ease(f.t / f.ms) : k;
+      let d = deep || f.rise
+        ? 1 + Math.exp(Math.log(f.from.dist - 1) + (Math.log(f.to.dist - 1) - Math.log(f.from.dist - 1)) * kd)
         : f.from.dist + (f.to.dist - f.from.dist) * k;
+      if (f.rise) d = 1 + (d - 1) * Math.exp(f.rise * Math.sin(Math.PI * (f.t / f.ms)));
       this.dist = clamp(d + arc, closest(), cam().maxDist + 1.4);
       if (f.t >= f.ms) {
         this.flight = null;

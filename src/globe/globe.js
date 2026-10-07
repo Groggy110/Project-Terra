@@ -278,6 +278,7 @@ export class Globe {
 
     this.controls = new GlobeControls(canvas, this.camera, {
       onFirstGesture: opts.onFirstGesture,
+      onDoubleClick: (at) => opts.onDoubleClick?.(at) ?? false,
     });
 
     this.store = new VectorStore();
@@ -332,6 +333,7 @@ export class Globe {
         opts.onPinClick?.(m);
       },
       onPinHover: opts.onPinHover,
+      onAreaGrab: (e) => this.#grabArea(e),
     });
 
     // Pins and plates sit in an overlay above the canvas and take the pointer
@@ -796,6 +798,46 @@ export class Globe {
     this.controls.flyTo({ lat, lon, dist, ms: ms ?? clamp(800 + hop * 6, 800, 1800) });
   }
 
+  /**
+   * Moving the serve-locally circle: the ground grabbed stays under the
+   * pointer, and the centre keeps its offset from it, so the circle slides
+   * with the hand rather than jumping its middle to it. Each move goes to
+   * `onAreaMove(centre, { done: false })`, and the release to
+   * `onAreaMove(centre, { done: true })` — not called for a press that never
+   * moved.
+   */
+  #grabArea(e) {
+    const move = this.opts.onAreaMove;
+    const a = this.labels.area;
+    if (!move || !a) return false;
+    if (e.pointerType === "mouse" && e.button !== 0) return false;
+    const at = this.controls.pointAt(e);
+    if (!at) return false;
+    const off = { lat: a.lat - at.lat, lon: wrapDelta(at.lon, a.lon) };
+    let last = null;
+    document.body.classList.add("is-moving-area");
+    const onMove = (ev) => {
+      if (ev.pointerId !== e.pointerId) return;
+      ev.preventDefault();
+      const p = this.controls.pointAt(ev);
+      if (!p) return;
+      last = { lat: clamp(p.lat + off.lat, -84, 84), lon: ((p.lon + off.lon + 540) % 360) - 180 };
+      move(last, { done: false });
+    };
+    const onUp = (ev) => {
+      if (ev.pointerId !== e.pointerId) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      document.body.classList.remove("is-moving-area");
+      if (last) move(last, { done: true });
+    };
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return true;
+  }
+
   /** Chrome rectangles that labels must avoid. */
   setReserved(rects) {
     this.labels.setReserved(rects);
@@ -829,6 +871,53 @@ export class Globe {
 
   flyTo(args) {
     this.controls.flyTo(args);
+  }
+
+  /**
+   * Down onto one building, the way a maps app does it: up just far enough
+   * that where the camera is and where it is going are both on screen,
+   * across, and down to street level over the place — one unbroken move,
+   * slower the further it has to go. Already there, it settles in place.
+   */
+  flyToPlace({ lat, lon }, { zoom = 0.97 } = {}) {
+    const from = this.controls.dist - 1;
+    const to = distForZoom(zoom) - 1;
+    const span = this.controls.angleTo(lat, lon) * DEG;
+    // The height at which the span fills about two thirds of the screen.
+    const need = span / (2 * Math.tan(this.camera.fov * DEG * 0.5) * 0.66);
+    const rise = Math.max(0, Math.log(Math.max(need, from, to)) - (Math.log(from) + Math.log(to)) / 2);
+    this.controls.flyTo({
+      lat,
+      lon,
+      dist: to + 1,
+      rise,
+      ms: clamp(1000 + rise * 380, 1000, 2400),
+    });
+  }
+
+  /**
+   * Off to a named place, as asked for in the find bar: out to the whole
+   * Earth, round with it — the long way when the place is already near, so
+   * the planet is always seen to turn — and down onto the place. One flight,
+   * so it never stops at the top; a place already under the camera is simply
+   * settled onto.
+   */
+  travelTo({ lat, lon }, { zoom = 0.94, dist } = {}) {
+    const c = this.controls;
+    // `dist` asks for a height outright — below the ladder's close end,
+    // where every zoom reads 1 — and wins over `zoom` when given.
+    const to = dist ?? distForZoom(zoom);
+    if (c.angleTo(lat, lon) < 1.5 && c.dist < to * 1.6) {
+      return c.flyTo({ lat, lon, dist: to, ms: 900 });
+    }
+    // Under a third of a turn away goes round the other way instead.
+    let turn = wrapDelta(c.lon, lon);
+    if (Math.abs(turn) < 120) turn -= Math.sign(turn || STYLE.motion.direction || 1) * 360;
+    const from = c.dist - 1;
+    const peak = STYLE.camera.maxDist - 1;
+    const rise = Math.max(0, Math.log(peak) - (Math.log(from) + Math.log(to - 1)) / 2);
+    this.quiet(3600);
+    c.flyTo({ lat, lon, dist: to, turn, rise, ms: clamp(2200 + Math.abs(turn) * 3, 2400, 3400) });
   }
 
   zoomBy(factor) {
@@ -1068,6 +1157,9 @@ export class Globe {
   #quiet(now) {
     if (this.quietMove && now >= this.quietUntil && !this.controls.flight && !this.stageOut && !this.liftFollow) {
       this.quietMove = false;
+      // Work held for the move has been waiting on a pass; passes stop once
+      // the camera is still, so ask for one now or it waits for good.
+      this.dirty = true;
     }
     return this.quietMove || now < this.quietUntil;
   }
@@ -1533,6 +1625,12 @@ export class Globe {
     }
 
     const moved = this.controls.update(dt);
+    // A hold on the tiles (quiet) is otherwise only looked at during a pass,
+    // and passes stop once the camera is still: a flight that lands inside
+    // its hold — the find bar's asks for a fixed 3.6 s — left the tiles held
+    // for good and the ground a smear of the base texture. Looked at every
+    // frame while it lasts, so its end asks for a pass (#quiet).
+    if (this.quietMove) this.#quiet(now);
     if (moved) {
       this.idleFrames = 0;
       this.settleTimer = 0;

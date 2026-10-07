@@ -25,8 +25,11 @@ import { emptyQuery } from "../data/network.js";
 import { FOCUS_BY_ID, REGION_BY_ID, TYPE_BY_ID, URGENCY_BY_ID } from "../data/taxonomy.js";
 import { pullToClose } from "./swipe.js";
 import { AuthGate } from "./auth.js";
+import { deleteChat, getChat, listChats, newChatId, saveChat } from "./chats.js";
 
 const send = () => svg("0 0 16 16", '<path d="M8 12.8V3.4M4.2 7.2 8 3.4l3.8 3.8"/>');
+const clock = () => svg("0 0 16 16", '<circle cx="8" cy="8" r="5.8"/><path d="M8 4.8V8l2.2 1.5"/>');
+const bin = () => svg("0 0 16 16", '<path d="M3.2 4.6h9.6M6.4 4.6V3.2h3.2v1.4M4.4 4.6l.6 8.2h6l.6-8.2"/>');
 const fresh = () => svg("0 0 16 16", '<path d="M11.2 2.6 13.4 4.8 7 11.2l-3 .8.8-3z"/><path d="M2.6 13.4h10.8"/>');
 /**
  * Terra's guide: a soft blue cloud with happy closed eyes, cyan at its left
@@ -144,7 +147,7 @@ const EXAMPLES = [
 ];
 
 export class AskPanel {
-  constructor({ net, ask, onFlyTo, onPlace, onServe, onSchedule, onSignedIn, onResults, onToggle, onReset, onMinistry, onEdit, onLeave }) {
+  constructor({ net, ask, onGo, onFlyTo, onPlace, onServe, onSchedule, onSignedIn, onResults, onToggle, onReset, onMinistry, onEdit, onLeave }) {
     this.onSignedIn = onSignedIn;
     // A need's ministry, opened in the thread; a ministry's own need, to
     // edit; and a ministry's card
@@ -158,11 +161,16 @@ export class AskPanel {
     this.net = net;
     this.ask = ask;
     this.onFlyTo = onFlyTo;
+    // "Bring me to Santa Barbara": answers with the line to reply with once
+    // the globe is on its way there, or null when it is a question after all.
+    this.onGo = onGo;
     this.onServe = onServe;
     this.onSchedule = onSchedule;
     this.onResults = onResults;
     this.onToggle = onToggle;
     this.turns = [];
+    // The conversation in hand, saved as it goes (chats.js).
+    this.chatId = newChatId();
     this.open = false;
     this.busy = false;
     this.active = null;
@@ -189,7 +197,7 @@ export class AskPanel {
       const q = this.input.value.trim();
       if (!q || this.busy) return;
       this.input.value = "";
-      this.submit(q);
+      this.#send(q);
     });
 
     this.head = h(
@@ -202,32 +210,57 @@ export class AskPanel {
           h("span", { class: "ask__count", text: "Finds the needs that fit you" }),
         ),
       ),
+      h("button", { class: "ask__new ask__hist-btn", type: "button", title: "Past chats", "aria-label": "Past chats", "aria-expanded": "false", onclick: () => this.#toggleHistory() }, clock()),
       h("button", { class: "ask__new", type: "button", title: "New chat", "aria-label": "New chat" }, fresh()),
       h("button", { class: "ask__x", type: "button", "aria-label": "Close", onclick: () => this.close() }, icons.close()),
     );
+
+    // Past chats: a list in place of the thread, opened from the clock.
+    this.history = h("div", { class: "ask__history scroll", hidden: true, "aria-label": "Past chats" });
 
     this.root = h(
       "aside",
       { class: "ask", "aria-label": "Ask Terra", hidden: true },
       this.head,
       this.thread,
+      this.history,
       foot,
     );
-    this.head.querySelector(".ask__new").addEventListener("click", () => this.reset());
+    this.head.querySelector(".ask__new:not(.ask__hist-btn)").addEventListener("click", () => this.reset());
     document.body.appendChild(this.root);
     pullToClose(this.root, { onClose: () => this.close() });
     window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && this.open && !document.querySelector(".modal")) this.close();
+      if (e.key !== "Escape" || !this.open || document.querySelector(".modal")) return;
+      // The list of past chats first, then the conversation.
+      if (this.root.classList.contains("is-history")) this.#closeHistory();
+      else this.close();
     });
+  }
+
+  /**
+   * The composer: a place asked for by name is gone to, with a line in the
+   * thread to say so; anything else is a question.
+   */
+  async #send(text) {
+    if (!this.onGo) return this.submit(text);
+    this.busy = true;
+    const said = await this.onGo(text).catch(() => null);
+    this.busy = false;
+    if (!said) return this.submit(text);
+    // Kept out of the agent's history (local): it did not answer them.
+    this.turns.push({ role: "user", text, local: true }, { role: "assistant", text: said, picks: [], local: true });
+    this.render();
   }
 
   /** A question from the find bar or the composer. */
   async submit(question) {
     this.#show();
     this.root.classList.remove("is-min");
-    const history = this.turns
-      .filter((t) => !t.pending && !t.local && (t.role === "user" || t.role === "assistant"))
-      .map((t) => ({ role: t.role, text: t.text }));
+    this.#closeHistory();
+    // Everything said and shown so far, so a follow-up ("the second one",
+    // "that church", "anything closer?") means what it meant to the visitor.
+    const history = this.#context();
+    const referenced = this.#referenced();
     for (const t of this.turns) t.open = null;
     this.turns.push({ role: "user", text: question });
     const answer = { role: "assistant", text: "", picks: [], pending: true };
@@ -237,8 +270,11 @@ export class AskPanel {
 
     // What was asked, with the visitor's earlier turns: a follow-up ("what
     // about in Kenya?") still means the thing asked about before it.
-    const asked = [...history.filter((t) => t.role === "user").map((t) => t.text), question].join(" ");
-    const needs = shortlist(asked, this.net.needs);
+    const asked = this.turns.filter((t) => t.role === "user").map((t) => t.text).join(" ");
+    // The needs already in the conversation stay choosable, ahead of the
+    // shortlist for what was just asked.
+    const refIds = new Set(referenced.map((n) => n.id));
+    const needs = [...referenced, ...shortlist(asked, this.net.needs).filter((n) => !refIds.has(n.id))].slice(0, POOL);
     let result = null;
     try {
       result = this.ask ? await this.ask({ question, history, needs }) : null;
@@ -479,7 +515,228 @@ export class AskPanel {
     return card;
   }
 
+  /* --------------------------------------------------- memory and past chats */
+
+  /**
+   * The conversation as the guide is told it: every question, every answer
+   * with what it showed (numbered, as the visitor saw them), the ministries
+   * opened and the need opened under one — newest last. The function keeps
+   * as much of the end of it as fits.
+   */
+  #context() {
+    const out = [];
+    const needLine = (n) => `${n.title} — ${n.ministryName}, ${[n.city, n.country].filter(Boolean).join(", ")} [id ${n.id}]`;
+    const webLine = (w) =>
+      `${w.title} — ${w.org || w.name}${w.town ? `, ${w.town}` : ""} (found on their website, not on Terra${w.email ? `; email ${w.email}` : ""}${w.summary ? `; ${w.summary}` : ""})`;
+    for (const t of this.turns) {
+      if (t.pending || t.role === "flow") continue;
+      if (t.role === "user") {
+        out.push({ role: "user", text: t.text });
+        continue;
+      }
+      if (t.role === "place") {
+        const m = this.net.ministryById.get(t.ministry.id) ?? t.ministry;
+        const needs = (m.needs ?? []).map((n, i) => `  ${i + 1}. ${needLine(n)}`).join("\n");
+        const opened = t.open && this.net.needById?.(t.open);
+        out.push({
+          role: "assistant",
+          text: [
+            `[Showed the ministry ${m.name}, ${[m.city, m.country].filter(Boolean).join(", ")}${m.blurb ? `: ${m.blurb}` : ""}]`,
+            needs ? `Its open needs:\n${needs}` : "",
+            opened ? `The visitor opened: ${opened.title}` : "",
+          ].filter(Boolean).join("\n"),
+        });
+        continue;
+      }
+      const shown = t.picks.map((p, i) => `  ${i + 1}. ${p.web ? webLine(p.web) : needLine(p.need)}`).join("\n");
+      const opened = t.picks.find((p) => keyOf(p) === t.open);
+      out.push({
+        role: "assistant",
+        text: [
+          t.nearby ? "[Searched near the visitor for local churches and ministries]" : "",
+          t.text,
+          shown ? `Shown to the visitor:\n${shown}` : "",
+          opened ? `The visitor opened: ${opened.web ? opened.web.title : opened.need.title}` : "",
+        ].filter(Boolean).join("\n"),
+      });
+    }
+    return out;
+  }
+
+  /** The Terra needs the conversation has shown, newest first. */
+  #referenced() {
+    const seen = new Set();
+    const out = [];
+    const add = (n) => {
+      const fresh = n && (this.net.needById?.(n.id) ?? n);
+      if (fresh && !seen.has(fresh.id)) seen.add(fresh.id) && out.push(fresh);
+    };
+    for (const t of [...this.turns].reverse()) {
+      if (t.role === "place") (this.net.ministryById.get(t.ministry.id)?.needs ?? []).forEach(add);
+      else if (t.picks) t.picks.forEach((p) => add(p.need));
+    }
+    return out.slice(0, 60);
+  }
+
+  /** The chat as data, for chats.js; null while there is nothing to keep. */
+  #serial() {
+    const turns = [];
+    for (const t of this.turns) {
+      if (t.pending || t.role === "flow") continue;
+      if (t.role === "user") turns.push({ role: "user", text: t.text, local: !!t.local });
+      else if (t.role === "place") turns.push({ role: "place", ministry: t.ministry.id });
+      else
+        turns.push({
+          role: "assistant",
+          text: t.text,
+          local: !!t.local,
+          nearby: !!t.nearby,
+          fallback: !!t.fallback,
+          picks: t.picks.map((p) => (p.web ? { web: p.web, why: p.why, key: p.key } : { need: p.need.id, why: p.why })),
+        });
+    }
+    if (!turns.some((t) => t.role === "user" || t.role === "place")) return null;
+    const first = turns.find((t) => t.role === "user");
+    const place = turns.find((t) => t.role === "place");
+    const title = first?.text ?? this.net.ministryById.get(place?.ministry)?.name ?? "Conversation";
+    const last = [...turns].reverse().find((t) => t.role === "assistant" && t.text);
+    return { id: this.chatId, title: title.slice(0, 80), preview: (last?.text ?? "").slice(0, 140), turns };
+  }
+
+  #save() {
+    const chat = this.#serial();
+    if (!chat) return;
+    // Only a real change moves it up the list: re-rendering an old chat to
+    // read it is not using it.
+    const json = JSON.stringify(chat.turns);
+    if (json === this.savedJson) return;
+    this.savedJson = json;
+    saveChat({ ...chat, updated: Date.now() });
+  }
+
+  /** A saved chat, back in the thread: its needs and ministries as they are now. */
+  #load(id) {
+    const chat = getChat(id);
+    if (!chat) return;
+    const turns = [];
+    for (const t of chat.turns) {
+      if (t.role === "user") turns.push({ role: "user", text: t.text, local: t.local });
+      else if (t.role === "place") {
+        const m = this.net.ministryById.get(t.ministry);
+        if (m) turns.push({ role: "place", ministry: m, open: null });
+      } else {
+        const picks = (t.picks ?? [])
+          .map((p) => (p.web ? { web: p.web, why: p.why, key: p.key } : { need: this.net.needById?.(p.need), why: p.why }))
+          .filter((p) => p.web || p.need);
+        turns.push({ role: "assistant", text: t.text, picks, local: t.local, nearby: t.nearby, fallback: t.fallback });
+      }
+    }
+    this.chatId = chat.id;
+    this.savedJson = JSON.stringify(chat.turns);
+    this.localTurn = null;
+    this.busy = false;
+    this.active = null;
+    this.turns = turns;
+    this.#closeHistory();
+    this.render();
+    // The pins of its last answer light up again.
+    const last = [...turns].reverse().find((t) => t.role === "assistant" && t.picks?.length);
+    this.onResults?.(last ? last.picks.filter((p) => p.need).map((p) => p.need) : []);
+  }
+
+  #toggleHistory() {
+    if (this.root.classList.contains("is-history")) this.#closeHistory();
+    else this.#openHistory();
+  }
+
+  #openHistory() {
+    this.#show();
+    this.root.classList.remove("is-min");
+    this.root.classList.add("is-history");
+    this.history.hidden = false;
+    this.head.querySelector(".ask__hist-btn").setAttribute("aria-expanded", "true");
+    this.#renderHistory();
+  }
+
+  #closeHistory() {
+    if (!this.root.classList.contains("is-history")) return;
+    this.root.classList.remove("is-history");
+    this.history.hidden = true;
+    this.head.querySelector(".ask__hist-btn").setAttribute("aria-expanded", "false");
+  }
+
+  #renderHistory() {
+    const chats = listChats();
+    const day = 864e5;
+    const today = new Date().setHours(0, 0, 0, 0);
+    const group = (t) => (t >= today ? "Today" : t >= today - day ? "Yesterday" : t >= today - 7 * day ? "Previous 7 days" : t >= today - 30 * day ? "Previous 30 days" : "Older");
+    const when = (t) => {
+      const d = new Date(t);
+      if (t >= today) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      if (t >= today - 7 * day) return d.toLocaleDateString([], { weekday: "short" });
+      return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    };
+    clear(this.history);
+    this.history.appendChild(
+      h("div", { class: "ask__hist-head" },
+        h("b", { text: "Past chats" }),
+        h("button", { class: "ask__hist-new", type: "button", onclick: () => this.reset() }, fresh(), "New chat"),
+      ),
+    );
+    if (!chats.length) {
+      this.history.appendChild(
+        h("div", { class: "ask__hist-empty" },
+          clock(),
+          h("b", { text: "No past chats yet" }),
+          h("p", { text: "Your conversations with Terra are kept here, in this browser, so you can pick one up again." }),
+        ),
+      );
+      return;
+    }
+    let heading = "";
+    for (const c of chats) {
+      const g = group(c.updated);
+      if (g !== heading) {
+        heading = g;
+        this.history.appendChild(h("div", { class: "ask__hist-group", text: g }));
+      }
+      const row = h(
+        "div",
+        { class: `ask__hist-row${c.id === this.chatId ? " is-current" : ""}` },
+        h("button", { class: "ask__hist-open", type: "button", onclick: () => this.#load(c.id) },
+          h("span", { class: "ask__hist-title", text: c.title }),
+          c.preview ? h("span", { class: "ask__hist-preview", text: c.preview }) : null,
+        ),
+        h("span", { class: "ask__hist-when", text: when(c.updated) }),
+        h("button", {
+          class: "ask__hist-del",
+          type: "button",
+          title: "Delete chat",
+          "aria-label": `Delete “${c.title}”`,
+          onclick: () => {
+            deleteChat(c.id);
+            // The open one deleted: the thread empties with it, rather than
+            // saving it straight back.
+            if (c.id === this.chatId) {
+              this.chatId = newChatId();
+              this.savedJson = null;
+              this.localTurn = null;
+              this.turns = [];
+              this.active = null;
+              this.render();
+              this.onResults?.([]);
+            }
+            this.#renderHistory();
+          },
+        }, bin()),
+      );
+      this.history.appendChild(row);
+    }
+  }
+
   reset() {
+    this.#closeHistory();
+    this.chatId = newChatId();
     this.localTurn = null;
     this.turns = [];
     this.active = null;
@@ -612,8 +869,10 @@ export class AskPanel {
         mail
           ? h("a", { class: "btn btn--accent btn--serve", href: mail }, mailIcon(), "Email them")
           : h("a", { class: "btn btn--accent btn--serve", href: w.page, target: "_blank", rel: "noopener noreferrer" }, "Visit their page"),
-        // A web find has no place on the map unless the map also knew it.
-        Number.isFinite(w.lat) ? h("button", { class: "ask__ghost", type: "button", onclick: () => this.onPlace?.(w) }, icons.pin(), "Show on map") : null,
+        // Found by its address, or by its name in the town for a web find.
+        Number.isFinite(w.lat) || w.address || w.town
+          ? h("button", { class: "ask__ghost", type: "button", onclick: () => this.onPlace?.(w) }, icons.pin(), "Show on map")
+          : null,
       ),
       h("p", { class: "ask__source", text: `Found on ${host || "their website"} — details may have changed, so check with them before you go.` }),
     );
@@ -772,6 +1031,7 @@ export class AskPanel {
 
     // Only the answer being written hops; the guide in the header keeps still.
     this.sendBtn.disabled = this.busy;
+    this.#save();
     if (keepScroll) {
       this.thread.scrollTop = scroll;
       return;
