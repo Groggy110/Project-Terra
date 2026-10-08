@@ -2,7 +2,7 @@
  * The shell: wires the globe to the chrome, the filters to both, and keeps the
  * breadcrumb honest about where you are.
  */
-import { Globe } from "../globe/globe.js";
+import { Globe, MINISTRY_DIST } from "../globe/globe.js";
 import { clamp, smoothstep } from "../globe/geo.js";
 import { Network, emptyQuery, queryIsEmpty } from "../data/network.js";
 import { Board } from "./board.js";
@@ -181,7 +181,8 @@ export class App {
         this.selected = m;
         this.globe?.select(m.id);
         this.globe?.setSpin(false);
-        this.globe?.focus(m, { zoom: 1 });
+        // In close over the city, and only ever in (Globe.focus).
+        this.globe?.focus(m, { dist: MINISTRY_DIST });
       },
       // A find from a local organisation's website: the globe goes to its
       // address and its marker is lit and named. null when its card is closed.

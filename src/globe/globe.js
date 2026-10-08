@@ -126,6 +126,16 @@ function wantsHd(renderer) {
 }
 
 /**
+ * How close "Show on map" comes down, in Earth radii from the centre. A place
+ * the serve-locally guide found has a street address, so it is shown from
+ * about two kilometres up, buildings and all; a ministry's point is its city,
+ * so it is shown from about twenty-five, the city filling the frame. Both
+ * far below the zoom ladder's close end (STYLE.camera.minDist, ~90 km).
+ */
+export const PLACE_DIST = 1.0003;
+export const MINISTRY_DIST = 1.004;
+
+/**
  * Below this height (in Earth radii, about 130 km) the shader locates every
  * pixel by its own ray against the true sphere (earth.frag.glsl, uPrec). Above
  * it the mesh and plain floats are fine, and the cheaper path is kept.
@@ -972,7 +982,7 @@ export class Globe {
   }
 
   /** Frames a ministry: close enough to read its city, not so close it floats. */
-  focus(target, { zoom = 0.62, ms } = {}) {
+  focus(target, { zoom = 0.62, dist, ms } = {}) {
     if (!target) return;
     const from = this.controls.zoom;
     const hop = this.controls.angleTo(target.lat, target.lon);
@@ -980,8 +990,12 @@ export class Globe {
       lat: target.lat,
       lon: target.lon,
       // Never further out than now: below the ladder's end zoom reads 1, and
-      // "at least this close" must not lift someone off the street.
-      dist: Math.min(distForZoom(Math.max(zoom, from)), this.controls.target.dist),
+      // "at least this close" must not lift someone off the street. `dist`
+      // asks for a height below the ladder outright.
+      dist: Math.min(dist ?? distForZoom(Math.max(zoom, from)), this.controls.target.dist),
+      // Nor on the way: the default flight bows outward over a long hop, and
+      // going to a ministry read as the map backing away before it came in.
+      arc: 0,
       ms: ms ?? clamp(700 + hop * 6, 700, 1750),
     });
     // Tiles after the landing, not during it; see frameArea.
@@ -993,25 +1007,21 @@ export class Globe {
   }
 
   /**
-   * Down onto one building, the way a maps app does it: up just far enough
-   * that where the camera is and where it is going are both on screen,
-   * across, and down to street level over the place — one unbroken move,
-   * slower the further it has to go. Already there, it settles in place.
+   * Down onto one building: across and in, in one unbroken move, and never
+   * out. It used to rise first, the way a maps app does, so both ends were on
+   * screen — but these are places the guide found near where the camera
+   * already is, and the lift read as the map pulling away from the thing
+   * just asked for. Already closer than street level, it keeps its height.
    */
-  flyToPlace({ lat, lon }, { zoom = 0.97 } = {}) {
+  flyToPlace({ lat, lon }, { dist = PLACE_DIST } = {}) {
     const from = this.controls.dist - 1;
-    const to = distForZoom(zoom) - 1;
-    const span = this.controls.angleTo(lat, lon) * DEG;
-    // The height at which the span fills about two thirds of the screen.
-    const need = span / (2 * Math.tan(this.camera.fov * DEG * 0.5) * 0.66);
-    const rise = Math.max(0, Math.log(Math.max(need, from, to)) - (Math.log(from) + Math.log(to)) / 2);
-    this.controls.flyTo({
-      lat,
-      lon,
-      dist: to + 1,
-      rise,
-      ms: clamp(1000 + rise * 380, 1000, 2400),
-    });
+    const to = Math.min(dist - 1, from);
+    const hop = this.controls.angleTo(lat, lon);
+    // Slower the further it comes down (in logs: each halving of the height
+    // is the same distance travelled) and the further it goes across.
+    const down = Math.log(Math.max(from / to, 1));
+    const ms = clamp(1000 + down * 150 + hop * 8, 1000, 2400);
+    this.controls.flyTo({ lat, lon, dist: to + 1, arc: 0, ms });
   }
 
   /**
