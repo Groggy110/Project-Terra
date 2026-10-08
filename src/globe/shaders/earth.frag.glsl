@@ -266,7 +266,13 @@ void main() {
     );
     fine = max(fine, smoothstep(0.9, 0.99, solid));
     mask = mix(mask, fine, inWin);
-    ink = mix(ink, texture2D(uLines, c), inWin);
+    // The window's ink is uploaded premultiplied (VectorPainter), which is
+    // what lets the worker hand its paint over without a copy, and filters
+    // without the dark fringe an unpremultiplied stroke picks up from the
+    // empty texels beside it. Back to straight colour to meet the base tier.
+    vec4 fineInk = texture2D(uLines, c);
+    fineInk.rgb = fineInk.a > 0.0 ? fineInk.rgb / fineInk.a : vec3(0.0);
+    ink = mix(ink, fineInk, inWin);
   }
 
   // ---- streamed imagery -------------------------------------------------

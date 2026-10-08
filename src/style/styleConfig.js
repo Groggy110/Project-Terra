@@ -83,10 +83,12 @@ export const STYLE = {
     autoRotate: true,
     /** 1 turns the world eastward (the camera travels east), -1 westward. */
     direction: 1,
-    /** Drift rate in pixels of ground per second, so it reads the same at every zoom. */
-    spinPx: 18,
+    /** Drift rate in pixels of ground per second, so it reads the same at every zoom.
+     *  Slow: at the working view it comes to about the landing stage's own
+     *  turn (STAGE.spin, 1.4°/s), so stepping off the stage never speeds it up. */
+    spinPx: 10,
     /** Cap, in degrees a second — what spinPx asks for at the whole globe. */
-    spinMax: 3.2,
+    spinMax: 1.6,
     /** Quiet seconds after a deliberate move before the drift picks up again. */
     spinResume: 3.4,
     /** Zoom band over which the drift fades out. */

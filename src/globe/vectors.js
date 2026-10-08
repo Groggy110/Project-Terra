@@ -22,11 +22,10 @@
  */
 import { CanvasTexture, LinearFilter, LinearMipmapLinearFilter, Vector4 } from "three";
 
-import { boundsContain, clamp, DEG, smoothstep, wrapDelta } from "./geo.js";
+import { boundsContain, clamp, DEG, wrapDelta } from "./geo.js";
 import { STYLE } from "../style/styleConfig.js";
+import { fadeFor, loadSet, paintLines, paintMask } from "./vectorRaster.js";
 
-const LINE_LAYERS = ["coast", "borders", "rivers"];
-const POLY_LAYERS = ["land", "lakes"];
 const TEXEL_BUDGET = 7.2e6;
 const MIN_SIDE = 256;
 const MAX_SIDE = 4096;
@@ -48,39 +47,6 @@ const BASE_FADE = { coast: 1, borders: 0.5, rivers: 0.22, lakeEdge: 0.5 };
 
 /* ------------------------------------------------------------------ store */
 
-function parseLines(buffer) {
-  const head = new DataView(buffer);
-  const magic = String.fromCharCode(head.getUint8(0), head.getUint8(1), head.getUint8(2), head.getUint8(3));
-  if (magic !== "TVEC") throw new Error(`bad line magic ${magic}`);
-  const count = head.getUint32(8, true);
-  const total = head.getUint32(12, true);
-  let at = 16;
-  const offsets = new Uint32Array(buffer, at, count + 1);
-  at += 4 * (count + 1);
-  const boxes = new Float32Array(buffer, at, count * 4);
-  at += 16 * count;
-  const coords = new Float32Array(buffer, at, total * 2);
-  return { kind: "lines", count, offsets, boxes, coords };
-}
-
-function parsePolys(buffer) {
-  const head = new DataView(buffer);
-  const magic = String.fromCharCode(head.getUint8(0), head.getUint8(1), head.getUint8(2), head.getUint8(3));
-  if (magic !== "TPOL") throw new Error(`bad poly magic ${magic}`);
-  const polyCount = head.getUint32(8, true);
-  const ringCount = head.getUint32(12, true);
-  const total = head.getUint32(16, true);
-  let at = 20;
-  const polyOffsets = new Uint32Array(buffer, at, polyCount + 1);
-  at += 4 * (polyCount + 1);
-  const ringOffsets = new Uint32Array(buffer, at, ringCount + 1);
-  at += 4 * (ringCount + 1);
-  const boxes = new Float32Array(buffer, at, polyCount * 4);
-  at += 16 * polyCount;
-  const coords = new Float32Array(buffer, at, total * 2);
-  return { kind: "polys", count: polyCount, polyOffsets, ringOffsets, boxes, coords };
-}
-
 export class VectorStore {
   constructor(base = "/vectors") {
     this.base = base;
@@ -98,18 +64,7 @@ export class VectorStore {
     if (this.pending.has(scale)) return this.pending.get(scale);
 
     const job = (async () => {
-      const names = [...LINE_LAYERS, ...POLY_LAYERS];
-      const buffers = await Promise.all(
-        names.map(async (layer) => {
-          const res = await fetch(`${this.base}/${scale}-${layer}.bin`);
-          if (!res.ok) throw new Error(`${scale}-${layer}.bin -> ${res.status}`);
-          return res.arrayBuffer();
-        }),
-      );
-      const set = {};
-      names.forEach((layer, i) => {
-        set[layer] = LINE_LAYERS.includes(layer) ? parseLines(buffers[i]) : parsePolys(buffers[i]);
-      });
+      const set = await loadSet(this.base, scale);
       this.scales.set(scale, set);
       this.pending.delete(scale);
       return set;
@@ -165,6 +120,9 @@ export class VectorPainter {
       // is derived from latitude; three would otherwise upload them flipped.
       t.flipY = false;
     }
+    // Premultiplied, from the page's canvas and the worker's bitmaps alike
+    // (earth.frag divides it back out), so both paths upload the same texels.
+    this.lineTexture.premultiplyAlpha = true;
     for (const t of [this.lineTexture, this.maskTexture]) {
       t.minFilter = LinearFilter;
       t.magFilter = LinearFilter;
@@ -186,6 +144,43 @@ export class VectorPainter {
     this.scale = "50m";
     this.theme = "dark";
     this.stats = { paints: 0, lastMs: 0, size: "0x0", features: 0 };
+
+    // Every paint after the first is made in a worker (vectorWorker.js) where
+    // the browser can draw into a canvas off the page; the first is made here,
+    // so the planet's first frame has its land and coast already in place.
+    this.gen = 0;
+    this.everPainted = false;
+    this.inFlight = null;
+    this.jobs = 0;
+    /** Called once a worker paint has been swapped in. */
+    this.onPaint = null;
+    try {
+      if (typeof OffscreenCanvas === "function" && typeof createImageBitmap === "function") {
+        this.worker = new Worker(new URL("./vectorWorker.js", import.meta.url), { type: "module" });
+        this.worker.onmessage = (e) => this.#landed(e.data);
+        this.worker.onerror = () => {
+          // Painted here again from now on: slower, but never blank.
+          this.worker = null;
+          this.inFlight = null;
+        };
+      }
+    } catch {
+      this.worker = null;
+    }
+  }
+
+  /**
+   * The window painted, or null when it must be painted again. Setting it to
+   * null (a theme, a resolution, a finer set) also voids any worker paint
+   * already under way, which was planned for what is now out of date.
+   */
+  get painted() {
+    return this._painted ?? null;
+  }
+
+  set painted(v) {
+    if (v === null) this.gen++;
+    this._painted = v;
   }
 
   /**
@@ -271,7 +266,7 @@ export class VectorPainter {
       w: BASE_W,
       h: BASE_H,
     };
-    this.#paintLines(set, view, inkFor(theme), 0, 1, BASE_FADE, this.baseCtx);
+    paintLines(this.baseCtx, set, view, inkFor(theme), BASE_FADE, 1);
     this.baseTexture.needsUpdate = true;
     this.baseTheme = theme;
     return true;
@@ -281,13 +276,54 @@ export class VectorPainter {
    * Rasterises `bounds` at one texel per device pixel of `pxPerDeg`. If that
    * exceeds the budget the window narrows - longitude first, since longitude
    * is what the limb crushes - rather than dropping resolution.
+   *
+   * Once there is a window on the globe, the paint goes to the worker and this
+   * returns at once: true when it was sent, false while one is still being
+   * painted (the caller simply asks again next pass). The new window replaces
+   * the old one when it lands (#landed), ink, mask and window in one step.
    */
   repaint(bounds, pxPerDeg, { theme = "dark", quality = 1, pad = 1.28, centre } = {}) {
     const scale = VectorPainter.scaleFor(pxPerDeg);
     const set = this.store.get(scale) || this.store.get("50m");
     if (!set) return false;
+    const plan = this.#plan(bounds, pxPerDeg, { quality, pad, centre });
+    plan.scale = this.store.get(scale) ? scale : "50m";
+    plan.theme = theme;
+    const style = inkFor(theme);
+    const fade = fadeFor(pxPerDeg);
+
+    if (this.worker && this.everPainted) {
+      if (this.inFlight) return false;
+      const id = ++this.jobs;
+      this.inFlight = { id, gen: this.gen, plan, t0: performance.now() };
+      this.worker.postMessage({
+        id,
+        base: this.store.base,
+        scale: plan.scale,
+        view: plan.view,
+        style,
+        fade,
+        texelPerPx: plan.texelPerPx,
+      });
+      return true;
+    }
 
     const t0 = performance.now();
+    const { w, h } = plan.view;
+    if (this.lines.width !== w || this.lines.height !== h) {
+      this.lines.width = this.mask.width = w;
+      this.lines.height = this.mask.height = h;
+    }
+    let features = paintMask(this.maskCtx, set, plan.view);
+    features += paintLines(this.lineCtx, set, plan.view, style, fade, plan.texelPerPx);
+    this.#swap(this.lineTexture, this.lines);
+    this.#swap(this.maskTexture, this.mask);
+    this.#commit(plan, features, performance.now() - t0);
+    return true;
+  }
+
+  /** The window, canvas size and texel scale for a paint. */
+  #plan(bounds, pxPerDeg, { quality, pad, centre }) {
     let win = padBounds(bounds, pad);
     const lonMid = centre ? centre.lon : win.lonMin + win.lonSpan * 0.5;
     const latMid = centre ? centre.lat : win.latMin + win.latSpan * 0.5;
@@ -323,20 +359,6 @@ export class VectorPainter {
     h = clamp(Math.min(Math.ceil(h / QUANT) * QUANT, MAX_SIDE), MIN_SIDE / 2, MAX_SIDE);
     win = recentre(win, w / (density * cosLat), h / density, lonMid, latMid);
 
-    if (this.lines.width !== w || this.lines.height !== h) {
-      this.lines.width = this.mask.width = w;
-      this.lines.height = this.mask.height = h;
-      // In WebGL2 three allocates immutable storage for a texture on its first
-      // upload (texStorage2D) and thereafter only writes into it with
-      // texSubImage2D. A resized canvas can therefore never change the
-      // texture's dimensions - later repaints would keep uploading into the
-      // original allocation, so the GPU would still be holding the very first
-      // window's pixels. Dropping the GPU texture forces a fresh allocation.
-      this.lineTexture.dispose();
-      this.maskTexture.dispose();
-    }
-
-    const style = inkFor(theme);
     const view = {
       lonMin: win.lonMin,
       latMax: win.latMin + win.latSpan,
@@ -345,79 +367,71 @@ export class VectorPainter {
       w,
       h,
     };
-    const texelPerPx =
-      (w / (win.lonSpan * density * cosLat) + h / (win.latSpan * density)) * 0.5;
+    const texelPerPx = (w / (win.lonSpan * density * cosLat) + h / (win.latSpan * density)) * 0.5;
+    return { win, view, texelPerPx, density, quality, centre: { lat: latMid, lon: lonMid } };
+  }
 
-    let features = 0;
-    features += this.#paintMask(set, view);
-    features += this.#paintLines(set, view, style, pxPerDeg, texelPerPx);
+  /** A worker paint arriving: swapped in, unless it was voided on the way. */
+  #landed(msg) {
+    const job = this.inFlight;
+    if (!job || job.id !== msg.id) {
+      msg.lines?.close();
+      msg.mask?.close();
+      return;
+    }
+    this.inFlight = null;
+    if (msg.error || job.gen !== this.gen) {
+      msg.lines?.close();
+      msg.mask?.close();
+      if (msg.error) console.warn(`[terra] vector paint failed: ${msg.error}`);
+      return;
+    }
+    this.#swap(this.lineTexture, msg.lines);
+    this.#swap(this.maskTexture, msg.mask);
+    // Its own drawing time, not the round trip: the page reads it to judge
+    // how coarse a paint mid-gesture should be.
+    this.#commit(job.plan, msg.features, msg.ms);
+    this.onPaint?.();
+  }
 
-    this.lineTexture.needsUpdate = true;
-    this.maskTexture.needsUpdate = true;
+  /**
+   * Points a texture at a new picture. In WebGL2 three allocates immutable
+   * storage for a texture on its first upload (texStorage2D) and thereafter
+   * only writes into it with texSubImage2D, so a picture of another size
+   * needs the GPU texture dropped and allocated afresh — otherwise later
+   * paints would keep uploading into the first window's allocation.
+   */
+  #swap(tex, image) {
+    const old = tex.image;
+    if (!old || old.width !== image.width || old.height !== image.height) tex.dispose();
+    tex.image = image;
+    tex.needsUpdate = true;
+    // A bitmap that has been replaced is never drawn again; its memory goes now.
+    if (old !== image && typeof ImageBitmap !== "undefined" && old instanceof ImageBitmap) old.close();
+  }
+
+  #commit(plan, features, ms) {
+    const { win } = plan;
     this.window.set(
       (win.lonMin + 180) / 360,
       0.5 - (win.latMin + win.latSpan) / 180,
       win.lonSpan / 360,
       win.latSpan / 180,
     );
-    this.painted = win;
-    this.paintedCentre = { lat: latMid, lon: lonMid };
-    this.paintedDensity = density;
-    this.scale = scale;
-    this.theme = theme;
-    this.paintedQuality = quality;
+    this._painted = win;
+    this.everPainted = true;
+    this.paintedCentre = plan.centre;
+    this.paintedDensity = plan.density;
+    this.scale = plan.scale;
+    this.theme = plan.theme;
+    this.paintedQuality = plan.quality;
     this.stats = {
       paints: this.stats.paints + 1,
-      lastMs: Math.round((performance.now() - t0) * 10) / 10,
-      size: `${w}x${h}`,
+      lastMs: Math.round(ms * 10) / 10,
+      size: `${plan.view.w}x${plan.view.h}`,
       features,
-      scale,
+      scale: plan.scale,
     };
-    return true;
-  }
-
-  /** White land, black water - the crisp replacement for the raster mask. */
-  #paintMask(set, view) {
-    const ctx = this.maskCtx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, view.w, view.h);
-    ctx.fillStyle = "#fff";
-    let n = fillPolys(ctx, set.land, view);
-    ctx.fillStyle = "#000";
-    n += fillPolys(ctx, set.lakes, view);
-    return n;
-  }
-
-  #paintLines(set, view, style, pxPerDeg, texelPerPx, fadeOverride, target) {
-    const ctx = target || this.lineCtx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, view.w, view.h);
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-
-    // Detail arrives with zoom: at a whole-globe view the raster already
-    // carries the coast, and hairline borders and rivers would only add fizz.
-    const fade = fadeOverride || {
-      coast: 0.34 + 0.66 * smoothstep(4, 13, pxPerDeg),
-      borders: smoothstep(5, 13, pxPerDeg),
-      rivers: smoothstep(7, 20, pxPerDeg),
-      lakeEdge: smoothstep(5, 14, pxPerDeg),
-    };
-
-    let n = 0;
-    const draw = (data, s, weight, isPoly) => {
-      if (weight <= 0.01 || !data) return;
-      ctx.strokeStyle = `rgba(${s.color},${(s.alpha * weight).toFixed(3)})`;
-      ctx.lineWidth = Math.max(s.width * texelPerPx, 0.6);
-      n += isPoly ? strokePolys(ctx, data, view) : strokeLines(ctx, data, view);
-    };
-
-    draw(set.rivers, style.rivers, fade.rivers, false);
-    draw(set.lakes, style.lakeEdge, fade.lakeEdge, true);
-    draw(set.borders, style.borders, fade.borders, false);
-    draw(set.coast, style.coast, fade.coast, false);
-    return n;
   }
 }
 
@@ -458,95 +472,3 @@ export function padBounds(b, pad) {
   };
 }
 
-/** Longitude shifts that could bring a feature into the window. */
-const OFFSETS = [0, -360, 360];
-
-function overlaps(boxes, i, view, lonMax, latMin) {
-  const b = i * 4;
-  const minLat = boxes[b + 1];
-  const maxLat = boxes[b + 3];
-  if (maxLat < latMin || minLat > view.latMax) return null;
-  const minLon = boxes[b];
-  const maxLon = boxes[b + 2];
-  for (let k = 0; k < 3; k++) {
-    const off = OFFSETS[k];
-    if (maxLon + off >= view.lonMin && minLon + off <= lonMax) return off;
-  }
-  return null;
-}
-
-function strokeLines(ctx, data, view) {
-  const { count, offsets, boxes, coords } = data;
-  const lonMax = view.lonMin + view.w / view.kx;
-  const latMin = view.latMax - view.h / view.ky;
-  let drawn = 0;
-  ctx.beginPath();
-  for (let i = 0; i < count; i++) {
-    const off = overlaps(boxes, i, view, lonMax, latMin);
-    if (off === null) continue;
-    const start = offsets[i];
-    const end = offsets[i + 1];
-    if (end - start < 2) continue;
-    for (let p = start; p < end; p++) {
-      const x = (coords[p * 2] + off - view.lonMin) * view.kx;
-      const y = (view.latMax - coords[p * 2 + 1]) * view.ky;
-      if (p === start) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    drawn++;
-  }
-  ctx.stroke();
-  return drawn;
-}
-
-function ringPath(ctx, data, i, off, view) {
-  const { polyOffsets, ringOffsets, coords } = data;
-  const rStart = polyOffsets[i];
-  const rEnd = polyOffsets[i + 1];
-  for (let r = rStart; r < rEnd; r++) {
-    const start = ringOffsets[r];
-    const end = ringOffsets[r + 1];
-    if (end - start < 3) continue;
-    for (let p = start; p < end; p++) {
-      const x = (coords[p * 2] + off - view.lonMin) * view.kx;
-      const y = (view.latMax - coords[p * 2 + 1]) * view.ky;
-      if (p === start) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-  }
-}
-
-function fillPolys(ctx, data, view) {
-  if (!data) return 0;
-  const lonMax = view.lonMin + view.w / view.kx;
-  const latMin = view.latMax - view.h / view.ky;
-  let drawn = 0;
-  for (let i = 0; i < data.count; i++) {
-    const off = overlaps(data.boxes, i, view, lonMax, latMin);
-    if (off === null) continue;
-    // One path per polygon, filled even-odd, so islands keep their lakes
-    // without depending on ring winding being consistent upstream.
-    ctx.beginPath();
-    ringPath(ctx, data, i, off, view);
-    ctx.fill("evenodd");
-    drawn++;
-  }
-  return drawn;
-}
-
-function strokePolys(ctx, data, view) {
-  if (!data) return 0;
-  const lonMax = view.lonMin + view.w / view.kx;
-  const latMin = view.latMax - view.h / view.ky;
-  let drawn = 0;
-  ctx.beginPath();
-  for (let i = 0; i < data.count; i++) {
-    const off = overlaps(data.boxes, i, view, lonMax, latMin);
-    if (off === null) continue;
-    ringPath(ctx, data, i, off, view);
-    drawn++;
-  }
-  ctx.stroke();
-  return drawn;
-}

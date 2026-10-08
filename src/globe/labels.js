@@ -28,6 +28,25 @@ function cityRankLimit(z) {
 const estWidth = (text, per) => text.length * per + 14;
 
 /**
+ * Every marker fades: in over FADE_IN_S when a pass first draws it, out over
+ * FADE_OUT_S once passes stop drawing it — still riding its spot on the globe
+ * while it goes. Nothing on the layer appears or disappears in a single frame.
+ */
+const FADE_IN_S = 0.45;
+const FADE_OUT_S = 0.38;
+/** How quickly a marker's own opacity (dimming, the limb) follows its target. */
+const BASE_TAU_S = 0.12;
+/**
+ * New markers built per pass. Coming in past a step of pinMinPop asks for
+ * dozens of pins at once, and building them all in one frame was a stall in
+ * the middle of the zoom; spread over a few frames they also arrive as a
+ * ripple rather than a flash.
+ */
+const BUILDS_PER_PASS = 8;
+
+const ease = (t) => t * t * (3 - 2 * t);
+
+/**
  * The smallest city whose ministries get a pin at zoom `z`. Out at the whole
  * planet only the great cities carry one, so a network of hundreds reads as
  * a map rather than a rash; each step in brings the next size of city in,
@@ -40,6 +59,11 @@ function pinMinPop(z) {
   if (z < 0.75) return 300_000;
   return 0;
 }
+
+const smoothstep01 = (t) => {
+  const x = clamp(t, 0, 1);
+  return x * x * (3 - 2 * x);
+};
 
 const fold = (s) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
@@ -84,6 +108,9 @@ export class LabelLayer {
     this.areaEl = null;
     this.found = [];
     this.foundActive = null;
+    /** True while anything is still fading: the globe keeps passes coming. */
+    this.busy = false;
+    this.lastPass = 0;
   }
 
   /** Where the viewer is, drawn as a blue dot; null removes it. */
@@ -177,6 +204,14 @@ export class LabelLayer {
   update(ctx) {
     const { camera, controls, width, height } = ctx;
     this.width = width;
+    const now = performance.now();
+    // A pass after a pause (passes stop while nothing moves) counts as one
+    // frame, so nothing jumps a fifth of its fade on the first pass back.
+    const gap = this.lastPass ? (now - this.lastPass) / 1000 : 0;
+    this.dt = gap > 0.1 ? 1 / 60 : gap;
+    this.lastPass = now;
+    this.builds = BUILDS_PER_PASS;
+    this.starved = false;
     const z = controls.zoom;
     const cap = ctx.capRadius;
     const ppd = controls.pxPerDeg;
@@ -344,15 +379,27 @@ export class LabelLayer {
     // ---- cities ----
     const rankMax = cityRankLimit(z);
     if (rankMax >= 0) {
+      // The names already up are placed first, in rank order, then the rest:
+      // otherwise a pin's plate sliding past would bump a name, a newcomer
+      // would take its room, and the two would trade places all the way
+      // round the turn.
+      const shown = [];
+      const fresh = [];
       for (const c of this.places) {
         if (c.rank > rankMax) break; // sorted by rank, so nothing further qualifies
         if (c.vx * cx + c.vy * cy + c.vz * cz < cosCity) continue;
         const p = projectPoint(c.lat, c.lon, camera, width, height, this.projection);
         if (!p.visible || p.edge < 0.5 || !inView(p)) continue;
-        const w = estWidth(c.name, 7.1);
-        if (!this.#claim(p.x - 3, p.y - 9, w, 19)) continue;
-        const cls = c.capital ? "place place--capital" : "place";
-        this.#place(`p:${c.name}:${c.lon}`, c.name, p, cls, p.edge, true);
+        const key = `p:${c.name}:${c.lon}`;
+        const hit = { c, key, x: p.x, y: p.y, edge: p.edge };
+        (this.nodes.get(key)?.want ? shown : fresh).push(hit);
+      }
+      for (const hit of shown.concat(fresh)) {
+        const w = estWidth(hit.c.name, 7.1);
+        if (!this.#claim(hit.x - 3, hit.y - 9, w, 19)) continue;
+        const cls = hit.c.capital ? "place place--capital" : "place";
+        // Gone by the time the cull takes it, rather than cut off at half.
+        this.#place(hit.key, hit.c.name, hit, cls, smoothstep01((hit.edge - 0.5) / 0.3), true, hit.c);
       }
     }
 
@@ -377,26 +424,55 @@ export class LabelLayer {
         if (placed >= STYLE.labels.countryMax) break;
         const w = estWidth(hit.c.name, 7.4);
         if (!this.#claim(hit.x - w / 2, hit.y - 13, w, 26)) continue;
-        this.#place(`c:${hit.c.name}`, hit.c.name, hit, "place place--country", 0.92 * hit.edge);
+        this.#place(`c:${hit.c.name}`, hit.c.name, hit, "place place--country", 0.92 * smoothstep01((hit.edge - 0.55) / 0.3), false, hit.c);
         placed++;
       }
     }
 
-    // Retire anything that missed this pass. Hiding has to happen on the
-    // first miss, not after a few frames: label passes stop as soon as the
-    // camera settles, so a node left visible would freeze there for good.
+    this.#fade(camera, width, height);
+  }
+
+  /**
+   * Eases every marker toward where this pass wants it: in if it was drawn,
+   * out if it was not. One going out keeps being projected onto its own
+   * ground, so it fades where it stands on the turning globe instead of
+   * freezing in screen space, and is only removed once it is invisible.
+   * `busy` asks the globe for further passes until all of it has landed —
+   * passes otherwise stop as soon as the camera is still.
+   */
+  #fade(camera, width, height) {
+    const dt = this.dt;
+    const kBase = dt > 0 ? 1 - Math.exp(-dt / BASE_TAU_S) : 1;
+    let busy = this.starved;
     for (const [key, node] of this.nodes) {
-      if (this.live.has(key)) continue;
-      if (node.idle === 0) {
-        node.el.classList.remove("is-in", "show-chip");
-        write(node, "opacity", "0");
-        node.el.style.pointerEvents = "none";
+      const want = this.live.has(key);
+      if (want !== node.want) {
+        node.want = want;
+        node.el.style.pointerEvents = want ? "" : "none";
+        if (!want) node.el.classList.remove("show-chip");
       }
-      if (++node.idle > 2) {
+      if (!want) {
+        const p = projectPoint(node.lat, node.lon, camera, width, height, this.projection);
+        // Round the back of the planet there is nothing left to fade.
+        if (!p.visible) node.fade = 0;
+        else node.el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
+      }
+      const target = want ? 1 : 0;
+      if (node.fade !== target) {
+        const step = dt / (want ? FADE_IN_S : FADE_OUT_S);
+        node.fade = want ? Math.min(1, node.fade + step) : Math.max(0, node.fade - step);
+      }
+      if (want) node.shown += (node.base - node.shown) * kBase;
+      if (Math.abs(node.base - node.shown) < 0.004) node.shown = node.base;
+      if (!want && node.fade <= 0) {
         node.el.remove();
         this.nodes.delete(key);
+        continue;
       }
+      write(node, "opacity", (ease(node.fade) * node.shown).toFixed(3));
+      if (node.fade !== target || (want && node.shown !== node.base)) busy = true;
     }
+    this.busy = busy;
   }
 
   /** Greedy no-overlap test with a small breathing gap. */
@@ -425,21 +501,35 @@ export class LabelLayer {
     return true;
   }
 
-  #node(key, build) {
+  /**
+   * The marker for `key`, built if it is new — unless this pass has already
+   * built its share (BUILDS_PER_PASS), in which case it waits for the next
+   * and this returns null. `base` is its opacity before the fade.
+   */
+  #node(key, build, lat, lon, base) {
     let node = this.nodes.get(key);
     if (!node) {
-      node = { el: build(), idle: 0 };
+      if (this.builds <= 0) {
+        this.starved = true;
+        return null;
+      }
+      this.builds--;
+      node = { el: build(), fade: 0, want: false, base, shown: base, lat, lon };
+      node.el.style.opacity = "0";
+      node.written = { opacity: "0" };
       this.nodes.set(key, node);
       this.root.appendChild(node.el);
     }
-    if (node.idle) node.el.style.pointerEvents = "";
-    node.idle = 0;
+    node.base = base;
+    node.lat = lat;
+    node.lon = lon;
     this.live.add(key);
     return node;
   }
 
   #pin(m, p, chip, active) {
     const key = `m:${m.id}`;
+    const base = STYLE.markers.opacity * (this.dimmed.has(m.id) ? STYLE.markers.dimOpacity : 1) * clamp(p.edge, 0, 1);
     const node = this.#node(key, () => {
       const el = document.createElement("button");
       el.className = "mark pin";
@@ -460,10 +550,10 @@ export class LabelLayer {
       el.addEventListener("pointerenter", () => this.onPinHover?.(m));
       el.addEventListener("pointerleave", () => this.onPinHover?.(null));
       return el;
-    });
+    }, m.lat, m.lon, base);
+    if (!node) return;
     const el = node.el;
     el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
-    write(node, "opacity", (STYLE.markers.opacity * (this.dimmed.has(m.id) ? STYLE.markers.dimOpacity : 1) * clamp(p.edge, 0, 1)).toFixed(2));
     // A hard stop at the right edge, over the top of the estimate that decided
     // this plate would fit. estWidth measures a string against an average
     // glyph and is occasionally optimistic by a dozen pixels — which on a
@@ -494,9 +584,9 @@ export class LabelLayer {
       name.textContent = f.org || f.name;
       el.append(dot, name);
       return el;
-    });
+    }, f.lat, f.lon, clamp(p.edge, 0, 1));
+    if (!node) return;
     node.el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
-    write(node, "opacity", clamp(p.edge, 0, 1).toFixed(2));
     node.el.classList.toggle("is-active", this.foundActive === f);
     write(node, "zIndex", this.foundActive === f ? "35" : "25");
   }
@@ -513,9 +603,9 @@ export class LabelLayer {
       dot.className = "me__dot";
       el.append(ring, dot);
       return el;
-    });
+    }, this.user.lat, this.user.lon, clamp(p.edge, 0, 1));
+    if (!node) return;
     node.el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
-    write(node, "opacity", clamp(p.edge, 0, 1).toFixed(2));
     // The accuracy circle, at its true size on the ground: a degree of
     // latitude is 111 km. Hidden until it is bigger than the dot, and capped
     // so a city-wide guess does not paint the region blue.
@@ -651,7 +741,7 @@ export class LabelLayer {
     }
   }
 
-  #place(key, name, p, cls, opacity, tick = false) {
+  #place(key, name, p, cls, opacity, tick = false, at = null) {
     const node = this.#node(key, () => {
       const el = document.createElement("div");
       el.className = `mark ${cls}`;
@@ -662,10 +752,10 @@ export class LabelLayer {
       }
       el.appendChild(document.createTextNode(name));
       return el;
-    });
+    }, at?.lat ?? 0, at?.lon ?? 0, clamp(opacity, 0, 1));
+    if (!node) return;
     const el = node.el;
     el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
-    write(node, "opacity", clamp(opacity, 0, 1).toFixed(2));
     el.classList.add("is-in");
   }
 }

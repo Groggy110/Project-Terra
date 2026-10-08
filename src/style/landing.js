@@ -7,9 +7,8 @@
  * between them blends every value that differs over the planet's flight.
  *
  * The landing scene starts as STYLE with LANDING laid over it: only what
- * differs is named there — a wide, soft bloom and a gentler aberration, and a
- * faint blue halo that spreads off the limb rather than the working view's
- * tight grey rim.
+ * differs is named there — nothing, at present, so stepping off the stage
+ * changes where the planet is and never how it looks.
  *
  * The stage (where the planet stands and how big), the flight off it and the
  * headline are not STYLE, but live here too so the style editor can reach
@@ -19,29 +18,13 @@ import { STYLE, STYLE_DEFAULTS } from "./styleConfig.js";
 import { applyStyle, groupOf, mergeInto } from "./applyStyle.js";
 
 export const LANDING = {
-  post: {
-    bloom: { strength: 0.42, radius: 1.8, threshold: 0.42 },
-    chromatic: { amount: 0.0021 },
-    // The landing frames a quarter of the planet across the whole window, so
-    // the imagery is magnified most there; it takes a little more crisping.
-    sharpen: { amount: 0.38 },
-  },
-  themes: {
-    dark: {
-      atmosphere: {
-        halo: {
-          inner: "#798fe6",
-          strength: 0.06,
-          spread: 0.262,
-          falloff: 0.7,
-          bloom: 0.08,
-          bloomSpread: 0.69,
-          rimPower: 8.9,
-          spillPower: 1.9,
-        },
-      },
-    },
-  },
+  // Empty on purpose. The landing used to carry its own look here — a wide
+  // bloom, a stronger sharpen, a softer aberration and a faint blue halo —
+  // and blended into the working one over the planet's flight off the stage.
+  // However smooth the blend, it read as the planet changing colour on the
+  // way into the page. The two scenes now share one look, so the planet that
+  // rises on the landing is the planet you work with. Anything set here (or
+  // in the style editor while the landing shows) still blends as before.
 };
 
 /**

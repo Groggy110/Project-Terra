@@ -59,7 +59,15 @@ export function pickResolution(samples, current) {
   // Dropping frames against its own cadence, or simply slower than ~45fps in
   // absolute terms — the second catches a device with no vsync to drop
   // against, where the ratio alone reads as perfectly healthy.
-  if ((ratio > 1.35 || mean > 22) && i > 0) return RES_STEPS[i - 1];
+  //
+  // Except a steady 30. Chrome's energy saver caps a page at 30fps on
+  // battery, and the flat 33ms frames it produces read as struggling: the
+  // globe stepped down to 55% in the middle of a zoom — the planet going soft
+  // under the camera for frames no resolution could buy back. A cadence
+  // locked to exactly half of 60 is a cap, not a slow GPU (which lands
+  // wherever its work does: 27ms, 41ms).
+  const capped = base > 32 && base < 35 && ratio < 1.12;
+  if ((ratio > 1.35 || (mean > 22 && !capped)) && i > 0) return RES_STEPS[i - 1];
   // Earned back only when it is comfortably keeping up on both measures.
   if (ratio < 1.12 && mean < 19 && i < RES_STEPS.length - 1) return RES_STEPS[i + 1];
   return current;

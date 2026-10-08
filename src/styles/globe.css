@@ -63,24 +63,10 @@ body.globe-in .overlay {
   translate: -4.5px -4.5px;
   cursor: pointer;
   background: none;
-  /* A pin arrives rather than appearing: when the network lands after the
-     planet, and when one comes round the limb. Up from nothing to whatever
-     the label layer has written inline — no fill, so the layer's own opacity
-     (edge fade, dimming) takes over the moment it ends. */
-  animation: pin-in 0.55s var(--ease-out);
-}
-
-@keyframes pin-in {
-  from {
-    opacity: 0;
-    scale: 0.6;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pin {
-    animation: none;
-  }
+  /* A pin arrives and leaves by fading, and the label layer does the fading
+     (labels.js, #fade): it writes the opacity every pass, so a CSS animation
+     or transition here would only fight it — and replayed the pop-in every
+     time a pin came back from being crowded out. */
 }
 
 /* A 10px dot is not a target. The pad is a pseudo-element rather than
@@ -210,8 +196,9 @@ body.globe-in .overlay {
      map uses for it. */
   color: var(--place-color);
   white-space: nowrap;
+  /* Faded by the label layer (labels.js, #fade), which writes the opacity
+     every pass; a transition on top of that only lags it. */
   opacity: 0;
-  transition: opacity 0.35s var(--ease);
   --halo: var(--place-halo);
   text-shadow:
     1px 0 0 var(--halo), -1px 0 0 var(--halo), 0 1px 0 var(--halo), 0 -1px 0 var(--halo),

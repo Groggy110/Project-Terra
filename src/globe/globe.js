@@ -325,6 +325,12 @@ export class Globe {
     // A phone's screen at two texels a point, padded, is under three million;
     // the desktop's budget would have it paint and upload twice that.
     this.painter = new VectorPainter(this.store, this.handheld ? { budget: 3.2e6 } : undefined);
+    // A worker paint has landed: it goes up on the next frame, and that frame
+    // is slow for a reason resolution will not fix.
+    this.painter.onPaint = () => {
+      this.dirty = true;
+      this.skipSample = true;
+    };
     const env = import.meta.env ?? {};
     this.imagery = new ImageryLayer({
       provider: opts.tiles?.provider ?? env.VITE_TILES_PROVIDER ?? "esri",
@@ -1881,6 +1887,16 @@ export class Globe {
       this.#serviceImagery(z);
       this.opts.onCamera?.(z, this.controls);
       this.dirty = false;
+    } else if (this.labels.busy) {
+      // The camera is still but markers are still fading in or out: they
+      // need passes until they land, or they would freeze half-faded.
+      this.labels.update({
+        camera: this.camera,
+        controls: this.controls,
+        width: this.size.w,
+        height: this.size.h,
+        capRadius: this.#bounds().cap,
+      });
     } else if (this.settleTimer > SETTLE_MS && this.settleTimer < SETTLE_MS + 400) {
       this.settleTimer = SETTLE_MS + 500;
       this.#serviceVectors(true);
