@@ -169,6 +169,18 @@ button {
   inset: 0;
   overflow: hidden;
   pointer-events: none;
+  /* The first thing the page does: the sky fades up the moment its picture
+     is decoded (index.html adds sky-in), rather than snapping in whenever
+     the download lands — the opening the planet then rises into. */
+  opacity: 0;
+  transition: opacity 1.6s var(--ease);
+  /* Its own layer, so the fade runs on the compositor through the globe's
+     start-up work rather than waiting on it. */
+  will-change: opacity;
+}
+
+html.sky-in .paper__galaxy {
+  opacity: 1;
 }
 
 .paper__galaxy::before,
@@ -312,10 +324,12 @@ body.hero-out .hero {
     opacity: 1;
     translate: -50% 0;
   }
+  /* No blur on the way out: it would redraw the outline round "anywhere."
+     on every frame of the planet's flight. */
   to {
     opacity: 0;
     translate: -50% calc(var(--title-size) * -0.4);
-    filter: blur(6px);
+    scale: 0.985;
   }
 }
 
@@ -334,14 +348,19 @@ body.hero-out .hero {
       soft blur to sharp, a beat after the one before (--i, in index.html).
       An expo ease, so it moves off quickly and spends its time settling:
       the words arrive rather than slide.
-   2. glow-ignite — once they have landed, the light round the letters
-      swells past its resting strength and settles back, as if the rim light
-      had just caught them.
-   3. glow-breathe and mark-sheen — from then on, a slow breathe in the glow
-      and, every few seconds, a band of light across "anywhere.".
+   2. "anywhere." comes up with them, its colour blooming in behind it as it
+      lands (aura-in).
+   3. From then on, the colour behind it drifts, and every few seconds a band
+      of light crosses it (mark-sheen).
 
-   The glow is animated through a registered number (--glow-k) that the
-   drop-shadows multiply by, so the filter itself never has to change shape. */
+   Everything that moves, moves by transform and opacity, which the GPU does
+   on its own while the planet is drawing. An animated filter, or a custom
+   property a filter or a gradient reads, repaints on the main thread every
+   frame — and the glow round the headline wraps "anywhere."'s outline, whose
+   SVG filter Chrome cannot draw on the GPU, so each such frame redrew it.
+   That was the stutter in the entrance, and "anywhere." arriving late. So
+   the glow holds still (--glow-k stays 1), and "anywhere." rises without the
+   blur the other words have. */
 @property --glow-k {
   syntax: "<number>";
   inherits: true;
@@ -385,33 +404,6 @@ body.hero-out .hero {
   mask-image: linear-gradient(to bottom, #000 38%, rgb(0 0 0 / var(--title-fade, 0.42)) calc(100% - 0.6em));
 }
 
-body.hero-in .hero__title {
-  animation:
-    glow-ignite 2.2s var(--ease) calc(var(--word-lead) + 3 * var(--word-step) + 0.55s) both,
-    glow-breathe 5.5s ease-in-out calc(var(--word-lead) + 3 * var(--word-step) + 2.75s) infinite alternate;
-}
-
-@keyframes glow-ignite {
-  from {
-    --glow-k: 0;
-  }
-  38% {
-    --glow-k: 1.9;
-  }
-  to {
-    --glow-k: 1;
-  }
-}
-
-@keyframes glow-breathe {
-  from {
-    --glow-k: 1;
-  }
-  to {
-    --glow-k: 1.45;
-  }
-}
-
 .hero__line {
   display: block;
 }
@@ -443,6 +435,26 @@ body.hero-in .hero__word {
     opacity: 1;
     transform: none;
     filter: none;
+  }
+}
+
+/* "anywhere." on the same beat, without the blur: its outline is an SVG
+   filter, drawn once into the word's own layer and then only moved. */
+body.hero-in .hero__any .hero__word {
+  animation-name: word-in-glass;
+}
+
+@keyframes word-in-glass {
+  from {
+    opacity: 0;
+    transform: translateY(0.42em) scale(0.965);
+  }
+  55% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -552,24 +564,14 @@ body.hero-in .hero__mark {
    Three layers in the word's own box, back to front:
 
      .hero__aura    a soft cloud of colour — brand blue, violet, cyan and a
-                    touch of rose — each a blurred blob drifting on its own
-                    slow clock, the whole cloud breathing and its hues
-                    turning, so it never repeats the same way twice
+                    touch of rose — in two blurred layers drifting on their
+                    own slow clocks, so the mix never repeats the same way
      .hero__stroke  the word again, as a white outline with a light falloff
      .hero__mark    the coloured word, whose solid fill covers the inner
                     half of the outline, so only the outside edge shows
 
-   Every moving part is a registered custom property, so each animation
-   drives one number and they layer without fighting over a shorthand.
+   The layers only ever move and fade (see "the headline's arrival").
    --title-stroke and --title-aura are the style editor's (HEADLINE). */
-@property --aura-a { syntax: "<percentage>"; inherits: false; initial-value: 22%; }
-@property --aura-b { syntax: "<percentage>"; inherits: false; initial-value: 48%; }
-@property --aura-c { syntax: "<percentage>"; inherits: false; initial-value: 70%; }
-@property --aura-d { syntax: "<percentage>"; inherits: false; initial-value: 88%; }
-@property --aura-y { syntax: "<percentage>"; inherits: false; initial-value: 50%; }
-@property --aura-hue { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
-@property --aura-pulse { syntax: "<number>"; inherits: false; initial-value: 0.8; }
-@property --aura-in { syntax: "<number>"; inherits: false; initial-value: 1; }
 
 .hero__any {
   position: relative;
@@ -620,37 +622,77 @@ body.hero-in .hero__mark {
   inset: -0.45em -0.5em -0.4em -0.5em;
   z-index: -1;
   pointer-events: none;
-  background:
-    radial-gradient(30% 40% at calc(8% + var(--aura-a) * 0.84) var(--aura-y), rgb(76 139 234), transparent 74%),
-    radial-gradient(27% 38% at calc(8% + var(--aura-b) * 0.84) calc(100% - var(--aura-y)), rgb(123 92 255), transparent 74%),
-    radial-gradient(25% 36% at calc(8% + var(--aura-c) * 0.84) 56%, rgb(56 214 255 / 0.9), transparent 74%),
-    radial-gradient(22% 32% at calc(8% + var(--aura-d) * 0.84) 44%, rgb(255 106 213 / 0.7), transparent 74%);
   -webkit-mask-image: radial-gradient(closest-side, #000 52%, transparent 100%);
   mask-image: radial-gradient(closest-side, #000 52%, transparent 100%);
-  filter: blur(calc(var(--title-size) * 0.1)) hue-rotate(var(--aura-hue)) saturate(1.15);
-  opacity: calc(var(--aura-pulse) * var(--aura-in) * var(--title-aura, 0.55));
+  opacity: var(--title-aura, 0.55);
+  will-change: opacity;
+}
+
+/* Two clouds of colour, blurred once and then only moved: brand blue and
+   cyan in one, violet and a touch of rose in the other, drifting on their
+   own clocks so the mix under the word keeps changing. */
+.hero__aura::before,
+.hero__aura::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  filter: blur(calc(var(--title-size) * 0.1)) saturate(1.15);
+  will-change: transform;
+}
+
+.hero__aura::before {
+  background:
+    radial-gradient(30% 40% at 26% 44%, rgb(76 139 234), transparent 74%),
+    radial-gradient(25% 36% at 66% 56%, rgb(56 214 255 / 0.9), transparent 74%);
+}
+
+.hero__aura::after {
+  background:
+    radial-gradient(27% 38% at 46% 58%, rgb(123 92 255), transparent 74%),
+    radial-gradient(22% 32% at 84% 44%, rgb(255 106 213 / 0.7), transparent 74%);
 }
 
 body.hero-in .hero__aura {
-  animation:
-    aura-in 2.4s var(--ease) calc(var(--word-lead) + 3 * var(--word-step) + 0.5s) both,
-    aura-a 9s ease-in-out infinite alternate,
-    aura-b 11.5s ease-in-out -3s infinite alternate,
-    aura-c 13s ease-in-out -6s infinite alternate,
-    aura-d 7.5s ease-in-out -2s infinite alternate,
-    aura-y 6.5s ease-in-out infinite alternate,
-    aura-hue 16s ease-in-out infinite alternate,
-    aura-pulse 3.8s ease-in-out infinite alternate;
+  animation: aura-in 2.2s var(--ease) calc(var(--word-lead) + 3 * var(--word-step) + 0.35s) both;
 }
 
-@keyframes aura-in { from { --aura-in: 0; } to { --aura-in: 1; } }
-@keyframes aura-a { from { --aura-a: 12%; } to { --aura-a: 46%; } }
-@keyframes aura-b { from { --aura-b: 62%; } to { --aura-b: 26%; } }
-@keyframes aura-c { from { --aura-c: 44%; } to { --aura-c: 84%; } }
-@keyframes aura-d { from { --aura-d: 92%; } to { --aura-d: 60%; } }
-@keyframes aura-y { from { --aura-y: 38%; } to { --aura-y: 64%; } }
-@keyframes aura-hue { from { --aura-hue: -18deg; } to { --aura-hue: 26deg; } }
-@keyframes aura-pulse { from { --aura-pulse: 0.7; } to { --aura-pulse: 1; } }
+body.hero-in .hero__aura::before {
+  animation: aura-drift-a 11s ease-in-out infinite alternate;
+}
+
+body.hero-in .hero__aura::after {
+  animation: aura-drift-b 8.5s ease-in-out -3s infinite alternate;
+}
+
+@keyframes aura-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes aura-drift-a {
+  from {
+    transform: translate(-9%, 3%) scale(1);
+  }
+  50% {
+    transform: translate(4%, -4%) scale(1.08);
+  }
+  to {
+    transform: translate(12%, 2%) scale(0.96);
+  }
+}
+
+@keyframes aura-drift-b {
+  from {
+    transform: translate(10%, -3%) scale(1.04);
+  }
+  50% {
+    transform: translate(-3%, 4%) scale(0.95);
+  }
+  to {
+    transform: translate(-12%, -1%) scale(1.06);
+  }
+}
 
 @keyframes mark-sheen {
   from {
@@ -674,8 +716,8 @@ body.hero-in .hero__aura {
   body.hero-in .hero__eyebrow {
     animation: hero-in 0.6s var(--ease) both;
   }
-  body.hero-in .hero__title,
-  body.hero-in .hero__aura {
+  body.hero-in .hero__aura::before,
+  body.hero-in .hero__aura::after {
     animation: none;
   }
 }

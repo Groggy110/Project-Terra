@@ -15,12 +15,17 @@
   cursor: grab;
 }
 
-/* The world arrives rather than appearing: the disc and its pins come up out
-   of the paper while the loading veil goes the other way. */
+/* The world arrives rather than appearing: the disc comes up out of the sky
+   as it rises, and its pins and place names follow once it and the headline
+   have landed, rather than popping on over a planet still fading in. */
 #globe,
 .overlay {
   opacity: 0;
-  transition: opacity 1.9s var(--ease);
+  transition: opacity 1.2s var(--ease);
+}
+
+body.globe-in .overlay {
+  transition: opacity 0.9s var(--ease) 1.25s;
 }
 
 body.globe-in #globe,
@@ -58,6 +63,24 @@ body.globe-in .overlay {
   translate: -4.5px -4.5px;
   cursor: pointer;
   background: none;
+  /* A pin arrives rather than appearing: when the network lands after the
+     planet, and when one comes round the limb. Up from nothing to whatever
+     the label layer has written inline — no fill, so the layer's own opacity
+     (edge fade, dimming) takes over the moment it ends. */
+  animation: pin-in 0.55s var(--ease-out);
+}
+
+@keyframes pin-in {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pin {
+    animation: none;
+  }
 }
 
 /* A 10px dot is not a target. The pad is a pseudo-element rather than

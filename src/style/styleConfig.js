@@ -129,7 +129,7 @@ export const STYLE = {
     /** Sphere tessellation (width segments; height is half). Shape only. */
     segments: 392,
     /** The day imagery. Swapping it loads a new texture. */
-    baseTexture: "/textures/blue-marble.jpg",
+    baseTexture: "/textures/blue-marble.webp",
     /** Latitude/longitude grid drawn on the surface. */
     graticule: { enabled: false, color: "#ffffff", opacity: 0.09, spacing: 12.5, width: 1.25 },
     /** City lights on the night side, painted from places.json by population. */

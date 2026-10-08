@@ -903,6 +903,40 @@ a.btn--serve svg {
   display: block;
 }
 
+/* Posting a need (ask.js startPost): a field the guide has just filled in
+   glows once, so the eye goes to what changed rather than reading the form
+   again from the top. On the controls, not the label. */
+.ask__post .field.is-filled :is(.input, .select, .area, .chipset) {
+  animation: field-filled 1.6s var(--ease-out);
+}
+
+@keyframes field-filled {
+  0% {
+    box-shadow: 0 0 0 0 var(--accent-ring);
+    background-color: var(--accent-soft);
+  }
+  30% {
+    box-shadow: 0 0 0 4px var(--accent-ring);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask__post .field.is-filled :is(.input, .select, .area, .chipset) {
+    animation: none;
+  }
+}
+
+.ask__post .post-done {
+  padding: 6px 0 2px;
+}
+
+.ask__post-err {
+  color: var(--urgent);
+}
+
 .ask__flow .modal__body {
   padding: 0;
   overflow: visible;

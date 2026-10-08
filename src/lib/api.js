@@ -275,6 +275,22 @@ export async function updateNeed(needId, fields) {
   return postNeed({ ...fields, need_id: needId });
 }
 
+/**
+ * One turn of posting a need as a conversation (draft-need): the conversation
+ * so far and the form as it stands in, the form brought up to date and the
+ * guide's next question out. Saves nothing; postNeed does that.
+ */
+export async function draftNeed({ ministryId, history = [], draft = {} }) {
+  const sb = requireSupabase();
+  const { data, error } = await sb.functions.invoke("draft-need", { body: { ministry_id: ministryId, history, draft } });
+  if (error) {
+    const detail = await error.context?.json?.().catch(() => null);
+    throw new Error(detail?.error ?? error.message);
+  }
+  if (!data || typeof data.reply !== "string" || !data.draft) throw new Error("no answer");
+  return { reply: data.reply, draft: data.draft, ready: !!data.ready };
+}
+
 /* --------------------------------------------------------- questionnaire */
 
 export async function loadQuestionnaire() {

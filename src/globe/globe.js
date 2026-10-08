@@ -22,6 +22,7 @@ import {
   RepeatWrapping,
   Scene,
   SRGBColorSpace,
+  Texture,
   TextureLoader,
   Vector2,
   Vector3,
@@ -63,9 +64,9 @@ const TONE_MAPPING = {
 };
 
 const TEXTURES = [
-  ["base", "/textures/blue-marble.jpg"],
-  ["aux", "/textures/earth-aux.png"],
-  ["clouds", "/textures/clouds.jpg"],
+  ["base", "/textures/blue-marble.webp"],
+  ["aux", "/textures/earth-aux.webp"],
+  ["clouds", "/textures/clouds.webp"],
 ];
 
 /**
@@ -78,9 +79,45 @@ const TEXTURES = [
  * keeps naming the 4K file; this is a resolution of it, not another map.
  */
 const HD_TEXTURES = {
-  "/textures/blue-marble.jpg": "/textures/blue-marble-8k.jpg",
-  "/textures/earth-aux.png": "/textures/earth-aux-8k.png",
+  "/textures/blue-marble.webp": "/textures/blue-marble-8k.webp",
+  "/textures/earth-aux.webp": "/textures/earth-aux-8k.webp",
 };
+
+/**
+ * Names an older STYLE may still carry for a map that has since changed
+ * format (a preset saved in the style editor, an exported settings file).
+ */
+const RENAMED = {
+  "/textures/blue-marble.jpg": "/textures/blue-marble.webp",
+};
+
+/**
+ * A texture decoded off the main thread. An <img> handed to WebGL is decoded
+ * on the main thread at the moment it is first uploaded — for an 8K map, a
+ * few hundred milliseconds inside whichever frame first draws it, a visible
+ * stop in the middle of the turn. createImageBitmap decodes on a worker, and
+ * the upload is then made on a frame of our choosing (Globe #upload). Falls
+ * back to the image loader where there is no ImageBitmap.
+ */
+async function loadDecoded(url) {
+  if (typeof createImageBitmap !== "function") {
+    return new Promise((resolve, reject) => new TextureLoader().load(url, resolve, undefined, () => reject(new Error(url))));
+  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: ${res.status}`);
+  // Data as well as pictures: no premultiplying, no colour management.
+  const bitmap = await createImageBitmap(await res.blob(), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+  const tex = new Texture(bitmap);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * The most the 4096 x 2048 cloud sheet's upload may take for the 8K maps to
+ * follow it (Globe loadDeferred). Each map is four times the texels, so this
+ * keeps either one to about one dropped frame.
+ */
+const HD_UPLOAD_BUDGET_MS = 20;
 
 function wantsHd(renderer) {
   const big = Math.min(window.screen?.width || 0, window.innerWidth) >= 900;
@@ -383,24 +420,29 @@ export class Globe {
   async start() {
     const report = this.opts.onProgress || (() => {});
     let done = 0;
-    const total = TEXTURES.length + 3;
+    const total = TEXTURES.length + 4;
     const step = (label) => report(++done / total, label);
 
     const loader = new TextureLoader();
     const load = (url) =>
       new Promise((resolve, reject) => loader.load(url, resolve, undefined, () => reject(new Error(url))));
 
-    // The photographic cloud sheet (STYLE.themes.dark.clouds.real). Nearly two
-    // megabytes, and nothing needs it to draw, so it is not on the loading
-    // bar: it streams alongside and fades in when it lands (see #tick).
-    const realClouds = load("/textures/clouds-real.jpg").catch(() => null);
-
     this.hd = wantsHd(this.renderer);
     // Everything the first frame needs, fetched at once rather than one after
-    // another: the 4K maps, the coastlines and the place names. The 8K maps
-    // are not waited for — the planet appears on the 4K pair and sharpens
-    // when the larger files land (#upgradeMaps).
+    // another: the 4K maps, the photographic clouds, the coastlines and the
+    // place names. The 8K maps are not even asked for until the entrance is
+    // over (loadDeferred): the planet appears on the 4K pair and sharpens
+    // when the larger files land.
+    //
+    // The clouds are here rather than deferred because they are the one
+    // texture whose arrival *changes* the planet rather than sharpening it: a
+    // different weather pattern at a different opacity over the synthetic
+    // sheet. Faded in after the entrance, that landed in the middle of
+    // whatever the camera was doing (a search's flight, most often) as a
+    // shift in the whole globe's colour. Decoded off the main thread and
+    // uploaded before the first frame, it is simply there from the start.
     const vectors = this.store.load("50m");
+    const realClouds = loadDecoded("/textures/clouds-real.jpg").catch(() => null);
     const named = Promise.all([
       fetch("/vectors/places.json").then((r) => r.json()),
       fetch("/vectors/countries.json").then((r) => r.json()),
@@ -419,6 +461,7 @@ export class Globe {
     // The stage looks across the planet at a slant toward its rim, where 8x
     // anisotropy smears the sharper maps; take what the GPU offers, to 16.
     const aniso = Math.min(16, this.renderer.capabilities.getMaxAnisotropy?.() || 8);
+    this.aniso = aniso;
     for (const key of ["base", "aux"]) textures[key].userData.anisotropy = aniso;
 
     const grade = createGradeUniforms();
@@ -439,24 +482,38 @@ export class Globe {
     this.clouds = createClouds(textures, { segments: STYLE.globe.clouds.segments, grade, effects });
     this.clouds.mesh.scale.setScalar(1 + STYLE.globe.clouds.altitude);
     this.clouds.realReady = 0;
-    realClouds.then((tex) => {
-      if (!tex) return;
-      tex.flipY = false;
-      tex.wrapS = RepeatWrapping; // it drifts with the sheet — see createClouds
-      tex.generateMipmaps = true;
-      tex.anisotropy = 8;
-      this.clouds.uniforms.uCloudsReal.value = tex;
+    // How long its upload took says whether the 8K maps can follow (loadDeferred).
+    this.cloudUploadMs = 0;
+    const real = await realClouds;
+    if (real) {
+      real.flipY = false;
+      real.wrapS = RepeatWrapping; // it drifts with the sheet — see createClouds
+      real.generateMipmaps = true;
+      real.anisotropy = 8;
+      const t0 = performance.now();
+      this.renderer.initTexture(real);
+      this.cloudUploadMs = performance.now() - t0;
+      this.clouds.uniforms.uCloudsReal.value = real;
       this.clouds.realArrived = true;
-    });
+      this.clouds.realReady = 1;
+    }
+    step("weather");
     this.halo = createHalo();
     this.post = createPost();
     this.scene.add(this.earth.mesh, this.clouds.mesh, this.halo.mesh, this.post.mesh);
     this.#applyPost();
     this.setTheme(this.theme);
 
+    // The rest of the start is a third of a second of one-off work — the
+    // vectors decoded and painted, the labels, the first full render — and in
+    // a single task it held the page for all of it, the sky's fade included.
+    // Handed back between the steps, it costs nothing and holds nothing.
+    const breathe = () => new Promise((r) => setTimeout(r, 0));
     await vectors;
+    await breathe();
     this.painter.repaintBase(this.theme);
     step("vectors");
+    await breathe();
 
     const [places, countries] = await named;
     this.places = places;
@@ -464,6 +521,7 @@ export class Globe {
     this.labels.setData({ places, countries, ministries: this.ministries || [] });
     this.#applySurfaceMaps();
     step("places");
+    await breathe();
 
     this.#resize();
     this.observer = new ResizeObserver(() => this.#resize());
@@ -487,19 +545,66 @@ export class Globe {
     this.running = true;
     this.last = performance.now();
     requestAnimationFrame(this.#tick);
-    if (this.hd) this.#upgradeMaps(load, aniso);
     return this;
   }
 
+  /**
+   * What only sharpens the planet, fetched once the page's entrance is over
+   * (App): where wantsHd allows, the 8K maps. Some ten megabytes, none of it
+   * needed to draw; asked for at the start, it shared the line with the maps
+   * the entrance waits on and landed its decodes in the middle of the entrance.
+   */
+  async loadDeferred() {
+    if (this.deferred || !this.earth) return;
+    this.deferred = true;
+    // How long the cloud sheet took to go up (start) says whether the 8K maps
+    // can: each is four times its texels, and an upload cannot be split
+    // across frames. Where the sheet alone costs more than a frame, the maps
+    // would stop the turning planet for a tenth of a second each, twice —
+    // and the 4K pair is sharp enough not to be worth that.
+    const struggling = this.cloudUploadMs > HD_UPLOAD_BUDGET_MS || this.res < 1;
+    if (this.hd && !struggling) this.#upgradeMaps();
+  }
+
+  /**
+   * Sends a texture to the GPU at the start of a frame, one texture a frame:
+   * the upload of an 8K map is tens of milliseconds that cannot be split,
+   * and two in the same frame would be a stop rather than a stutter.
+   */
+  #upload(tex) {
+    this.uploads = (this.uploads ?? Promise.resolve()).then(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => {
+            const t0 = performance.now();
+            this.renderer.initTexture(tex);
+            // A frame that uploaded is slow for a reason resolution will not fix.
+            this.skipSample = true;
+            resolve(performance.now() - t0);
+          }),
+        ),
+    );
+    return this.uploads;
+  }
+
   /** Swaps the 4K surface maps for the 8K pair once they have downloaded. */
-  #upgradeMaps(load, aniso) {
+  #upgradeMaps() {
     const u = this.earth.uniforms;
+    const aniso = this.aniso;
     const swap = (uniform, url) =>
-      load(HD_TEXTURES[url]).then(
-        (tex) => {
+      loadDecoded(HD_TEXTURES[url]).then(
+        async (tex) => {
           prepare(tex);
           tex.userData.anisotropy = aniso;
           tex.anisotropy = aniso;
+          await this.#upload(tex);
+          // Never in the middle of a flight: the sharper map is a change of
+          // texture in a single frame, and mid-move (a search's flight in
+          // from orbit) it read as the planet shifting under the camera.
+          // Swapped once the camera has arrived, it is only a sharpening.
+          while (this.controls.flight) await new Promise((r) => requestAnimationFrame(r));
+          // A base map chosen in the style editor while this was loading wins.
+          if (uniform === "uBase" && this.baseUrl !== TEXTURES[0][1]) return tex.dispose();
           const old = u[uniform].value;
           u[uniform].value = tex;
           old?.dispose?.();
@@ -623,7 +728,7 @@ export class Globe {
    */
   #applySurfaceMaps() {
     const g = STYLE.globe;
-    const url = g.baseTexture || TEXTURES[0][1];
+    const url = RENAMED[g.baseTexture] ?? (g.baseTexture || TEXTURES[0][1]);
     if (url !== this.baseUrl && url !== this.baseLoading) {
       this.baseLoading = url;
       new TextureLoader().load(
@@ -1642,8 +1747,10 @@ export class Globe {
     } else if (this.liftTween?.to === this.liftTarget && this.lift !== this.liftTarget) {
       const { from, t0, ms } = this.liftTween;
       const k = Math.min((performance.now() - t0) / ms, 1);
-      // Soft off the mark, long and quiet into place.
-      const e = k < 0.3 ? 0.39 * (k / 0.3) ** 2 : 1 - 0.61 * ((1 - k) / 0.7) ** 3;
+      // Away at once and a long, quiet settle — the headline's own ease, so
+      // the planet and the words arrive as one movement. (It starts while
+      // the planet is still fading up, so the quick start is never a jolt.)
+      const e = 1 - (1 - k) ** 3.6;
       this.lift = k >= 1 ? this.liftTarget : from + (this.liftTarget - from) * e;
       if (k >= 1) this.liftTween = null;
       this.#applyShift();
@@ -1693,11 +1800,8 @@ export class Globe {
     // is barely twice its height above it, so what used to be a haze over the
     // world becomes a *ceiling* — its own limb cuts a band across the top of
     // the frame and the fifth that was left reads as fog over the city.
-    // The photographic sheet fades in over the synthetic one as it lands,
-    // and takes its own opacity with it.
-    if (this.clouds.realArrived && this.clouds.realReady < 1) {
-      this.clouds.realReady = Math.min(1, this.clouds.realReady + dt / 0.6);
-    }
+    // The photographic sheet is in place before the first frame (start), or
+    // never arrived and the synthetic one stays: either way it does not change.
     const real = (this.themeDef?.clouds.real ?? 0) * this.clouds.realReady;
     c.uRealMix.value = real;
     const cloudBase = lerp(this.cloudBase, this.themeDef?.clouds.realOpacity ?? this.cloudBase, real);

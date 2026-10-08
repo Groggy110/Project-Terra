@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Builds the two raster inputs the globe shader grades at runtime.
 
-  public/textures/blue-marble.jpg   NASA Blue Marble (topography + bathymetry)
-  public/textures/earth-aux.png     R = topography   (hillshade + snow line)
+  public/textures/blue-marble.webp  NASA Blue Marble (topography + bathymetry)
+  public/textures/earth-aux.webp    R = topography   (hillshade + snow line)
                                     G = land mask    (land / ocean split)
                                     B = coast proximity (shallow-water tint)
 
-and the same two at 8192 x 4096 (blue-marble-8k.jpg, earth-aux-8k.png), from
+and the same two at 8192 x 4096 (blue-marble-8k.webp, earth-aux-8k.webp), from
 NASA's full 21600-pixel Blue Marble and GEBCO's full elevation raster, for
 screens that can hold them (globe.js, HD_TEXTURES). The 4K pair stays as it is
 for phones and for any GPU whose texture limit is below 8192.
@@ -122,7 +122,9 @@ def write_aux(w, h, name):
     m = np.clip((m - 0.5) * 1.6 + 0.5, 0.0, 1.0)
 
     aux = np.stack([topo_a, m, np.asarray(prox, dtype=np.float32) / 255.0], axis=-1)
-    Image.fromarray((aux * 255.0 + 0.5).astype(np.uint8), "RGB").save(OUT / name, optimize=True)
+    # Lossless WebP: data, not a picture, so every value must survive exactly
+    # (as it did in the PNG this replaced, at about two thirds of the bytes).
+    Image.fromarray((aux * 255.0 + 0.5).astype(np.uint8), "RGB").save(OUT / name, lossless=True, quality=100, method=6)
     log(f"wrote {name} {w}x{h}")
 
 
@@ -139,9 +141,9 @@ def write_hd():
     log(f"blue marble full: {img.size[0]}x{img.size[1]}")
     img = img.reduce(2).resize((HD_W, HD_H), Image.LANCZOS)
     img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=55, threshold=2))
-    img.save(OUT / "blue-marble-8k.jpg", quality=86, optimize=True, progressive=True)
-    log(f"wrote blue-marble-8k.jpg {HD_W}x{HD_H}")
-    write_aux(HD_W, HD_H, "earth-aux-8k.png")
+    img.save(OUT / "blue-marble-8k.webp", quality=86, method=6)
+    log(f"wrote blue-marble-8k.webp {HD_W}x{HD_H}")
+    write_aux(HD_W, HD_H, "earth-aux-8k.webp")
 
 
 def main():
@@ -153,13 +155,16 @@ def main():
     elif bm.exists():
         img = Image.open(bm).convert("RGB")
         log(f"blue marble: {img.size[0]}x{img.size[1]}")
-        img.save(OUT / "blue-marble.jpg", quality=90, optimize=True, progressive=True)
+        # WebP at 86 is indistinguishable at 1:1 from the JPEG at 90 it
+        # replaced (PSNR ~41dB) at well under half the bytes: this and the aux
+        # map are what the landing waits on before the planet can appear.
+        img.save(OUT / "blue-marble.webp", quality=86, method=6)
     else:
         log("blue-marble-5400.jpg missing - run tools/fetch_sources.sh")
         return 1
 
     if "--hd-only" not in sys.argv:
-        write_aux(AUX_W, AUX_H, "earth-aux.png")
+        write_aux(AUX_W, AUX_H, "earth-aux.webp")
     write_hd()
     return 0
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthesises the cloud sheet: public/textures/clouds.jpg
+"""Synthesises the cloud sheet: public/textures/clouds.webp
 
 No satellite cloud pass is used. Band-limited fractal noise is domain-warped to
 get the sheared, curdled look of a real cloud field, then gated against a
@@ -89,10 +89,10 @@ def main():
 
     img = Image.fromarray((np.clip(alpha, 0, 1) * 255 + 0.5).astype(np.uint8), "L")
     img = img.filter(ImageFilter.GaussianBlur(radius=1.3))
-    img.save(OUT / "clouds.jpg", quality=88, optimize=True, progressive=True)
+    img.save(OUT / "clouds.webp", quality=88, method=6)
 
     covered = float((alpha > 0.35).mean())
-    print(f"  wrote clouds.jpg  mean alpha {alpha.mean():.3f}  covered {covered:.3f}", flush=True)
+    print(f"  wrote clouds.webp  mean alpha {alpha.mean():.3f}  covered {covered:.3f}", flush=True)
     return 0
 
 

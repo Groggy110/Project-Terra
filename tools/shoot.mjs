@@ -26,7 +26,7 @@ const STATES = {
 
   /** The loading screen itself. Imagery is stalled so there is one to catch. */
   async loading(page) {
-    await page.route("**/textures/blue-marble.jpg", async (route) => {
+    await page.route("**/textures/blue-marble.webp", async (route) => {
       await wait(2200);
       await route.continue();
     });

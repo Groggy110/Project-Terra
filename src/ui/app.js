@@ -18,9 +18,7 @@ import { openPop, menuIcons } from "./pop.js";
 import { store } from "./store.js";
 import { REVISION } from "three";
 import { AuthGate } from "./auth.js";
-import { questionnaireModal } from "./questionnaire.js";
 import { ministryModal, postNeedModal as postNeedForm } from "./ministry.js";
-import { Recommendations } from "./recommend.js";
 import * as api from "../lib/api.js";
 import { areaName, findLocalOrgs, locateAddress } from "../lib/places.js";
 import { placeAsked, primePlaces } from "../data/places.js";
@@ -33,9 +31,26 @@ import { STAGE, STAGE_EXIT, enterLanding, leaveLanding, returnToLanding } from "
 /** "Santa Barbara, United States of America"; a country by itself. */
 const placeName = (p) => (p.country && p.kind !== "country" ? `${p.name}, ${p.country}` : p.name);
 
-/** How long after the loading screen lifts the headline lands. */
 /** How long the headline takes to lift away (base.css, hero-out). */
 const HERO_OUT_MS = 780;
+
+/**
+ * The opening (App #arrive). The words land this long after the planet
+ * starts to rise: far enough behind that the world is plainly arriving first,
+ * close enough that the two read as one move.
+ */
+const WORDS_AFTER_MS = 200;
+/** The longest the words wait for the planet before landing without it. */
+const OPEN_WAIT_MS = 4000;
+/** How long the planet waits for the network, so its pins and count arrive with it. */
+const NETWORK_WAIT_MS = 300;
+/**
+ * When the heavy downloads that only sharpen the planet (the 8K maps, the
+ * photographic clouds) begin: once the entrance has finished moving, so they
+ * neither share the line with the maps the opening waits on nor land a decode
+ * in the middle of it.
+ */
+const DEFERRED_AFTER_MS = 3200;
 
 /**
  * A phone held upright. Here the page is the globe: no headline, a search
@@ -194,6 +209,7 @@ export class App {
       onLeave: (m) => {
         if (this.selected?.id === m.id) this.#deselect();
       },
+      onPost: (text) => this.postNeed({ said: text }),
       // A new chat clears the radius card with everything else.
       onReset: () => this.#endLocal(),
       onToggle: (open) => {
@@ -250,10 +266,14 @@ export class App {
     // and on a phone the planet is the page from the first frame.
     const phone = PHONE.matches;
     if (!phone) document.body.classList.add("is-hero");
-    // The page is there at once — top bar, headline, find bar — and the
-    // planet fades up into it when its maps are in (globe-in, below).
-    document.body.classList.add("is-live");
-    if (!phone) document.body.classList.add("hero-in");
+    // Nothing of the page shows until the planet can: the sky fades up on its
+    // own (index.html, sky-in), then the planet rises and the words and the
+    // furniture land just behind it, as one arrival (#arrive). The headline
+    // used to land at once and the planet whenever its maps came in — on an
+    // ordinary connection, seconds later, under words that were already
+    // standing on nothing. A slow connection still gets the words after
+    // OPEN_WAIT_MS, and the planet rises into them when it can.
+    this.openTimer = setTimeout(() => this.#arrive(), OPEN_WAIT_MS);
     // The network is fetched alongside the maps rather than after them.
     const networkReady = api.isConfigured && !this.demo ? this.reloadNetwork() : Promise.resolve();
     const stage = phone ? undefined : stageFrame();
@@ -309,12 +329,6 @@ export class App {
       this.ask.signIn(mode);
       return true;
     };
-    this.recs = new Recommendations(h("div", { class: "recs" }), {
-      onOpenNeed: (need) => this.openNeed(need),
-      onNeedQuestionnaire: () => this.openQuestionnaire(),
-      heading: false, // the dialog already says it
-    });
-
     if (api.isConfigured && !this.demo) {
       // Not waited for: the pins and the count arrive when the network does.
       networkReady.then(() => this.#renderHeroCount());
@@ -352,19 +366,28 @@ export class App {
       });
     });
     await boot.done();
+    // The pins and the live count come up with the planet rather than popping
+    // in over it a moment later — if the network is nearly there anyway.
+    await Promise.race([networkReady.catch(() => {}), new Promise((r) => setTimeout(r, NETWORK_WAIT_MS))]);
+    // Two frames for the page to take the work above, so the rise starts on
+    // a quiet frame rather than on the one that did it.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     document.body.classList.add("globe-in");
     // The tip arrives once the planet has, not with it.
     setTimeout(() => this.#syncTip(), 1800);
-    // The planet rises into place as the loading screen lifts, already
-    // turning: from a little below where the stage puts its rim, with the
-    // drift starting under it.
+    // The planet rises into place, already turning: from a little below
+    // where the stage puts its rim, with the drift starting under it.
     if (document.body.classList.contains("is-hero")) this.#trackStage();
     if (document.body.classList.contains("is-hero")) {
       const home = this.globe.liftTarget;
       this.globe.setLift(home - STAGE.rise, { instant: true });
-      this.globe.setLift(home, { ms: 2600 });
+      this.globe.setLift(home, { ms: 1900 });
       this.globe.releaseSpin({ now: true });
     }
+    // The words and the furniture land just behind it.
+    setTimeout(() => this.#arrive(), WORDS_AFTER_MS);
+    // Then, with the entrance over, what only sharpens the planet.
+    setTimeout(() => this.globe.loadDeferred(), DEFERRED_AFTER_MS);
 
     // The world fades up where it stands and the headline lands just behind it,
     // so the two read as one arrival. Then it holds, and then the page settles
@@ -392,6 +415,21 @@ export class App {
       else setTimeout(() => this.toast(note), 3400);
     }
     return this;
+  }
+
+  /**
+   * The words and the page's furniture land: the top bar fades up (is-live)
+   * and, still on the landing, the headline, the find bar and its chips play
+   * their entrance (hero-in). Once, from whichever comes first: the planet
+   * rising, or OPEN_WAIT_MS without it.
+   */
+  #arrive() {
+    if (this.arrived) return;
+    this.arrived = true;
+    clearTimeout(this.openTimer);
+    document.body.classList.add("is-live");
+    // Someone who clicked through while it was loading has already left.
+    if (document.body.classList.contains("is-hero")) document.body.classList.add("hero-in");
   }
 
   #leaveHero({ settle = false } = {}) {
@@ -608,7 +646,6 @@ export class App {
         this.postNeed();
       } else if (action === "sign-in") this.gate?.open("signin");
       else if (action === "account") this.#accountMenu(trigger);
-      else if (action === "suggested") this.openSuggestions();
       else if (action === "about") this.setView("about");
       else if (action === "menu") this.#menu(trigger);
       else if (action === "open-board") this.setView(this.board.open ? "globe" : "needs");
@@ -799,7 +836,14 @@ export class App {
     const el = document.getElementById("heroCount");
     const stats = this.net.stats();
     if (el && stats.needs) {
-      el.textContent = `${plural(stats.needs, "open need", "open needs")} · ${plural(this.net.ministries.length, "ministry", "ministries")}`;
+      const text = `${plural(stats.needs, "open need", "open needs")} · ${plural(this.net.ministries.length, "ministry", "ministries")}`;
+      if (el.textContent === text) return;
+      el.textContent = text;
+      // A count arriving after the pill has landed eases in, rather than the
+      // words in it swapping under the visitor's eye.
+      if (document.body.classList.contains("hero-in") && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        el.animate([{ opacity: 0, filter: "blur(3px)" }, { opacity: 1, filter: "blur(0px)" }], { duration: 520, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
+      }
     }
   }
 
@@ -847,16 +891,14 @@ export class App {
     if (!onboard) return;
 
     // Each account is onboarded once, after a beat — immediately on top of a
-    // sign-in reads as a second gate. A volunteer answers the questions; a
-    // ministry tells us who it is, which fills in everything it posts.
+    // sign-in reads as a second gate. A volunteer goes straight into the
+    // app, with no questions first; a ministry tells us who it is, which
+    // fills in everything it posts.
     this.onboarded ??= new Set();
     const id = this.session.user.id;
     if (this.onboarded.has(id)) return;
     this.onboarded.add(id);
-    if (this.profile?.role === "volunteer") {
-      const existing = await api.loadQuestionnaire();
-      if (!existing) setTimeout(() => this.openQuestionnaire(), 900);
-    } else if (this.profile?.role === "ministry" && !this.ministry) {
+    if (this.profile?.role === "ministry" && !this.ministry) {
       setTimeout(() => this.openMinistrySetup(), 900);
     }
   }
@@ -1005,9 +1047,9 @@ export class App {
     const join = document.getElementById("dockJoin");
     const isMinistry = this.profile?.role === "ministry";
     if (join) {
-      const label = !this.session ? "Join" : isMinistry ? "Yours" : "For you";
+      const label = !this.session ? "Join" : isMinistry ? "Yours" : "Needs";
       join.querySelector("span").textContent = label;
-      join.setAttribute("aria-label", !this.session ? "Create an account" : isMinistry ? "Your needs" : "Suggested for you");
+      join.setAttribute("aria-label", !this.session ? "Create an account" : isMinistry ? "Your needs" : "The needs board");
     }
     if (!me) return;
     clear(me);
@@ -1035,7 +1077,7 @@ export class App {
     if (!api.isConfigured) return this.toast("Accounts aren't available right now. Please try again later.");
     if (!this.session) return this.gate?.open("signup");
     if (this.profile?.role === "ministry") return this.ministry ? this.openDashboard() : this.openMinistrySetup();
-    this.openSuggestions();
+    this.setView("needs");
   }
 
   /**
@@ -1488,8 +1530,6 @@ export class App {
         },
         isMinistry && this.ministry && { label: "Your needs", note: "Posts and who responded", icon: menuIcons.board, run: () => this.openDashboard() },
         { label: "Your calls", note: "Upcoming video calls", icon: menuIcons.board, run: () => this.openMeetings() },
-        !isMinistry && { label: "Suggested for you", note: "Matched to your answers", icon: menuIcons.board, run: () => this.openSuggestions() },
-        !isMinistry && { label: "Answer the five questions", icon: menuIcons.panel, run: () => this.openQuestionnaire() },
         isMinistry && !this.ministry && { label: "Put your ministry on the map", icon: menuIcons.panel, run: () => this.openMinistrySetup() },
         isMinistry && this.ministry && { label: "Post a need", icon: menuIcons.board, run: () => this.postNeed() },
         null,
@@ -1529,29 +1569,6 @@ export class App {
     } catch (e) {
       this.toast(e.message || "Could not update the picture.");
     }
-  }
-
-  openQuestionnaire() {
-    if (!this.session) return this.gate.open("signup");
-    questionnaireModal(this.modals, {
-      onSaved: () => {
-        this.toast("Saved. Finding needs that fit you…");
-        this.openSuggestions({ force: true });
-      },
-    });
-  }
-
-  openSuggestions({ force = false } = {}) {
-    if (!this.session) return this.gate.open("signin");
-    this.modals.show(() => {
-      const body = h("div", {},
-        h("h2", { class: "modal__title", text: "Suggested for you" }),
-        h("p", { class: "modal__lede", text: "Ranked against your answers by reading every open need." }),
-        this.recs.root,
-      );
-      this.recs.show({ force });
-      return body;
-    }, { width: 560 });
   }
 
   openMinistrySetup() {
@@ -1612,6 +1629,7 @@ export class App {
         if (asked !== this.barAsk) return;
         if (place) return this.#travelTo(place);
         this.#leaveHero({ settle: true });
+        if (this.ask.wantsToPost(text)) return this.postNeed({ said: text });
         this.ask.submit(text);
       });
   }
@@ -1799,9 +1817,19 @@ export class App {
    * write path needs a signed-in owner of a ministry, so anything missing is
    * collected in order rather than failing at submit.
    */
-  async postNeed() {
+  /**
+   * Posting a need happens in the conversation (AskPanel startPost): the
+   * ministry says what it needs, and the form fills itself in beside it.
+   * Signing in happens there too; putting a ministry on the map first is a
+   * dialog, and comes back here when it is done.
+   */
+  async postNeed({ said } = {}) {
     if (!api.isConfigured) return this.toast("No backend configured — posting is off.");
-    if (!this.session) return this.gate.open("signup");
+    // From a dialog (About): the conversation is where it goes on, not under it.
+    this.modals.close();
+    if (!this.session) {
+      return this.ask.signIn("signup", { said: said ?? "I'd like to post a need", then: () => this.postNeed() });
+    }
     if (this.profile?.role !== "ministry") {
       await api.setRole("ministry").catch(() => {});
       this.profile = await api.myProfile();
@@ -1809,17 +1837,22 @@ export class App {
     if (!this.ministry) this.ministry = await api.myMinistry();
     if (!this.ministry) return this.openMinistrySetup();
 
-    postNeedForm(this.modals, {
-      ministry: this.ministry,
+    const ministry = this.ministry;
+    this.ask.startPost({
+      ministry,
+      said,
+      draft: (args) => api.draftNeed({ ministryId: ministry.id, ...args }),
+      post: (fields) => api.postNeed(fields),
       onPosted: async (res) => {
         await this.reloadNetwork();
         if (res.status === "live") {
           const m = this.net.ministryById.get(this.ministry.id);
           if (m) {
+            // The pin lights and the globe goes to it; the receipt stays in
+            // view in the conversation rather than under the ministry's card.
             this.globe?.select(m.id);
             this.globe?.focus(m, { zoom: Math.max(this.globe.zoom, 0.5) });
             this.selected = m;
-            this.ask.showMinistry(m);
           }
         }
       },

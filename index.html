@@ -8,18 +8,18 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png" />
     <!-- What a shared link unfolds into (tools/make_pwa_assets.py draws the card).
-         Absolute, as most unfurlers insist: change the host when the site moves to its own domain. -->
+         Absolute, as most unfurlers insist: the host is the site's own domain. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Terra" />
     <meta property="og:title" content="Terra — Serve ministries from anywhere" />
     <meta property="og:description" content="Ministries post what they need help with online. Offer your skills, from design to HR, and meet on a video call." />
-    <meta property="og:url" content="https://eclectic-semifreddo-6dc804.netlify.app/" />
-    <meta property="og:image" content="https://eclectic-semifreddo-6dc804.netlify.app/og-image.png" />
+    <meta property="og:url" content="https://terraministry.com/" />
+    <meta property="og:image" content="https://terraministry.com/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="The Terra logo: a star rising over the rim of the planet" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="https://eclectic-semifreddo-6dc804.netlify.app/og-image.png" />
+    <meta name="twitter:image" content="https://terraministry.com/og-image.png" />
     <link rel="apple-touch-icon" href="/icon-180.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#000206" />
@@ -55,6 +55,25 @@
     <link rel="apple-touch-startup-image" href="/splash/splash-1194x834@2x-landscape.png" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" />
     <link rel="apple-touch-startup-image" href="/splash/splash-1024x1366@2x-portrait.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
     <link rel="apple-touch-startup-image" href="/splash/splash-1366x1024@2x-landscape.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" />
+    <!-- The opening's first beat (base.css .paper__galaxy): the sky fades up the
+         moment its picture is decoded. Inline, so the fetch starts while the
+         app's script is still on its way rather than after it. -->
+    <script>
+      (function () {
+        var done = false;
+        var go = function () {
+          if (done) return;
+          done = true;
+          document.documentElement.classList.add("sky-in");
+        };
+        var sky = new Image();
+        sky.fetchPriority = "high";
+        sky.src = "/textures/sky.jpg";
+        if (sky.decode) sky.decode().then(go, go);
+        else sky.onload = sky.onerror = go;
+        setTimeout(go, 3000);
+      })();
+    </script>
     <!-- The loading screen's mark: fetched first, so it is there on the first frame. -->
     <link rel="preload" as="image" href="/brand/terra-logo-480.png" />
     <link rel="stylesheet" href="/src/styles/base.css" />
@@ -66,9 +85,9 @@
     <link rel="stylesheet" href="/src/styles/auth.css" />
     <link rel="stylesheet" href="/src/styles/forms.css" />
     <!-- The planet's first frame, fetched while the scripts are still parsing. -->
-    <link rel="preload" href="/textures/blue-marble.jpg" as="image" fetchpriority="high" crossorigin />
-    <link rel="preload" href="/textures/earth-aux.png" as="image" fetchpriority="high" crossorigin />
-    <link rel="preload" href="/textures/clouds.jpg" as="image" crossorigin />
+    <link rel="preload" href="/textures/blue-marble.webp" as="image" fetchpriority="high" crossorigin />
+    <link rel="preload" href="/textures/earth-aux.webp" as="image" fetchpriority="high" crossorigin />
+    <link rel="preload" href="/textures/clouds.webp" as="image" crossorigin />
     <link rel="preload" href="/vectors/places.json" as="fetch" crossorigin />
     <link rel="preload" href="/vectors/countries.json" as="fetch" crossorigin />
     <link rel="stylesheet" href="/src/styles/ask.css" />

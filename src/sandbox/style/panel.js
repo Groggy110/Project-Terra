@@ -529,7 +529,7 @@ export class StylePanel {
     const lc = this.#ctl("lines");
 
     const refresh = () => this.#refresh();
-    gc.pick(f, g, "baseTexture", { "Blue Marble (NASA)": "/textures/blue-marble.jpg" }, "Base map", refresh);
+    gc.pick(f, g, "baseTexture", { "Blue Marble (NASA)": "/textures/blue-marble.webp" }, "Base map", refresh);
     gc.text(f, g, "baseTexture", "Base map URL (custom)", refresh);
 
     const oc = this.#folder(f, "Ocean", [[...T, "surface", "ocean"]]);

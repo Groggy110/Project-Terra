@@ -411,7 +411,7 @@ the flecks land where the water went.
 ```
 tools/                 asset pipeline and test harnesses
   fetch_sources.sh       downloads upstream imagery and GeoJSON into tools/cache/
-  make_earth_textures.py blue-marble.jpg + earth-aux.png (topo / mask / coast proximity)
+  make_earth_textures.py blue-marble.webp + earth-aux.webp (topo / mask / coast proximity)
   make_clouds.py         synthesised cloud sheet
   make_ui_textures.py    watercolour paper, grain, glow sprite
   build_vectors.py       GeoJSON -> compact TVEC / TPOL binaries

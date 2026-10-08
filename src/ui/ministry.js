@@ -256,63 +256,151 @@ function cityField({ onPick, onType, onBlur, countryOf }) {
 /* --------------------------------------------------------------- post a need */
 
 /**
- * Posts a new need — or, given `need`, edits one: the same form, filled in
- * with what the need says now, saved through the same check a new post goes
- * through.
+ * The need form's fields, on their own, for the dialog and for the
+ * conversation (ask.js) alike. `blank` starts every choice unchosen rather
+ * than on a sensible default: in the conversation the guide fills the form
+ * in, and a default it did not choose would read to it as the ministry's
+ * answer. set() fills in what it is given and lights each field it changed;
+ * values() reads the form back as the edge function takes it.
+ */
+export function needForm({ ministry, need = null, blank = false } = {}) {
+  const unchosen = (text) => (blank && !need ? [h("option", { value: "", selected: true }, text)] : []);
+  const title = h("input", { class: "input", placeholder: "Part-time HR adviser", "data-autofocus": !blank, value: need?.title ?? "" });
+  // Terra is for help given online, so the types are the two a person can be
+  // — plus, when editing, whatever an older need was already posted as.
+  const types = NEED_TYPES.filter((t) => t.id === "expertise" || t.id === "volunteers" || t.id === need?.type);
+  const type = h("select", { class: "select" },
+    ...unchosen("Not chosen yet"),
+    types.map((t) => h("option", { value: t.id, selected: t.id === need?.type }, `${t.label} — ${t.note.toLowerCase()}`)));
+  const urgency = h("select", { class: "select" },
+    ...unchosen("Not chosen yet"),
+    URGENCIES.map((u) => h("option", { value: u.id, selected: !blank && u.id === (need?.urgency ?? "soon") }, u.label)));
+  const focus = h("select", { class: "select" },
+    ...unchosen("Not chosen yet"),
+    FOCUS_AREAS.map((f) => h("option", { value: f.id, selected: !blank && f.id === (need?.focus ?? ministry.focus?.[0]) }, f.label)));
+  const people = h("input", { class: "input", type: "number", min: "0", max: "500", value: blank && !need ? "" : String(need?.people ?? 1) });
+  const commitment = h("input", { class: "input", placeholder: "3 hrs/week · 3 months", value: need?.commitment ?? "" });
+  const detail = h("textarea", { class: "area", rows: 4, placeholder: "What the work involves and why it matters." });
+  detail.value = need?.detail ?? "";
+
+  const skills = [...(need?.skills ?? [])];
+  const skillChips = chipGroup({
+    options: [],
+    batch: 0,
+    isOn: () => false,
+    onToggle: () => {},
+    custom: {
+      placeholder: "HR, Employment law — type and press enter",
+      values: () => skills,
+      onAdd: (v) => { if (!skills.includes(v)) skills.push(v); },
+      onRemove: (v) => { const i = skills.indexOf(v); if (i >= 0) skills.splice(i, 1); },
+    },
+  });
+
+  const el = h("div", { class: "form" },
+    field("Title", title),
+    h("div", { class: "row2" }, field("Type", type), field("Urgency", urgency)),
+    h("div", { class: "row2" }, field("Focus area", focus), field("People wanted", people)),
+    field("Commitment", commitment),
+    field("Skills wanted", skillChips),
+    field("Detail", detail),
+  );
+
+  const text = { title, type, urgency, focus, commitment, detail };
+
+  /** Lights a field the guide just filled, so the eye goes to what changed. */
+  const flash = (control) => {
+    const f = control.closest(".field");
+    if (!f) return;
+    f.classList.remove("is-filled");
+    void f.offsetWidth;
+    f.classList.add("is-filled");
+  };
+
+  return {
+    el,
+    focus: () => title.focus({ preventScroll: true }),
+    values: () => ({
+      title: title.value.trim(),
+      type: type.value,
+      urgency: urgency.value,
+      focus: focus.value,
+      people: Math.max(0, Number(people.value) || 0),
+      commitment: commitment.value.trim(),
+      skills: [...skills],
+      detail: detail.value.trim(),
+    }),
+    /** What still has to be filled in before it can be posted, in words. */
+    missing() {
+      const out = [];
+      if (!title.value.trim()) out.push("a title");
+      if (!type.value) out.push("the type");
+      if (!urgency.value) out.push("how soon");
+      if (!focus.value) out.push("the focus area");
+      return out;
+    },
+    set(d = {}) {
+      for (const [key, control] of Object.entries(text)) {
+        const v = d[key];
+        if (v == null || v === "" || String(v) === control.value) continue;
+        // A select only takes a value it has an option for.
+        if (control.tagName === "SELECT" && ![...control.options].some((o) => o.value === String(v))) continue;
+        control.value = String(v);
+        flash(control);
+      }
+      const n = Number(d.people);
+      if (Number.isFinite(n) && n > 0 && String(n) !== people.value) {
+        people.value = String(n);
+        flash(people);
+      }
+      if (Array.isArray(d.skills) && d.skills.join("\n") !== skills.join("\n")) {
+        skills.splice(0, skills.length, ...d.skills.map(String));
+        skillChips.repaint();
+        flash(skillChips);
+      }
+    },
+  };
+}
+
+/**
+ * What came back from posting (or saving) a need, for the dialog and the
+ * conversation: live on the globe, or held for review with the reason.
+ */
+export function needPosted(res, { editing = false, onDone } = {}) {
+  const held = res.status !== "live";
+  return h("div", { class: `post-done${held ? " is-held" : ""}` },
+    held ? icons.pin() : icons.check(),
+    h("h2", { class: "modal__title", text: held ? (editing ? "Saved for review" : "Posted for review") : editing ? "Changes saved" : "It is on the globe" }),
+    h("p", { class: "modal__lede", text: res.message }),
+    res.reason && h("p", { class: "post-done__why", text: res.reason }),
+    held && h("p", { class: "modal__note", text: "You can see it in your own list meanwhile — it is only hidden from the public globe." }),
+    onDone && h("button", { class: "btn btn--accent", onclick: onDone }, "Done"),
+  );
+}
+
+/**
+ * Edits one of a ministry's own needs — or posts a new one, though new needs
+ * are posted in the conversation now (ask.js, startPost): the same form,
+ * filled in with what the need says now, saved through the same check a new
+ * post goes through.
  */
 export function postNeedModal(layer, { ministry, need = null, onPosted } = {}) {
   const editing = !!need;
   return layer.show((close) => {
-    const title = h("input", { class: "input", placeholder: "Part-time HR adviser", "data-autofocus": true, value: need?.title ?? "" });
-    // Terra is for help given online, so the types are the two a person can be
-    // — plus, when editing, whatever an older need was already posted as.
-    const types = NEED_TYPES.filter((t) => t.id === "expertise" || t.id === "volunteers" || t.id === need?.type);
-    const type = h("select", { class: "select" },
-      types.map((t) => h("option", { value: t.id, selected: t.id === need?.type }, `${t.label} — ${t.note.toLowerCase()}`)));
-    const urgency = h("select", { class: "select" }, URGENCIES.map((u) => h("option", { value: u.id, selected: u.id === (need?.urgency ?? "soon") }, u.label)));
-    const focus = h("select", { class: "select" },
-      FOCUS_AREAS.map((f) => h("option", { value: f.id, selected: f.id === (need?.focus ?? ministry.focus?.[0]) }, f.label)));
-    const people = h("input", { class: "input", type: "number", min: "0", max: "500", value: String(need?.people ?? 1) });
-    const commitment = h("input", { class: "input", placeholder: "3 hrs/week · 3 months", value: need?.commitment ?? "" });
-    const detail = h("textarea", { class: "area", rows: 4, placeholder: "What the work involves and why it matters." });
-    detail.value = need?.detail ?? "";
-
-    const skills = [...(need?.skills ?? [])];
-    const skillChips = chipGroup({
-      options: [],
-      batch: 0,
-      isOn: () => false,
-      onToggle: () => {},
-      custom: {
-        placeholder: "HR, Employment law — type and press enter",
-        values: () => skills,
-        onAdd: (v) => { if (!skills.includes(v)) skills.push(v); },
-        onRemove: (v) => { const i = skills.indexOf(v); if (i >= 0) skills.splice(i, 1); },
-      },
-    });
-
+    const form = needForm({ ministry, need });
     const err = h("span", { class: "modal__note", style: { color: "var(--urgent)" } });
     const label = editing ? "Save changes" : "Post this need";
     const go = h("button", { class: "btn btn--accent" }, label);
 
     go.addEventListener("click", async () => {
-      if (!title.value.trim()) { err.textContent = "Give the need a title first."; return; }
+      const fields = form.values();
+      if (!fields.title) { err.textContent = "Give the need a title first."; return; }
       go.disabled = true; go.textContent = "Checking…"; err.textContent = "";
       try {
-        const save = editing ? (fields) => updateNeed(need.id, fields) : postNeed;
-        const res = await save({
-          ministry_id: ministry.id,
-          title: title.value.trim(),
-          type: type.value,
-          urgency: urgency.value,
-          focus: focus.value,
-          people: Math.max(0, Number(people.value) || 0),
-          remote: need?.remote ?? true,
-          commitment: commitment.value.trim(),
-          skills: [...skills],
-          detail: detail.value.trim(),
-        });
-        showResult(res);
+        const save = editing ? (f) => updateNeed(need.id, f) : postNeed;
+        const res = await save({ ministry_id: ministry.id, ...fields, remote: need?.remote ?? true });
+        clear(card);
+        add(card, [h("div", { class: "modal__body" }, needPosted(res, { editing, onDone: () => { close(); onPosted?.(res); } }))]);
       } catch (e) {
         err.textContent = String(e.message ?? e);
         go.disabled = false; go.textContent = label;
@@ -329,34 +417,10 @@ export function postNeedModal(layer, { ministry, need = null, onPosted } = {}) {
             ? `For ${ministry.name} — ${ministry.city}. Changes are checked the way a new post is before they appear on the globe.`
             : `Posting for ${ministry.name} — ${ministry.city}. Everything posted is checked before it appears on the globe.`,
         }),
-        h("div", { class: "form" },
-          field("Title", title),
-          h("div", { class: "row2" }, field("Type", type), field("Urgency", urgency)),
-          h("div", { class: "row2" }, field("Focus area", focus), field("People wanted", people)),
-          field("Commitment", commitment),
-          field("Skills wanted", skillChips),
-          field("Detail", detail),
-        ),
+        form.el,
       ],
       h("div", { class: "modal__foot" }, err, h("span", { class: "spacer" }), go),
     );
-
-    function showResult(res) {
-      clear(card);
-      const held = res.status !== "live";
-      add(card, [
-        h("div", { class: "modal__body" },
-          h("div", { class: `post-done${held ? " is-held" : ""}` },
-            held ? icons.pin() : icons.check(),
-            h("h2", { class: "modal__title", text: held ? (editing ? "Saved for review" : "Posted for review") : editing ? "Changes saved" : "It is on the globe" }),
-            h("p", { class: "modal__lede", text: res.message }),
-            res.reason && h("p", { class: "post-done__why", text: res.reason }),
-            held && h("p", { class: "modal__note", text: "You can see it in your own list meanwhile — it is only hidden from the public globe." }),
-            h("button", { class: "btn btn--accent", onclick: () => { close(); onPosted?.(res); } }, "Done"),
-          ),
-        ),
-      ]);
-    }
 
     return card;
   }, { width: 620 });

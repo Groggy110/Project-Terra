@@ -261,7 +261,7 @@ export class Capture {
     if (this.ui.riseToo && this.globe) {
       const home = this.globe.liftTarget;
       this.globe.setLift(home - STAGE.rise, { instant: true });
-      this.globe.setLift(home, { ms: 2600 });
+      this.globe.setLift(home, { ms: 1900 });
     }
   }
 

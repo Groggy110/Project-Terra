@@ -133,11 +133,28 @@ export class Board {
 
   setOpen(open) {
     this.open = open;
-    this.root.classList.toggle("is-up", open);
+    cancelAnimationFrame(this.raising);
+    if (!open) {
+      this.root.classList.remove("is-up");
+      this.on.boardToggled?.(false);
+      return;
+    }
     // The app's query, not the one last rendered: it is replaced whenever the
     // filters are cleared, and the board may have been shut at the time.
-    if (open) this.render(this.on.query?.() ?? this.query);
-    this.on.boardToggled?.(open);
+    this.render(this.on.query?.() ?? this.query);
+    // The cards are laid out on a frame of their own, while the sheet is
+    // still out of sight, and it starts to rise on the frame after. Raised
+    // in the same task, the layout of every card landed in the slide's first
+    // frame — fifty milliseconds, at the fastest part of an ease-out — and
+    // the sheet jumped before it glided. The page's own moves (the planet's
+    // lift, the chrome) go with the sheet, not ahead of it.
+    this.raising = requestAnimationFrame(() => {
+      this.raising = requestAnimationFrame(() => {
+        if (!this.open) return;
+        this.root.classList.add("is-up");
+        this.on.boardToggled?.(true);
+      });
+    });
   }
 
   toggle() {

@@ -19,6 +19,10 @@
  * When the guide cannot be reached — no backend, no key, a network blip — the
  * same question is answered by the keyword search instead, so the panel always
  * has something true to show.
+ *
+ * A ministry posts a need here too (startPost): it says what it needs in its
+ * own words, the post form sits in the conversation filling itself in as it
+ * talks (draft-need), and it posts from the form when the form reads right.
  */
 import { add, clear, h, icons, nf, plural, since, svg } from "./dom.js";
 import { emptyQuery } from "../data/network.js";
@@ -26,6 +30,15 @@ import { FOCUS_BY_ID, REGION_BY_ID, TYPE_BY_ID, URGENCY_BY_ID } from "../data/ta
 import { pullToClose } from "./swipe.js";
 import { AuthGate } from "./auth.js";
 import { deleteChat, getChat, listChats, newChatId, saveChat } from "./chats.js";
+import { needForm, needPosted } from "./ministry.js";
+
+/** Said to start posting a need from the composer ("I'd like to post a need"). */
+const POST_INTENT =
+  /^\s*(?:(?:i|we)(?:'d| would)? (?:want|like|need) to |(?:can|could|may) (?:i|we) |how (?:do|can) (?:i|we) |help (?:me|us) |let'?s |please )?(?:post|add|create|list|submit|put up|publish)\s+(?:a |an |our |my |another |one more )?(?:new )?(?:need|request|opportunity|role|volunteer (?:need|role|request))\b/i;
+/** Said, once the form is ready, to post it ("post it", "looks good"). */
+const POST_IT = /^\s*(?:yes|yep|yeah|ok(?:ay)?|sure|great|perfect|looks (?:good|great|right)|that'?s (?:right|good|great)|go ahead|post(?: it| this| the need)?|publish(?: it)?|submit(?: it)?|do it)\b[\s.,!]*(?:(?:go ahead and |please )?(?:post(?: it)?|publish(?: it)?)|please|thanks?(?: you)?)?[\s.,!]*$/i;
+/** The placeholder the composer goes back to when posting ends. */
+const FOLLOW_UP = "Ask a follow-up…";
 
 const send = () => svg("0 0 16 16", '<path d="M8 12.8V3.4M4.2 7.2 8 3.4l3.8 3.8"/>');
 const clock = () => svg("0 0 16 16", '<circle cx="8" cy="8" r="5.8"/><path d="M8 4.8V8l2.2 1.5"/>');
@@ -147,8 +160,13 @@ const EXAMPLES = [
 ];
 
 export class AskPanel {
-  constructor({ net, ask, onGo, onFlyTo, onPlace, onServe, onSchedule, onSignedIn, onResults, onToggle, onReset, onMinistry, onEdit, onLeave }) {
+  constructor({ net, ask, onGo, onFlyTo, onPlace, onServe, onSchedule, onSignedIn, onResults, onToggle, onReset, onMinistry, onEdit, onLeave, onPost }) {
     this.onSignedIn = onSignedIn;
+    // "I'd like to post a need", said in the composer: the app checks who is
+    // asking and calls startPost when they can.
+    this.onPost = onPost;
+    // The need being posted, while one is (startPost).
+    this.posting = null;
     // A need's ministry, opened in the thread; a ministry's own need, to
     // edit; and a ministry's card
     // closed, which lets go of its pin. `onEdit(need)` answers with the edit
@@ -179,7 +197,7 @@ export class AskPanel {
     this.input = h("input", {
       class: "ask__input",
       type: "text",
-      placeholder: "Ask a follow-up…",
+      placeholder: FOLLOW_UP,
       "aria-label": "Ask Terra a follow-up",
       enterkeyhint: "send",
       autocomplete: "off",
@@ -242,6 +260,11 @@ export class AskPanel {
    * thread to say so; anything else is a question.
    */
   async #send(text) {
+    if (this.posting) return this.#postTurn(text);
+    if (this.onPost && POST_INTENT.test(text)) {
+      this.onPost(text);
+      return;
+    }
     if (!this.onGo) return this.submit(text);
     this.busy = true;
     const said = await this.onGo(text).catch(() => null);
@@ -339,6 +362,166 @@ export class AskPanel {
       turn.el.querySelector("[data-autofocus], input, textarea")?.focus({ preventScroll: true });
     });
     return turn.el;
+  }
+
+  /* ------------------------------------------------------- posting a need */
+
+  /**
+   * Posting a need as a conversation. The post form goes into the thread as a
+   * card, every choice on it unmade, and from here on the composer talks to
+   * `draft` (draft-need) rather than to the search: each thing the ministry
+   * says comes back as the form brought up to date — the fields it changed
+   * lit for a moment — and the guide's next question. The ministry can type
+   * into the form as well; what is in it is sent with every turn, so the
+   * guide works from it rather than over it. `post` sends the finished form
+   * through the same check as ever (moderate-need), from the card's own
+   * button or from saying "post it" once the guide calls it ready.
+   */
+  startPost({ ministry, draft, post, onPosted, said = "I'd like to post a need" }) {
+    this.#show();
+    this.root.classList.remove("is-min");
+    this.#closeHistory();
+    for (const t of this.turns) t.open = null;
+    this.#endPost();
+
+    const form = needForm({ ministry, blank: true });
+    const err = h("span", { class: "modal__note ask__post-err", role: "alert" });
+    const go = h("button", { class: "btn btn--accent", type: "button" }, "Post this need");
+    const card = h(
+      "section",
+      { class: "ask__flow ask__post" },
+      h("button", { class: "ask__flow-x", type: "button", "aria-label": "Stop posting this need", onclick: () => this.#cancelPost() }, icons.close()),
+      h("div", { class: "modal__inner" },
+        h("div", { class: "modal__body" },
+          h("div", { class: "modal__eyebrow", text: "New need" }),
+          h("h2", { class: "modal__title", text: `For ${ministry.name}` }),
+          h("p", { class: "modal__lede", text: "This fills itself in as we talk, and you can change anything in it yourself. Everything posted is checked before it appears on the globe." }),
+          form.el,
+        ),
+        h("div", { class: "modal__foot" }, err, h("span", { class: "spacer" }), go),
+      ),
+    );
+    const posting = { id: newChatId(), ministry, form, draft, post, onPosted, ready: false, card, go, err };
+    posting.turn = { role: "flow", el: card, post: posting.id };
+    go.addEventListener("click", () => this.#postNow(posting));
+    this.posting = posting;
+
+    this.turns.push(
+      { role: "user", text: said, local: true, post: posting.id },
+      {
+        role: "assistant",
+        text: `Let's put it on the map for ${ministry.name}. Tell me what you need help with, in your own words, and I'll fill in the form as we go.`,
+        picks: [],
+        local: true,
+        post: posting.id,
+      },
+      posting.turn,
+    );
+    this.input.placeholder = "Describe the need, or answer the question…";
+    this.render();
+    requestAnimationFrame(() => this.input.focus({ preventScroll: true }));
+  }
+
+  /** Whether `text` asks to post a need, from the find bar as from the composer. */
+  wantsToPost(text) {
+    return POST_INTENT.test(text);
+  }
+
+  /** One thing the ministry said while posting: the form updated, and the next question. */
+  async #postTurn(text) {
+    const p = this.posting;
+    if (p.ready && POST_IT.test(text)) {
+      this.turns.push({ role: "user", text, local: true, post: p.id });
+      this.#toEnd(p.turn);
+      this.render();
+      return this.#postNow(p);
+    }
+    this.turns.push({ role: "user", text, local: true, post: p.id });
+    const answer = { role: "assistant", text: "", picks: [], pending: true, status: "Filling in the form…", local: true, post: p.id };
+    this.turns.push(answer);
+    // The form stays under the newest exchange, where the eye already is.
+    this.#toEnd(p.turn);
+    this.busy = true;
+    this.render();
+
+    try {
+      const res = await p.draft({ history: this.#postHistory(p), draft: p.form.values() });
+      if (this.posting !== p) return;
+      p.form.set(res.draft);
+      p.ready = res.ready;
+      answer.text = res.reply;
+    } catch {
+      answer.text = "I couldn't reach the guide just now. You can fill in the form below yourself and post it from there.";
+    }
+    answer.pending = false;
+    this.busy = false;
+    this.render();
+  }
+
+  /** What has been said about this need, for draft-need. */
+  #postHistory(p) {
+    return this.turns
+      .filter((t) => t.post === p.id && (t.role === "user" || t.role === "assistant") && !t.pending && t.text)
+      .map((t) => ({ role: t.role, text: t.text }));
+  }
+
+  /** Sends the form through the check, and shows how it went where the form was. */
+  async #postNow(p) {
+    if (this.posting !== p || p.sending) return;
+    const missing = p.form.missing();
+    if (missing.length) {
+      const list = missing.length > 1 ? `${missing.slice(0, -1).join(", ")} and ${missing.at(-1)}` : missing[0];
+      p.err.textContent = `Add ${list} first.`;
+      this.say(`Nearly there. The form still needs ${list}. Tell me, or fill it in below.`);
+      return;
+    }
+    p.sending = true;
+    p.err.textContent = "";
+    p.go.disabled = true;
+    p.go.textContent = "Checking…";
+    let res;
+    try {
+      res = await p.post({ ministry_id: p.ministry.id, ...p.form.values(), remote: true });
+    } catch (e) {
+      p.sending = false;
+      p.go.disabled = false;
+      p.go.textContent = "Post this need";
+      p.err.textContent = String(e?.message ?? e);
+      return;
+    }
+    // The card becomes the receipt; the conversation goes back to searching.
+    clear(p.card);
+    add(p.card, [needPosted(res)]);
+    this.#endPost();
+    this.say(
+      res.status === "live"
+        ? "Done. It's on the globe now, and volunteers can find it straight away."
+        : "Done. It's posted and waiting for a quick review before it shows on the globe.",
+    );
+    p.onPosted?.(res);
+  }
+
+  /** The card's ✕: nothing is posted, and the form goes. */
+  #cancelPost() {
+    const p = this.posting;
+    if (!p) return;
+    const i = this.turns.indexOf(p.turn);
+    if (i >= 0) this.turns.splice(i, 1);
+    this.#endPost();
+    this.say("No problem, nothing was posted. Your words are still here if you want to come back to it.");
+  }
+
+  /** Back to searching: the composer talks to the guide again. */
+  #endPost() {
+    if (!this.posting) return;
+    this.posting = null;
+    this.busy = false;
+    this.input.placeholder = FOLLOW_UP;
+  }
+
+  #toEnd(turn) {
+    const i = this.turns.indexOf(turn);
+    if (i >= 0) this.turns.push(...this.turns.splice(i, 1));
   }
 
   /**
@@ -529,7 +712,8 @@ export class AskPanel {
     const webLine = (w) =>
       `${w.title} — ${w.org || w.name}${w.town ? `, ${w.town}` : ""} (found on their website, not on Terra${w.email ? `; email ${w.email}` : ""}${w.summary ? `; ${w.summary}` : ""})`;
     for (const t of this.turns) {
-      if (t.pending || t.role === "flow") continue;
+      // Posting a need is its own conversation, with draft-need.
+      if (t.pending || t.role === "flow" || t.post) continue;
       if (t.role === "user") {
         out.push({ role: "user", text: t.text });
         continue;
@@ -736,6 +920,7 @@ export class AskPanel {
 
   reset() {
     this.#closeHistory();
+    this.#endPost();
     this.chatId = newChatId();
     this.localTurn = null;
     this.turns = [];
@@ -930,7 +1115,11 @@ export class AskPanel {
     const scroll = this.thread.scrollTop;
     clear(this.thread);
     const last = [...this.turns].reverse().find((t) => t.role === "assistant" && !t.pending && !t.local);
-    this.head.querySelector(".ask__count").textContent = this.busy
+    this.head.querySelector(".ask__count").textContent = this.posting
+      ? this.busy
+        ? "Filling in your need…"
+        : "Posting a need"
+      : this.busy
       ? this.localTurn?.pending
         ? "Searching for places to serve…"
         : "Looking across the network…"
